@@ -1,6 +1,6 @@
 {
-    "name": "parking_front",
-    "short_name": "parking_front",
+    "name": "smartpark",
+    "short_name": "smartpark",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
