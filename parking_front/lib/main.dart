@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:parking_front/features/splash/presentation/screens/splash_screen.dart';
 import 'features/parking/presentation/map_home_screen.dart';
 import 'theme/app_theme.dart';
+import 'features/splash/presentation/screens/splash_screen.dart';
 
 void main() {
   runApp(const SmartParkApp());
@@ -15,7 +17,8 @@ class SmartParkApp extends StatelessWidget {
       title: 'smartpark',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      home: const MapHomeScreen(),
+      //home: const MapHomeScreen(),
+      home: const SplashScreen()
     );
   }
 }
