@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../theme/app_colors.dart';
-//import '../home/presentation/home_no_session_screen.dart';
-//import '../profile/presentation/profile_screen.dart';
+import '../home/presentation/screens/home_no_session_screen.dart';
+import '../parking/presentation/map_home_screen.dart';
+import '../profile/presentation/screens/profile_screen.dart';
 //import '../scanner/presentation/scanner_screen.dart';
 
 const _kLabels      = ['ACCUEIL', 'CARTE', 'SCANNER', 'PROFIL'];
@@ -33,10 +34,10 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _buildBody(int index) {
     switch (index) {
-      //case 0: return HomeNoSessionScreen(onSearchTap: () => _onTap(1));
-      case 1: return const _MapBody();
+      case 0: return HomeNoSessionScreen(onSearchTap: () => _onTap(1));
+      case 1: return const MapHomeScreen();
       //case 2: return const ScannerScreen();
-     // case 3: return const ProfileScreen();
+     case 3: return const ProfileScreen();
       default: return const SizedBox.shrink();
     }
   }
