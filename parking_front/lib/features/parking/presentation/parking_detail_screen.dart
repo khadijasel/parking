@@ -1,18 +1,56 @@
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
+import '../../../core/services/location_service.dart';
+import '../../../core/services/routing_service.dart';
 import '../../../theme/app_colors.dart';
 import '../../auth/presentation/login_screen.dart';
+import '../../reservation/presentation/screens/reservation_screen.dart';
 import '../models/parking.dart';
 
 class ParkingDetailScreen extends StatelessWidget {
   final Parking parking;
+  final bool isAuthenticated;
 
-  const ParkingDetailScreen({super.key, required this.parking});
+  const ParkingDetailScreen({super.key, required this.parking, this.isAuthenticated = false});
 
-  void _navigateToLogin(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
+  Future<void> _navigateToParking(BuildContext context) async {
+    // Montrer un loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: AppColors.blue),
+                SizedBox(height: 16),
+                Text('Calcul de l\'itinéraire...', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
+
+    final userLoc = await LocationService.getCurrentLocation();
+    final origin = userLoc ?? const LatLng(34.8828, -1.3147);
+
+    final results = await Future.wait([
+      RoutingService.getRoute(origin, parking.location),
+      RoutingService.getRouteInfo(origin, parking.location),
+    ]);
+
+    if (context.mounted) {
+      Navigator.pop(context); // Fermer le loading
+      // Retourner à la carte avec les infos de navigation
+      Navigator.pop(context, {
+        'navigate': true,
+        'parking': parking,
+      });
+    }
   }
 
   @override
@@ -303,7 +341,22 @@ class ParkingDetailScreen extends StatelessWidget {
           Expanded(
             flex: 1,
             child: OutlinedButton.icon(
-              onPressed: () => _navigateToLogin(context),
+              onPressed: () {
+                if (!isAuthenticated) {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+                } else {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ReservationScreen(
+                        parkingName: parking.name,
+                        parkingAddress: parking.address,
+                        equipments: parking.equipments,
+                      ),
+                    ),
+                  );
+                }
+              },
               icon: const Icon(Icons.calendar_today_outlined, size: 18),
               label: const Text('Réserver'),
               style: OutlinedButton.styleFrom(
@@ -325,8 +378,14 @@ class ParkingDetailScreen extends StatelessWidget {
           Expanded(
             flex: 2,
             child: ElevatedButton.icon(
-              onPressed: () => _navigateToLogin(context),
-              icon: const Icon(Icons.diamond_outlined, size: 18),
+              onPressed: () {
+                if (!isAuthenticated) {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+                } else {
+                  _navigateToParking(context);
+                }
+              },
+              icon: const Icon(Icons.navigation_rounded, size: 18),
               label: const Text("S'y rendre"),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.blue,

@@ -15,7 +15,14 @@ class SmartParkApp extends StatelessWidget {
       title: 'smartpark',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
+<<<<<<< Updated upstream
       home: const MapHomeScreen(),
+=======
+      //home: const MapHomeScreen(),
+      //home: const SplashScreen()
+      home: const MainScreen(),
+      //home: const HomeScreen(),
+>>>>>>> Stashed changes
     );
   }
 }
