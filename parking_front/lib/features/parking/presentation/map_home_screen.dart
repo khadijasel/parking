@@ -25,7 +25,6 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
 
   // Position utilisateur
   LatLng? _userLocation;
-  bool _loadingLocation = true;
 
   // Itinéraire
   List<LatLng> _routePoints = [];
@@ -52,7 +51,6 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     if (mounted) {
       setState(() {
         _userLocation = loc ?? const LatLng(34.8828, -1.3147); // Fallback: centre Tlemcen
-        _loadingLocation = false;
       });
       if (widget.autoNavigateParking != null && _userLocation != null) {
         _startNavigation(widget.autoNavigateParking!);

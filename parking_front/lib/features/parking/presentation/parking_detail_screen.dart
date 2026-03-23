@@ -38,7 +38,7 @@ class ParkingDetailScreen extends StatelessWidget {
     final userLoc = await LocationService.getCurrentLocation();
     final origin = userLoc ?? const LatLng(34.8828, -1.3147);
 
-    final results = await Future.wait([
+    await Future.wait([
       RoutingService.getRoute(origin, parking.location),
       RoutingService.getRouteInfo(origin, parking.location),
     ]);

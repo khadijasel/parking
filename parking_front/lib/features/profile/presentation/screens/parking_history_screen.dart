@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../../../theme/app_colors.dart';
 
 // ─── Constantes locales ─────────────────────────────────────────────────────
 const _kBg       = Color(0xFFF4F7FC);
