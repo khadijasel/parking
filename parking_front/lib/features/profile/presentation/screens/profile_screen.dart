@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'parking_history_screen.dart';
+import 'edit_profile_screen.dart';
 
-const _kBlue  = Color(0xFF4A90E2);
-const _kDark  = Color(0xFF1A1A2E);
-const _kMid   = Color(0xFF8A9BB5);
+const _kBlue = Color(0xFF4A90E2);
+const _kDark = Color(0xFF1A1A2E);
+const _kMid = Color(0xFF8A9BB5);
 const _kBgRow = Color(0xFFF4F7FC);
-const _kRed   = Color(0xFFE53935);
+const _kRed = Color(0xFFE53935);
 const _kRedBg = Color(0xFFFFF0EE);
 
 /// Écran Profil — fidèle à la maquette image 2
@@ -28,12 +29,14 @@ class ProfileScreen extends StatelessWidget {
               color: const Color(0xFFF0F4FA),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: _kDark),
+            child: const Icon(Icons.arrow_back_ios_new_rounded,
+                size: 18, color: _kDark),
           ),
         ),
         centerTitle: true,
         title: const Text('Profil',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _kDark)),
+            style: TextStyle(
+                fontSize: 18, fontWeight: FontWeight.w700, color: _kDark)),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -44,7 +47,8 @@ class ProfileScreen extends StatelessWidget {
           Center(
             child: Stack(children: [
               Container(
-                width: 110, height: 110,
+                width: 110,
+                height: 110,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(color: const Color(0xFFD6E6F7), width: 3),
@@ -52,19 +56,24 @@ class ProfileScreen extends StatelessWidget {
                 child: ClipOval(
                   child: Container(
                     color: const Color(0xFFEAF1FB),
-                    child: const Icon(Icons.person_rounded, size: 70, color: _kBlue),
+                    child: const Icon(Icons.person_rounded,
+                        size: 70, color: _kBlue),
                   ),
                 ),
               ),
               Positioned(
-                bottom: 2, right: 2,
+                bottom: 2,
+                right: 2,
                 child: Container(
-                  width: 32, height: 32,
+                  width: 32,
+                  height: 32,
                   decoration: BoxDecoration(
-                    color: _kBlue, shape: BoxShape.circle,
+                    color: _kBlue,
+                    shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 2),
                   ),
-                  child: const Icon(Icons.edit_rounded, size: 15, color: Colors.white),
+                  child: const Icon(Icons.edit_rounded,
+                      size: 15, color: Colors.white),
                 ),
               ),
             ]),
@@ -73,13 +82,15 @@ class ProfileScreen extends StatelessWidget {
 
           // ── Nom + plaque + ville ────────────────────────────────────────
           const Text('Ahmed Benali',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: _kDark)),
+              style: TextStyle(
+                  fontSize: 24, fontWeight: FontWeight.w800, color: _kDark)),
           const SizedBox(height: 6),
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.directions_car_rounded, size: 16, color: _kBlue),
-            const SizedBox(width: 6),
-            const Text('16-12345-01-16',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: _kDark)),
+          const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(Icons.directions_car_rounded, size: 16, color: _kBlue),
+            SizedBox(width: 6),
+            Text('16-12345-01-16',
+                style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600, color: _kDark)),
           ]),
           const SizedBox(height: 4),
           const Text('Alger, Algérie',
@@ -87,7 +98,7 @@ class ProfileScreen extends StatelessWidget {
           const SizedBox(height: 36),
 
           // ── ACTIVITÉS ───────────────────────────────────────────────────
-          _SectionLabel(label: 'ACTIVITÉS'),
+          const _SectionLabel(label: 'ACTIVITÉS'),
           const SizedBox(height: 12),
           _MenuRow(
             iconBg: const Color(0xFFEAF1FB),
@@ -114,7 +125,7 @@ class ProfileScreen extends StatelessWidget {
           const SizedBox(height: 28),
 
           // ── PARAMÈTRES ──────────────────────────────────────────────────
-          _SectionLabel(label: 'PARAMÈTRES'),
+          const _SectionLabel(label: 'PARAMÈTRES'),
           const SizedBox(height: 12),
           _MenuRow(
             iconBg: const Color(0xFFF0F4FA),
@@ -122,7 +133,12 @@ class ProfileScreen extends StatelessWidget {
             iconColor: _kMid,
             title: 'Modifier le profil',
             subtitle: 'Nom, email, véhicule',
-            onTap: () {},
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+              );
+            },
           ),
           const SizedBox(height: 10),
 
@@ -151,12 +167,14 @@ class _SectionLabel extends StatelessWidget {
   const _SectionLabel({required this.label});
   @override
   Widget build(BuildContext context) => Align(
-    alignment: Alignment.centerLeft,
-    child: Text(label,
-      style: const TextStyle(
-          fontSize: 11, fontWeight: FontWeight.w700,
-          color: _kMid, letterSpacing: 1.3)),
-  );
+        alignment: Alignment.centerLeft,
+        child: Text(label,
+            style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: _kMid,
+                letterSpacing: 1.3)),
+      );
 }
 
 class _MenuRow extends StatelessWidget {
@@ -171,10 +189,14 @@ class _MenuRow extends StatelessWidget {
   final VoidCallback onTap;
 
   const _MenuRow({
-    required this.iconBg, required this.icon,
-    required this.iconColor, required this.title,
-    this.subtitle, this.titleColor,
-    this.bgColor, this.showArrow = true,
+    required this.iconBg,
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    this.subtitle,
+    this.titleColor,
+    this.bgColor,
+    this.showArrow = true,
     required this.onTap,
   });
 
@@ -190,22 +212,27 @@ class _MenuRow extends StatelessWidget {
         ),
         child: Row(children: [
           Container(
-            width: 44, height: 44,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
             child: Icon(icon, size: 22, color: iconColor),
           ),
           const SizedBox(width: 14),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title,
-              style: TextStyle(
-                fontSize: 15, fontWeight: FontWeight.w700,
-                color: titleColor ?? _kDark)),
-            if (subtitle != null) ...[
-              const SizedBox(height: 2),
-              Text(subtitle!,
-                style: const TextStyle(fontSize: 13, color: _kMid)),
-            ],
-          ])),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(title,
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: titleColor ?? _kDark)),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(subtitle!,
+                      style: const TextStyle(fontSize: 13, color: _kMid)),
+                ],
+              ])),
           if (showArrow)
             const Icon(Icons.chevron_right_rounded, color: _kMid, size: 22),
         ]),

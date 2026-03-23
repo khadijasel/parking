@@ -43,7 +43,7 @@ class AppLogo extends StatelessWidget {
         ),
         if (showTagline) ...[
           const SizedBox(height: AppConstants.paddingSmall),
-          Text(
+          const Text(
             AppConstants.appTagline,
             textAlign: TextAlign.center,
             style: AppTextStyles.caption,

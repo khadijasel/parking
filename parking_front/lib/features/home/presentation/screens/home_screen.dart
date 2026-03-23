@@ -5,13 +5,13 @@ import '../../../parking/models/parking.dart';
 import '../../../parking/presentation/map_home_screen.dart';
 
 // ─── Constantes couleurs ───────────────────────────────────────────────────────
-const _kBlue       = Color(0xFF4A90E2);
-const _kGreen      = Color(0xFF2ECC71);
-const _kBg         = Color(0xFFF0F2F5);
-const _kCard       = Colors.white;
-const _kTextDark   = Color(0xFF1A1A2E);
-const _kTextMid    = Color(0xFF7A8499);
-const _kTextLight  = Color(0xFFB0B8CC);
+const _kBlue = Color(0xFF4A90E2);
+const _kGreen = Color(0xFF2ECC71);
+const _kBg = Color(0xFFF0F2F5);
+const _kCard = Colors.white;
+const _kTextDark = Color(0xFF1A1A2E);
+const _kTextMid = Color(0xFF7A8499);
+const _kTextLight = Color(0xFFB0B8CC);
 
 // ─── Modèle session (simplifié) ────────────────────────────────────────────────
 class _Session {
@@ -19,18 +19,15 @@ class _Session {
   final String spotLabel;
   final DateTime entryTime;
   final double tarifActuel;
-  final bool canFindCar;   // nécessite scan
-  final bool canExit;      // nécessite scan
-  final bool canPay;       // dispo après 1h
+  final bool canFindCar; // nécessite scan
+  final bool canExit; // nécessite scan
+  final bool canPay; // dispo après 1h
 
-  const _Session({
+  const _Session(this.canFindCar, this.canExit, this.canPay, {
     required this.parkingName,
     required this.spotLabel,
     required this.entryTime,
     required this.tarifActuel,
-    this.canFindCar = false,
-    this.canExit    = false,
-    this.canPay     = false,
   });
 }
 
@@ -45,9 +42,13 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   // Session simulée
   final _Session _session = _Session(
+    false,
+    false,
+    false,
     parkingName: 'Parking Sidi Yahia',
-    spotLabel:   'Niveau 2, A-42',
-    entryTime:   DateTime.now().subtract(const Duration(minutes: 45, seconds: 12)),
+    spotLabel: 'Niveau 2, A-42',
+    entryTime:
+        DateTime.now().subtract(const Duration(minutes: 45, seconds: 12)),
     tarifActuel: 150,
   );
 
@@ -165,8 +166,8 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Container(
             width: 46,
             height: 46,
-            decoration: BoxDecoration(
-              color: const Color(0xFFDDE3EE),
+            decoration: const BoxDecoration(
+              color: Color(0xFFDDE3EE),
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.person_outline_rounded,
@@ -365,9 +366,7 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: EdgeInsets.only(bottom: 28),
       child: Text(' : ',
           style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.w300,
-              color: _kTextLight)),
+              fontSize: 28, fontWeight: FontWeight.w300, color: _kTextLight)),
     );
   }
 
@@ -469,8 +468,7 @@ class _ActionCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Icon(icon,
-                  size: 22,
-                  color: isActive ? Colors.white : _kTextMid),
+                  size: 22, color: isActive ? Colors.white : _kTextMid),
             ),
             const Spacer(),
             // Titre
@@ -489,9 +487,8 @@ class _ActionCard extends StatelessWidget {
               if (locked)
                 Icon(Icons.lock_outline_rounded,
                     size: 11,
-                    color: isActive
-                        ? Colors.white.withOpacity(0.7)
-                        : _kTextLight),
+                    color:
+                        isActive ? Colors.white.withOpacity(0.7) : _kTextLight),
               if (locked) const SizedBox(width: 4),
               Flexible(
                 child: Text(
@@ -499,9 +496,8 @@ class _ActionCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
-                    color: isActive
-                        ? Colors.white.withOpacity(0.75)
-                        : _kTextLight,
+                    color:
+                        isActive ? Colors.white.withOpacity(0.75) : _kTextLight,
                     letterSpacing: 0.4,
                   ),
                 ),

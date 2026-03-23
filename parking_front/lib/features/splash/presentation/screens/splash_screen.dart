@@ -2,17 +2,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:parking_front/features/main/main_screen.dart';
-import '../../../auth/presentation/login_screen.dart';
-
 
 // ════════════════════════════════════════════════════════════
 //  COULEURS LOCALES SPLASH (séparées pour pas polluer AppColors)
 // ════════════════════════════════════════════════════════════
 class _SplashColors {
   static const gradientStart = Color(0xFF2563EB);
-  static const gradientEnd   = Color(0xFF60A5FA);
-  static const slate400      = Color(0xFF94A3B8);
-  static const slate300      = Color(0xFFCBD5E1);
+  static const gradientEnd = Color(0xFF60A5FA);
+  static const slate400 = Color(0xFF94A3B8);
+  static const slate300 = Color(0xFFCBD5E1);
 
   static const LinearGradient logoGradient = LinearGradient(
     begin: Alignment.topLeft,
@@ -25,7 +23,8 @@ class _SplashColors {
 //  SPLASH SCREEN — ton code original + navigation ajoutée
 // ════════════════════════════════════════════════════════════
 class SplashScreen extends StatefulWidget {
-  final Widget? nextRoute; // <-- On ajoute ce paramètre pour choisir l'écran suivant
+  final Widget?
+      nextRoute; // <-- On ajoute ce paramètre pour choisir l'écran suivant
 
   const SplashScreen({super.key, this.nextRoute});
 
@@ -35,7 +34,6 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
-
   late final AnimationController _logoController;
   late final AnimationController _textController;
   late final AnimationController _barController;
@@ -88,11 +86,11 @@ class _SplashScreenState extends State<SplashScreen>
         CurvedAnimation(
             parent: _textController,
             curve: const Interval(0.2, 0.8, curve: Curves.easeOut)));
-    _subtitleSlide = Tween<Offset>(
-            begin: const Offset(0, 0.4), end: Offset.zero)
-        .animate(CurvedAnimation(
-            parent: _textController,
-            curve: const Interval(0.2, 0.8, curve: Curves.easeOut)));
+    _subtitleSlide =
+        Tween<Offset>(begin: const Offset(0, 0.4), end: Offset.zero).animate(
+            CurvedAnimation(
+                parent: _textController,
+                curve: const Interval(0.2, 0.8, curve: Curves.easeOut)));
     _descOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(
         parent: _textController,
         curve: const Interval(0.5, 1.0, curve: Curves.easeOut)));
@@ -107,9 +105,9 @@ class _SplashScreenState extends State<SplashScreen>
         vsync: this, duration: const Duration(milliseconds: 600));
     _bottomOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
         CurvedAnimation(parent: _bottomController, curve: Curves.easeOut));
-    _bottomSlide = Tween<Offset>(
-            begin: const Offset(0, 0.5), end: Offset.zero)
-        .animate(CurvedAnimation(parent: _bottomController, curve: Curves.easeOut));
+    _bottomSlide = Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero)
+        .animate(
+            CurvedAnimation(parent: _bottomController, curve: Curves.easeOut));
   }
 
   Future<void> _startSequence() async {
@@ -126,7 +124,8 @@ class _SplashScreenState extends State<SplashScreen>
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
-          pageBuilder: (_, animation, __) => widget.nextRoute ?? const MainScreen(),
+          pageBuilder: (_, animation, __) =>
+              widget.nextRoute ?? const MainScreen(),
           transitionsBuilder: (_, animation, __, child) =>
               FadeTransition(opacity: animation, child: child),
           transitionDuration: const Duration(milliseconds: 500),
@@ -183,7 +182,8 @@ class _SplashScreenState extends State<SplashScreen>
         child: Transform.scale(
           scale: _logoScale.value,
           child: Container(
-            width: 128, height: 128,
+            width: 128,
+            height: 128,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(40),
@@ -200,7 +200,7 @@ class _SplashScreenState extends State<SplashScreen>
                     offset: const Offset(0, 4)),
               ],
             ),
-            child: Center(child: _ParkSVGLogo(size: 80)),
+            child: const Center(child: _ParkSVGLogo(size: 80)),
           ),
         ),
       ),
@@ -221,8 +221,11 @@ class _SplashScreenState extends State<SplashScreen>
               blendMode: BlendMode.srcIn,
               child: const Text('SmartPark',
                   style: TextStyle(
-                      fontSize: 32, fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5, height: 1, color: Colors.white)),
+                      fontSize: 32,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                      height: 1,
+                      color: Colors.white)),
             ),
           ),
         ),
@@ -231,10 +234,12 @@ class _SplashScreenState extends State<SplashScreen>
           opacity: _subtitleOpacity,
           child: SlideTransition(
             position: _subtitleSlide,
-            child: const Text('A L G É R I A' ,
+            child: const Text('A L G É R I A',
                 style: TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.w300,
-                    letterSpacing: 8, color: _SplashColors.slate400)),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w300,
+                    letterSpacing: 8,
+                    color: _SplashColors.slate400)),
           ),
         ),
         const SizedBox(height: 32),
@@ -265,8 +270,10 @@ class _SplashScreenState extends State<SplashScreen>
               SizedBox(width: 6),
               Text('ALGER, ALGÉRIE',
                   style: TextStyle(
-                      fontSize: 9, fontWeight: FontWeight.w600,
-                      letterSpacing: 4, color: _SplashColors.slate300)),
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 4,
+                      color: _SplashColors.slate300)),
             ]),
           ]),
         ),
@@ -278,7 +285,8 @@ class _SplashScreenState extends State<SplashScreen>
     return AnimatedBuilder(
       animation: _barController,
       builder: (_, __) => SizedBox(
-        width: 140, height: 2,
+        width: 140,
+        height: 2,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(1),
           child: Stack(children: [
@@ -313,8 +321,9 @@ class _ParkSVGLogo extends StatelessWidget {
 class _LogoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final gradient = const LinearGradient(
-        begin: Alignment.topLeft, end: Alignment.bottomRight,
+    const gradient = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
         colors: [Color(0xFF2563EB), Color(0xFF60A5FA)]);
     final rect = Rect.fromLTWH(0, 0, size.width, size.height);
     final paint = Paint()
@@ -339,8 +348,8 @@ class _LogoPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
     canvas.drawCircle(Offset(38 * s, 72 * s), 3 * s, fillPaint);
     canvas.drawCircle(Offset(62 * s, 72 * s), 3 * s, fillPaint);
-    void drawSquare(double x, double y) => canvas.drawRect(
-        Rect.fromLTWH(x * s, y * s, 2 * s, 2 * s), fillPaint);
+    void drawSquare(double x, double y) =>
+        canvas.drawRect(Rect.fromLTWH(x * s, y * s, 2 * s, 2 * s), fillPaint);
     drawSquare(75, 64);
     drawSquare(79, 64);
     drawSquare(75, 74);

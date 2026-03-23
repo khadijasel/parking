@@ -11,7 +11,8 @@ class ParkingDetailScreen extends StatelessWidget {
   final Parking parking;
   final bool isAuthenticated;
 
-  const ParkingDetailScreen({super.key, required this.parking, this.isAuthenticated = false});
+  const ParkingDetailScreen(
+      {super.key, required this.parking, this.isAuthenticated = false});
 
   Future<void> _navigateToParking(BuildContext context) async {
     // Montrer un loading
@@ -27,7 +28,9 @@ class ParkingDetailScreen extends StatelessWidget {
               children: [
                 CircularProgressIndicator(color: AppColors.blue),
                 SizedBox(height: 16),
-                Text('Calcul de l\'itinéraire...', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                Text('Calcul de l\'itinéraire...',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -158,7 +161,8 @@ class ParkingDetailScreen extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.star_border, size: 18, color: Color(0xFFFFA000)),
+                const Icon(Icons.star_border,
+                    size: 18, color: Color(0xFFFFA000)),
                 const SizedBox(width: 4),
                 Text(
                   parking.rating.toString(),
@@ -181,7 +185,8 @@ class ParkingDetailScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          Icon(Icons.navigation_outlined, size: 16, color: Colors.grey.shade500),
+          Icon(Icons.navigation_outlined,
+              size: 16, color: Colors.grey.shade500),
           const SizedBox(width: 4),
           Text(
             '1.2 km',
@@ -241,7 +246,8 @@ class ParkingDetailScreen extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              const Icon(Icons.local_parking, size: 18, color: AppColors.textDark),
+              const Icon(Icons.local_parking,
+                  size: 18, color: AppColors.textDark),
               const SizedBox(width: 6),
               Text(
                 '${parking.pricePerHour.toInt()} DA',
@@ -289,7 +295,8 @@ class ParkingDetailScreen extends StatelessWidget {
             runSpacing: 10,
             children: parking.equipments.map((equip) {
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(14),
@@ -343,7 +350,8 @@ class ParkingDetailScreen extends StatelessWidget {
             child: OutlinedButton.icon(
               onPressed: () {
                 if (!isAuthenticated) {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+                  Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const LoginScreen()));
                 } else {
                   Navigator.push(
                     context,
@@ -380,7 +388,8 @@ class ParkingDetailScreen extends StatelessWidget {
             child: ElevatedButton.icon(
               onPressed: () {
                 if (!isAuthenticated) {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+                  Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const LoginScreen()));
                 } else {
                   _navigateToParking(context);
                 }

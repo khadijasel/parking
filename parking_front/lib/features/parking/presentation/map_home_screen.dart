@@ -12,7 +12,8 @@ import 'parking_detail_screen.dart';
 class MapHomeScreen extends StatefulWidget {
   final Parking? autoNavigateParking;
   final bool isAuthenticated;
-  const MapHomeScreen({super.key, this.autoNavigateParking, this.isAuthenticated = false});
+  const MapHomeScreen(
+      {super.key, this.autoNavigateParking, this.isAuthenticated = false});
 
   @override
   State<MapHomeScreen> createState() => _MapHomeScreenState();
@@ -50,7 +51,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     final loc = await LocationService.getCurrentLocation();
     if (mounted) {
       setState(() {
-        _userLocation = loc ?? const LatLng(34.8828, -1.3147); // Fallback: centre Tlemcen
+        _userLocation =
+            loc ?? const LatLng(34.8828, -1.3147); // Fallback: centre Tlemcen
       });
       if (widget.autoNavigateParking != null && _userLocation != null) {
         _startNavigation(widget.autoNavigateParking!);
@@ -86,7 +88,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
 
       // Ajuster la vue pour montrer tout l'itinéraire
       if (route.isNotEmpty) {
-        final bounds = LatLngBounds.fromPoints([_userLocation!, parking.location]);
+        final bounds =
+            LatLngBounds.fromPoints([_userLocation!, parking.location]);
         _mapController.fitCamera(
           CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(80)),
         );
@@ -123,7 +126,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
           if (!_isNavigating) _buildSearchOverlay(),
           _buildMapControls(),
           if (_isNavigating) _buildNavigationBar(),
-          if (_selectedParking != null && !_isNavigating) _buildParkingPreview(),
+          if (_selectedParking != null && !_isNavigating)
+            _buildParkingPreview(),
           if (_loadingRoute) _buildLoadingOverlay(),
         ],
       ),
@@ -256,10 +260,13 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                     child: TextField(
                       decoration: InputDecoration(
                         hintText: 'Rechercher à Tlemcen...',
-                        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 15),
-                        prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                        hintStyle: TextStyle(
+                            color: Colors.grey.shade400, fontSize: 15),
+                        prefixIcon:
+                            const Icon(Icons.search, color: Colors.grey),
                         border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 14),
                       ),
                     ),
                   ),
@@ -304,7 +311,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                       });
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
                         color: isActive ? AppColors.blue : Colors.white,
                         borderRadius: BorderRadius.circular(20),
@@ -328,14 +336,16 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                           Text(
                             filter['label'] as String,
                             style: TextStyle(
-                              color: isActive ? Colors.white : AppColors.textDark,
+                              color:
+                                  isActive ? Colors.white : AppColors.textDark,
                               fontWeight: FontWeight.w600,
                               fontSize: 13,
                             ),
                           ),
                           if (isActive) ...[
                             const SizedBox(width: 4),
-                            const Icon(Icons.close, size: 14, color: Colors.white),
+                            const Icon(Icons.close,
+                                size: 14, color: Colors.white),
                           ],
                         ],
                       ),
@@ -353,9 +363,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
   Widget _buildMapControls() {
     return Positioned(
       right: 16,
-      bottom: _isNavigating
-          ? 150
-          : (_selectedParking != null ? 280 : 40),
+      bottom: _isNavigating ? 150 : (_selectedParking != null ? 280 : 40),
       child: Column(
         children: [
           _buildControlButton(Icons.add, () {
@@ -439,7 +447,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                     color: AppColors.blue.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Icon(Icons.navigation_rounded, color: AppColors.blue),
+                  child: const Icon(Icons.navigation_rounded,
+                      color: AppColors.blue),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -457,22 +466,26 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          Icon(Icons.access_time, size: 14, color: Colors.grey.shade500),
+                          Icon(Icons.access_time,
+                              size: 14, color: Colors.grey.shade500),
                           const SizedBox(width: 4),
                           Text(
                             _routeDurationMin != null
                                 ? '${_routeDurationMin!.toStringAsFixed(0)} min'
                                 : '...',
-                            style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                            style: TextStyle(
+                                fontSize: 13, color: Colors.grey.shade600),
                           ),
                           const SizedBox(width: 12),
-                          Icon(Icons.straighten, size: 14, color: Colors.grey.shade500),
+                          Icon(Icons.straighten,
+                              size: 14, color: Colors.grey.shade500),
                           const SizedBox(width: 4),
                           Text(
                             _routeDistanceKm != null
                                 ? '${_routeDistanceKm!.toStringAsFixed(1)} km'
                                 : '...',
-                            style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                            style: TextStyle(
+                                fontSize: 13, color: Colors.grey.shade600),
                           ),
                         ],
                       ),
@@ -497,7 +510,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                  textStyle: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 15),
                 ),
               ),
             ),
@@ -549,7 +563,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                       end: Alignment.bottomRight,
                     ),
                   ),
-                  child: const Icon(Icons.local_parking, color: Colors.white, size: 36),
+                  child: const Icon(Icons.local_parking,
+                      color: Colors.white, size: 36),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -567,12 +582,14 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          Icon(Icons.location_on_outlined, size: 14, color: Colors.grey.shade500),
+                          Icon(Icons.location_on_outlined,
+                              size: 14, color: Colors.grey.shade500),
                           const SizedBox(width: 4),
                           Flexible(
                             child: Text(
                               '${parking.address} • $distanceText',
-                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey.shade600),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -584,7 +601,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                           spacing: 6,
                           children: parking.tags.map((tag) {
                             return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
                                 color: tag.contains('Élec')
                                     ? const Color(0xFFE8F5E9)
@@ -595,7 +613,9 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    tag.contains('Élec') ? Icons.bolt : Icons.tram,
+                                    tag.contains('Élec')
+                                        ? Icons.bolt
+                                        : Icons.tram,
                                     size: 12,
                                     color: tag.contains('Élec')
                                         ? AppColors.green
@@ -621,7 +641,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.bookmark_border, color: AppColors.textDark),
+                  icon: const Icon(Icons.bookmark_border,
+                      color: AppColors.textDark),
                   onPressed: () {},
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -664,7 +685,9 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                     final result = await Navigator.push<Map<String, dynamic>>(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => ParkingDetailScreen(parking: parking, isAuthenticated: widget.isAuthenticated),
+                        builder: (_) => ParkingDetailScreen(
+                            parking: parking,
+                            isAuthenticated: widget.isAuthenticated),
                       ),
                     );
                     if (result != null && result['navigate'] == true) {
@@ -675,19 +698,25 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.blue,
                     side: const BorderSide(color: AppColors.blue, width: 1.5),
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 12, horizontal: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  child: const Text('Détails', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  child: const Text('Détails',
+                      style:
+                          TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                 ),
                 const SizedBox(width: 8),
                 // Bouton S'y rendre
                 ElevatedButton.icon(
                   onPressed: () {
                     if (!widget.isAuthenticated) {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+                      Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const LoginScreen()));
                     } else {
                       _startNavigation(parking);
                     }
@@ -698,11 +727,13 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                     backgroundColor: AppColors.blue,
                     foregroundColor: Colors.white,
                     elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 12, horizontal: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    textStyle: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 14),
                   ),
                 ),
               ],

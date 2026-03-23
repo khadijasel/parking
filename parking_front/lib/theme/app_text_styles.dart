@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 
 class AppTextStyles {
-
   /// Grand titre (Dashboard, Pages)
   static const title = TextStyle(
     fontSize: 24,

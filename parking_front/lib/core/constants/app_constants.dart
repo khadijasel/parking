@@ -4,7 +4,8 @@ class AppConstants {
 
   // App info
   static const String appName = 'SmartPark';
-  static const String appTagline = 'Accédez à votre espace stationnement urbain';
+  static const String appTagline =
+      'Accédez à votre espace stationnement urbain';
 
   // Validation patterns
   static const String emailPattern = r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$';

@@ -5,7 +5,8 @@ import 'package:latlong2/latlong.dart';
 class RoutingService {
   /// Appelle l'API OSRM (gratuite) pour obtenir l'itinéraire en voiture.
   /// Retourne une liste de points [LatLng] représentant le chemin.
-  static Future<List<LatLng>> getRoute(LatLng origin, LatLng destination) async {
+  static Future<List<LatLng>> getRoute(
+      LatLng origin, LatLng destination) async {
     final url = Uri.parse(
       'https://router.project-osrm.org/route/v1/driving/'
       '${origin.longitude},${origin.latitude};'
@@ -37,7 +38,8 @@ class RoutingService {
   }
 
   /// Extrait la durée estimée (en minutes) et la distance (en km).
-  static Future<Map<String, double>?> getRouteInfo(LatLng origin, LatLng destination) async {
+  static Future<Map<String, double>?> getRouteInfo(
+      LatLng origin, LatLng destination) async {
     final url = Uri.parse(
       'https://router.project-osrm.org/route/v1/driving/'
       '${origin.longitude},${origin.latitude};'

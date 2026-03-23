@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
 // ─── Constantes locales ─────────────────────────────────────────────────────
-const _kBg       = Color(0xFFF4F7FC);
-const _kDark     = Color(0xFF1A1A2E);
-const _kMid      = Color(0xFF8A9BB5);
-const _kBlue     = Color(0xFF4A90E2);
-const _kGreen    = Color(0xFF2ECC71);
-const _kGreenBg  = Color(0xFFE8F5E9);
-const _kBlueBg   = Color(0xFFEAF1FB);
+const _kBg = Color(0xFFF4F7FC);
+const _kDark = Color(0xFF1A1A2E);
+const _kMid = Color(0xFF8A9BB5);
+const _kBlue = Color(0xFF4A90E2);
+const _kGreen = Color(0xFF2ECC71);
+const _kGreenBg = Color(0xFFE8F5E9);
+const _kBlueBg = Color(0xFFEAF1FB);
 
 // ─── Modèle simplifié ───────────────────────────────────────────────────────
 enum _SessionStatus { enCours, termine }
@@ -72,12 +72,10 @@ class ParkingHistoryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<_ParkingSession> enCours = _kSessions
-        .where((s) => s.status == _SessionStatus.enCours)
-        .toList();
-    final List<_ParkingSession> terminees = _kSessions
-        .where((s) => s.status == _SessionStatus.termine)
-        .toList();
+    final List<_ParkingSession> enCours =
+        _kSessions.where((s) => s.status == _SessionStatus.enCours).toList();
+    final List<_ParkingSession> terminees =
+        _kSessions.where((s) => s.status == _SessionStatus.termine).toList();
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -93,13 +91,15 @@ class ParkingHistoryScreen extends StatelessWidget {
               color: _kBg,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: _kDark),
+            child: const Icon(Icons.arrow_back_ios_new_rounded,
+                size: 18, color: _kDark),
           ),
         ),
         centerTitle: true,
         title: const Text(
           'Historique',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _kDark),
+          style: TextStyle(
+              fontSize: 18, fontWeight: FontWeight.w700, color: _kDark),
         ),
         actions: [
           Container(
@@ -110,7 +110,8 @@ class ParkingHistoryScreen extends StatelessWidget {
               color: _kBg,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.filter_list_rounded, size: 20, color: _kDark),
+            child:
+                const Icon(Icons.filter_list_rounded, size: 20, color: _kDark),
           ),
         ],
       ),
@@ -124,9 +125,9 @@ class ParkingHistoryScreen extends StatelessWidget {
               const _SectionTitle(title: 'EN COURS'),
               const SizedBox(height: 12),
               ...enCours.map((s) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _ActiveSessionCard(session: s),
-              )),
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _ActiveSessionCard(session: s),
+                  )),
               const SizedBox(height: 12),
             ],
 
@@ -135,9 +136,9 @@ class ParkingHistoryScreen extends StatelessWidget {
               const _SectionTitle(title: 'TERMINÉES'),
               const SizedBox(height: 12),
               ...terminees.map((s) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _CompletedSessionCard(session: s),
-              )),
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _CompletedSessionCard(session: s),
+                  )),
             ],
           ],
         ),
@@ -223,7 +224,8 @@ class _ActiveSessionCard extends StatelessWidget {
             children: [
               _buildInfoColumn('DÉBUT', session.dateHeure),
               const SizedBox(width: 40),
-              _buildInfoColumn('DURÉE ACTUELLE', session.duree, valueColor: _kBlue),
+              _buildInfoColumn('DURÉE ACTUELLE', session.duree,
+                  valueColor: _kBlue),
             ],
           ),
           const SizedBox(height: 14),
@@ -262,11 +264,13 @@ class _ActiveSessionCard extends StatelessWidget {
                   backgroundColor: _kBlue,
                   foregroundColor: Colors.white,
                   elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  textStyle: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 14),
                 ),
               ),
             ],

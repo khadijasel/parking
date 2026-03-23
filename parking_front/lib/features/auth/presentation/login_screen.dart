@@ -45,7 +45,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       // TODO: Implémenter la logique d'authentification via le service
       await Future.delayed(const Duration(seconds: 2));
-      
+
       // TODO: Naviguer vers l'écran principal après connexion réussie
     } catch (e) {
       // TODO: Gérer les erreurs avec un SnackBar ou Dialog
