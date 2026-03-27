@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:parking_front/features/main/main_screen.dart';
+import 'package:parking_front/features/parking/presentation/map_home_screen.dart';
 
 // ════════════════════════════════════════════════════════════
 //  COULEURS LOCALES SPLASH (séparées pour pas polluer AppColors)
@@ -120,12 +120,12 @@ class _SplashScreenState extends State<SplashScreen>
     await Future.delayed(const Duration(milliseconds: 2800));
 
     if (mounted) {
-      // ✅ Navigation vers l'écran passé en paramètre, sinon MainScreen par défaut
+      // ✅ Navigation vers l'écran passé en paramètre, sinon MapHomeScreen par défaut
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
           pageBuilder: (_, animation, __) =>
-              widget.nextRoute ?? const MainScreen(),
+              widget.nextRoute ?? const MapHomeScreen(),
           transitionsBuilder: (_, animation, __, child) =>
               FadeTransition(opacity: animation, child: child),
           transitionDuration: const Duration(milliseconds: 500),

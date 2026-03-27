@@ -361,7 +361,9 @@ class _ActiveCard extends StatelessWidget {
                     MaterialPageRoute(
                       // Remplace 'ParkingDetailScreen()' par le nom de ta page Détails
                       builder: (context) => ParkingDetailScreen(
-                          parking: ParkingData.parkings.first),
+                        parking: ParkingData.parkings.first,
+                        isAuthenticated: true,
+                      ),
                     ),
                   );
                 },

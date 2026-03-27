@@ -1,18 +1,46 @@
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 import '../../../theme/app_colors.dart';
 import '../../auth/presentation/login_screen.dart';
+import '../../reservation/presentation/screens/reservation_screen.dart';
 import '../models/parking.dart';
 
 class ParkingDetailScreen extends StatelessWidget {
   final Parking parking;
+  final bool isAuthenticated;
+  final LatLng? userLocation;
 
-  const ParkingDetailScreen({super.key, required this.parking});
+  const ParkingDetailScreen({
+    super.key,
+    required this.parking,
+    this.isAuthenticated = false,
+    this.userLocation,
+  });
 
   void _navigateToLogin(BuildContext context) {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const LoginScreen()),
     );
+  }
+
+  void _navigateToReservation(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReservationScreen(
+          parkingName: parking.name,
+          parkingAddress: parking.address,
+          equipments: parking.equipments,
+        ),
+      ),
+    );
+  }
+
+  String _distanceText() {
+    if (userLocation == null) return '1.2 km';
+    final d = const Distance().as(LengthUnit.Kilometer, userLocation!, parking.location);
+    return '${d.toStringAsFixed(1)} km';
   }
 
   @override
@@ -146,7 +174,7 @@ class ParkingDetailScreen extends StatelessWidget {
           Icon(Icons.navigation_outlined, size: 16, color: Colors.grey.shade500),
           const SizedBox(width: 4),
           Text(
-            '1.2 km',
+            _distanceText(),
             style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
           ),
           const SizedBox(width: 16),
@@ -303,7 +331,13 @@ class ParkingDetailScreen extends StatelessWidget {
           Expanded(
             flex: 1,
             child: OutlinedButton.icon(
-              onPressed: () => _navigateToLogin(context),
+              onPressed: () {
+                if (isAuthenticated) {
+                  _navigateToReservation(context);
+                  return;
+                }
+                _navigateToLogin(context);
+              },
               icon: const Icon(Icons.calendar_today_outlined, size: 18),
               label: const Text('Réserver'),
               style: OutlinedButton.styleFrom(
@@ -325,7 +359,13 @@ class ParkingDetailScreen extends StatelessWidget {
           Expanded(
             flex: 2,
             child: ElevatedButton.icon(
-              onPressed: () => _navigateToLogin(context),
+              onPressed: () {
+                if (isAuthenticated) {
+                  Navigator.pop(context, 'navigate');
+                  return;
+                }
+                _navigateToLogin(context);
+              },
               icon: const Icon(Icons.diamond_outlined, size: 18),
               label: const Text("S'y rendre"),
               style: ElevatedButton.styleFrom(

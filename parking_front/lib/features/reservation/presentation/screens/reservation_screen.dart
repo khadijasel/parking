@@ -13,8 +13,7 @@ enum _DurationType { courte, journee, semaine, mois }
 
 /// Écran Réservation — fidèle à la maquette image 3
 /// Logique métier :
-///  • Courte durée  → confirmation directe, place garantie 30 min gratuitement
-///  • Longue durée  → paiement acompte 200 DA requis avant confirmation
+///  • Confirmation directe, place garantie 30 min gratuitement
 class ReservationScreen extends StatefulWidget {
   final String parkingName;
   final String parkingAddress;
@@ -75,17 +74,11 @@ class _ReservationScreenState extends State<ReservationScreen> {
 
   // ─── Action bouton ───────────────────────────────────────────────────────
   Future<void> _handleConfirm() async {
-    if (_isCourte) {
-      // Courte durée : confirmation directe
-      _showConfirmDialog(
-        title   : '✅ Réservation confirmée',
-        message : 'Votre place est réservée gratuitement pendant 30 minutes.',
-        color   : _kGreen,
-      );
-    } else {
-      // Longue durée : paiement acompte 200 DA
-      _showPaymentDialog();
-    }
+    _showConfirmDialog(
+      title   : '✅ Réservation confirmée',
+      message : 'Votre place est réservée gratuitement pendant 30 minutes.',
+      color   : _kGreen,
+    );
   }
 
   void _showConfirmDialog({
@@ -309,9 +302,8 @@ class _ReservationScreenState extends State<ReservationScreen> {
                   ? const SizedBox(width: 22, height: 22,
                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
                   : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      Text(
-                        _isCourte ? 'Confirmer la réservation' : 'Payer 200 DA & Confirmer',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                      const Text('Confirmer la réservation',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                       const SizedBox(width: 8),
                       const Icon(Icons.arrow_forward_rounded, size: 20),
                     ]),

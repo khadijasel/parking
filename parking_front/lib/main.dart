@@ -1,15 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:parking_front/features/profile/presentation/screens/my_reservations_screen.dart';
-import 'package:parking_front/features/reservation/presentation/screens/reservation_screen.dart';
-import 'package:parking_front/features/scanner/presentation/screens/scanner_screen.dart';
 import 'features/main/main_screen.dart';
 import 'theme/app_theme.dart';
 import 'features/splash/presentation/screens/splash_screen.dart';
-import 'features/parking/presentation/map_home_screen.dart';
-import 'features/payment/presentation/screens/payment_screen.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const ProviderScope(child: SmartParkApp()));
 }
 

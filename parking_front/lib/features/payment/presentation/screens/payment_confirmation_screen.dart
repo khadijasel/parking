@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:parking_front/features/home/presentation/screens/home_screen.dart';
+import 'package:parking_front/features/parking/presentation/map_home_screen.dart';
 import '../../data/mock_payment_service.dart';
 
 const _kBlue     = Color(0xFF4A90E2);
@@ -83,7 +83,7 @@ class PaymentConfirmationScreen extends StatelessWidget {
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const HomeScreen(),
+                    builder: (_) => const MapHomeScreen(),
                   ),
                 );
               },
@@ -107,7 +107,7 @@ class PaymentConfirmationScreen extends StatelessWidget {
             child: OutlinedButton(
               onPressed: () => Navigator.pushReplacement(
                 context,
-                MaterialPageRoute(builder: (_) => const HomeScreen()),
+                MaterialPageRoute(builder: (_) => const MapHomeScreen()),
               ),
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: _kBorder),
