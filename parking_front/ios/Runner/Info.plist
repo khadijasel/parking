@@ -45,5 +45,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SmartPark utilise votre localisation pour proposer les parkings les plus proches et afficher l itineraire.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SmartPark utilise votre localisation pour guider vers le parking selectionne.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>SmartPark utilise votre localisation pour guider vers le parking selectionne.</string>
 </dict>
 </plist>
