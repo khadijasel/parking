@@ -3,18 +3,23 @@ import 'package:latlong2/latlong.dart';
 import '../../../theme/app_colors.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../../reservation/presentation/screens/reservation_screen.dart';
+import 'map_home_screen.dart';
+import '../../main/main_screen.dart';
 import '../models/parking.dart';
 
 class ParkingDetailScreen extends StatelessWidget {
   final Parking parking;
   final bool isAuthenticated;
   final LatLng? userLocation;
+  // ✅ NOUVEAU : masque le bouton "Réserver" quand on vient de Mes Réservations
+  final bool hideReserveButton;
 
   const ParkingDetailScreen({
     super.key,
     required this.parking,
     this.isAuthenticated = false,
     this.userLocation,
+    this.hideReserveButton = false, // false par défaut = comportement normal
   });
 
   void _navigateToLogin(BuildContext context) {
@@ -39,7 +44,8 @@ class ParkingDetailScreen extends StatelessWidget {
 
   String _distanceText() {
     if (userLocation == null) return '1.2 km';
-    final d = const Distance().as(LengthUnit.Kilometer, userLocation!, parking.location);
+    final d = const Distance()
+        .as(LengthUnit.Kilometer, userLocation!, parking.location);
     return '${d.toStringAsFixed(1)} km';
   }
 
@@ -78,26 +84,21 @@ class ParkingDetailScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Parking image
                   _buildImage(),
                   const SizedBox(height: 20),
-                  // Name & rating
                   _buildHeader(),
                   const SizedBox(height: 8),
-                  // Distance & hours
                   _buildSubInfo(),
                   const SizedBox(height: 20),
-                  // Availability card
                   _buildAvailabilityCard(),
                   const SizedBox(height: 24),
-                  // Equipments
                   _buildEquipments(),
                   const SizedBox(height: 24),
                 ],
               ),
             ),
           ),
-          // Bottom buttons
+          // ✅ Boutons bas : adaptatifs selon hideReserveButton
           _buildBottomButtons(context),
         ],
       ),
@@ -148,7 +149,8 @@ class ParkingDetailScreen extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.star_border, size: 18, color: Color(0xFFFFA000)),
+                const Icon(Icons.star_border,
+                    size: 18, color: Color(0xFFFFA000)),
                 const SizedBox(width: 4),
                 Text(
                   parking.rating.toString(),
@@ -171,7 +173,8 @@ class ParkingDetailScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          Icon(Icons.navigation_outlined, size: 16, color: Colors.grey.shade500),
+          Icon(Icons.navigation_outlined,
+              size: 16, color: Colors.grey.shade500),
           const SizedBox(width: 4),
           Text(
             _distanceText(),
@@ -231,7 +234,8 @@ class ParkingDetailScreen extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              const Icon(Icons.local_parking, size: 18, color: AppColors.textDark),
+              const Icon(Icons.local_parking,
+                  size: 18, color: AppColors.textDark),
               const SizedBox(width: 6),
               Text(
                 '${parking.pricePerHour.toInt()} DA',
@@ -279,7 +283,8 @@ class ParkingDetailScreen extends StatelessWidget {
             runSpacing: 10,
             children: parking.equipments.map((equip) {
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(14),
@@ -327,46 +332,63 @@ class ParkingDetailScreen extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Réserver button (outlined)
-          Expanded(
-            flex: 1,
-            child: OutlinedButton.icon(
-              onPressed: () {
-                if (isAuthenticated) {
-                  _navigateToReservation(context);
-                  return;
-                }
-                _navigateToLogin(context);
-              },
-              icon: const Icon(Icons.calendar_today_outlined, size: 18),
-              label: const Text('Réserver'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.blue,
-                side: const BorderSide(color: AppColors.blue, width: 1.5),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                textStyle: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 15,
+          // ✅ Bouton Réserver : masqué si hideReserveButton = true
+          if (!hideReserveButton) ...[
+            Expanded(
+              flex: 1,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  if (isAuthenticated) {
+                    _navigateToReservation(context);
+                    return;
+                  }
+                  _navigateToLogin(context);
+                },
+                icon: const Icon(Icons.calendar_today_outlined, size: 18),
+                label: const Text('Réserver'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.blue,
+                  side: const BorderSide(color: AppColors.blue, width: 1.5),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          // S'y rendre button (filled)
+            const SizedBox(width: 12),
+          ],
+          // Bouton S'y rendre : toujours visible
           Expanded(
-            flex: 2,
+            flex: hideReserveButton ? 1 : 2,
             child: ElevatedButton.icon(
               onPressed: () {
-                if (isAuthenticated) {
-                  Navigator.pop(context, 'navigate');
-                  return;
+                if (!isAuthenticated) {
+                  _navigateToLogin(context);
+                } else {
+                  if (hideReserveButton) {
+                    // On vient de "Mes réservations", on navigue vers la carte principale
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const MainScreen(
+                          initialIndex: 1, // Onglet Map
+                          isAuthenticated: true,
+                        ),
+                      ),
+                      (route) => false,
+                    );
+                  } else {
+                    // On vient de la carte, on retourne le mot 'navigate' pour tracer l'itinéraire
+                    Navigator.pop(context, 'navigate');
+                  }
                 }
-                _navigateToLogin(context);
               },
-              icon: const Icon(Icons.diamond_outlined, size: 18),
+              icon: const Icon(Icons.navigation_rounded, size: 18),
               label: const Text("S'y rendre"),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.blue,

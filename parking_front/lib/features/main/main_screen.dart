@@ -4,7 +4,7 @@ import '../../../theme/app_colors.dart';
 import '../home/presentation/screens/home_no_session_screen.dart';
 import '../parking/presentation/map_home_screen.dart';
 import '../profile/presentation/screens/profile_screen.dart';
-//import '../scanner/presentation/scanner_screen.dart';
+import '../scanner/presentation/screens/scanner_screen.dart';
 
 const _kLabels = ['ACCUEIL', 'CARTE', 'SCANNER', 'PROFIL'];
 const _kIcons = [
@@ -22,7 +22,14 @@ const _kActiveIcons = [
 
 class MainScreen extends StatefulWidget {
   final int initialIndex;
-  const MainScreen({super.key, this.initialIndex = 0});
+  final bool isAuthenticated;
+  
+  const MainScreen({
+    super.key, 
+    this.initialIndex = 0,
+    this.isAuthenticated = false,
+  });
+
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
@@ -47,8 +54,9 @@ class _MainScreenState extends State<MainScreen> {
       case 0:
         return HomeNoSessionScreen(onSearchTap: () => _onTap(1));
       case 1:
-        return const MapHomeScreen(isAuthenticated: true);
-      //case 2: return const ScannerScreen();
+        return MapHomeScreen(isAuthenticated: widget.isAuthenticated);
+      case 2:
+        return const ScannerScreen();
       case 3:
         return const ProfileScreen();
       default:

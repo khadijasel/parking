@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../features/home/presentation/screens/home_screen.dart';
 
 // ─── Constantes locales ─────────────────────────────────────────────────────
 const _kBg = Color(0xFFF4F7FC);
@@ -257,7 +258,14 @@ class _ActiveSessionCard extends StatelessWidget {
                 ],
               ),
               ElevatedButton.icon(
-                onPressed: () {},
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const HomeScreen(),
+                    ),
+                  );
+                },
                 icon: const Icon(Icons.open_in_new_rounded, size: 16),
                 label: const Text('Gérer'),
                 style: ElevatedButton.styleFrom(
