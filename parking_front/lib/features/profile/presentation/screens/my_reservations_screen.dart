@@ -6,8 +6,6 @@ import '../../../parking/data/parking_data.dart';
 
 // ════════════════════════════════════════════════════════════
 //  MY RESERVATIONS SCREEN
-//  Chemin : lib/features/reservation/presentation/screens/
-//           my_reservations_screen.dart
 // ════════════════════════════════════════════════════════════
 
 const _kBlue = Color(0xFF4A90E2);
@@ -21,7 +19,6 @@ const _kRedBg = Color(0xFFFFF0EE);
 
 // ── Modèle réservation ────────────────────────────────────────────────────────
 enum ReservationStatus { active, terminated }
-
 enum ReservationType { mensuel, hebdomadaire, journalier, courteDuree }
 
 class ReservationModel {
@@ -32,9 +29,9 @@ class ReservationModel {
   final ReservationType type;
   final ReservationStatus status;
   final double montant;
-  final DateTime? expiresAt; // pour les actives (compte à rebours)
-  final DateTime? startDate; // pour les terminées
-  final DateTime? endDate; // pour les terminées
+  final DateTime? expiresAt;
+  final DateTime? startDate;
+  final DateTime? endDate;
   final String? imagePath;
 
   const ReservationModel({
@@ -105,7 +102,6 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
   @override
   void initState() {
     super.initState();
-    // Rafraîchir chaque seconde pour le compte à rebours
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -147,28 +143,25 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
         ),
         title: const Text('Mes Réservations',
             style: TextStyle(
-                fontWeight: FontWeight.w700, fontSize: 18, color: _kTextDark)),
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+                color: _kTextDark)),
         centerTitle: true,
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
-          // ── RÉSERVATIONS EN COURS ─────────────────────────
           if (_active.isNotEmpty) ...[
             _sectionTitle('RÉSERVATIONS EN COURS'),
             const SizedBox(height: 10),
             ..._active.map((r) => _ActiveCard(reservation: r)),
             const SizedBox(height: 20),
           ],
-
-          // ── RÉSERVATIONS TERMINÉES ────────────────────────
           if (_terminated.isNotEmpty) ...[
             _sectionTitle('RÉSERVATIONS TERMINÉES'),
             const SizedBox(height: 10),
             ..._terminated.map((r) => _TerminatedCard(reservation: r)),
           ],
-
-          // ── Vide ──────────────────────────────────────────
           if (_active.isEmpty && _terminated.isEmpty) _emptyState(),
         ],
       ),
@@ -206,7 +199,7 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
 }
 
 // ════════════════════════════════════════════════════════════
-//  CARTE RÉSERVATION ACTIVE (avec compte à rebours)
+//  CARTE RÉSERVATION ACTIVE
 // ════════════════════════════════════════════════════════════
 
 class _ActiveCard extends StatelessWidget {
@@ -245,45 +238,47 @@ class _ActiveCard extends StatelessWidget {
         // ── En-tête parking ──────────────────────────────────
         Padding(
           padding: const EdgeInsets.all(16),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // Image parking
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                width: 64,
-                height: 64,
-                color: const Color(0xFF2D3748),
-                child: const Icon(Icons.local_parking_rounded,
-                    color: Colors.white, size: 32),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(reservation.parkingName,
-                        style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: _kTextDark)),
-                    const SizedBox(height: 2),
-                    Text(reservation.spotLabel,
-                        style: const TextStyle(fontSize: 12, color: _kTextMid)),
-                    const SizedBox(height: 4),
-                    Row(children: [
-                      const Icon(Icons.location_on_outlined,
-                          size: 13, color: _kBlue),
-                      const SizedBox(width: 3),
-                      Text(reservation.location,
-                          style: const TextStyle(
-                              fontSize: 12,
-                              color: _kBlue,
-                              fontWeight: FontWeight.w500)),
-                    ]),
-                  ]),
-            ),
-          ]),
+          child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    width: 64,
+                    height: 64,
+                    color: const Color(0xFF2D3748),
+                    child: const Icon(Icons.local_parking_rounded,
+                        color: Colors.white, size: 32),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(reservation.parkingName,
+                            style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: _kTextDark)),
+                        const SizedBox(height: 2),
+                        Text(reservation.spotLabel,
+                            style: const TextStyle(
+                                fontSize: 12, color: _kTextMid)),
+                        const SizedBox(height: 4),
+                        Row(children: [
+                          const Icon(Icons.location_on_outlined,
+                              size: 13, color: _kBlue),
+                          const SizedBox(width: 3),
+                          Text(reservation.location,
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  color: _kBlue,
+                                  fontWeight: FontWeight.w500)),
+                        ]),
+                      ]),
+                ),
+              ]),
         ),
 
         // ── Compte à rebours ──────────────────────────────────
@@ -313,7 +308,6 @@ class _ActiveCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              // Digits HH:MM:SS
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -354,15 +348,15 @@ class _ActiveCard extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: OutlinedButton.icon(
-                // ✅ MODIFICATION ICI
+                // ✅ CORRECTION : ouvre ParkingDetailScreen SANS bouton Réserver
                 onPressed: () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      // Remplace 'ParkingDetailScreen()' par le nom de ta page Détails
                       builder: (context) => ParkingDetailScreen(
                         parking: ParkingData.parkings.first,
                         isAuthenticated: true,
+                        hideReserveButton: true, // ← cache le bouton Réserver
                       ),
                     ),
                   );
@@ -420,7 +414,9 @@ class _ActiveCard extends StatelessWidget {
         padding: EdgeInsets.only(bottom: 16),
         child: Text(' : ',
             style: TextStyle(
-                fontSize: 20, fontWeight: FontWeight.w300, color: _kTextMid)),
+                fontSize: 20,
+                fontWeight: FontWeight.w300,
+                color: _kTextMid)),
       );
 
   void _confirmCancel(BuildContext context) {
@@ -428,15 +424,18 @@ class _ActiveCard extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         contentPadding: const EdgeInsets.all(24),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-                color: _kRedBg, borderRadius: BorderRadius.circular(16)),
-            child: const Icon(Icons.cancel_outlined, color: _kRed, size: 28),
+                color: _kRedBg,
+                borderRadius: BorderRadius.circular(16)),
+            child: const Icon(Icons.cancel_outlined,
+                color: _kRed, size: 28),
           ),
           const SizedBox(height: 14),
           const Text('Annuler la réservation ?',
@@ -448,7 +447,8 @@ class _ActiveCard extends StatelessWidget {
           const Text(
             'Cette action est irréversible.\nVotre place sera libérée.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: _kTextMid, height: 1.5),
+            style:
+                TextStyle(fontSize: 13, color: _kTextMid, height: 1.5),
           ),
           const SizedBox(height: 20),
           Row(children: [
@@ -463,7 +463,8 @@ class _ActiveCard extends StatelessWidget {
                 ),
                 child: const Text('Non, garder',
                     style: TextStyle(
-                        color: _kTextDark, fontWeight: FontWeight.w600)),
+                        color: _kTextDark,
+                        fontWeight: FontWeight.w600)),
               ),
             ),
             const SizedBox(width: 10),
@@ -482,7 +483,8 @@ class _ActiveCard extends StatelessWidget {
                 ),
                 child: const Text('Oui, annuler',
                     style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w600)),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600)),
               ),
             ),
           ]),
@@ -539,7 +541,6 @@ class _TerminatedCard extends StatelessWidget {
       ),
       padding: const EdgeInsets.all(16),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Icône P
         Container(
           width: 44,
           height: 44,
@@ -550,33 +551,39 @@ class _TerminatedCard extends StatelessWidget {
           child: const Center(
             child: Text('P',
                 style: TextStyle(
-                    fontWeight: FontWeight.w800, color: _kBlue, fontSize: 18)),
+                    fontWeight: FontWeight.w800,
+                    color: _kBlue,
+                    fontSize: 18)),
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(reservation.parkingName,
-                style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: _kTextDark)),
-            const SizedBox(height: 3),
-            Text(reservation.spotLabel,
-                style: const TextStyle(fontSize: 12, color: _kTextMid)),
-            const SizedBox(height: 3),
-            Text(
-              '${_fmt(reservation.startDate)} ${_fmtEnd(reservation.endDate)}',
-              style: const TextStyle(fontSize: 11, color: _kTextMid),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${(reservation.montant).toStringAsFixed(2).replaceAll('.', ',')} DA',
-              style: const TextStyle(
-                  fontSize: 15, fontWeight: FontWeight.w700, color: _kTextDark),
-            ),
-          ]),
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(reservation.parkingName,
+                    style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: _kTextDark)),
+                const SizedBox(height: 3),
+                Text(reservation.spotLabel,
+                    style: const TextStyle(
+                        fontSize: 12, color: _kTextMid)),
+                const SizedBox(height: 3),
+                Text(
+                  '${_fmt(reservation.startDate)} ${_fmtEnd(reservation.endDate)}',
+                  style: const TextStyle(fontSize: 11, color: _kTextMid),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${(reservation.montant).toStringAsFixed(2).replaceAll('.', ',')} DA',
+                  style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: _kTextDark),
+                ),
+              ]),
         ),
       ]),
     );

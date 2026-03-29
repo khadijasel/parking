@@ -19,10 +19,11 @@ const _kTextDark = Color(0xFF1A1A2E);
 const _kTextMid  = Color(0xFF8A9BB5);
 
 class PaymentScreen extends ConsumerStatefulWidget {
-  final String sessionId;
-  final String userId;
-  final String parkingName;
-  final int    dureeMinutes;
+  final String  sessionId;
+  final String  userId;
+  final String  parkingName;
+  final int     dureeMinutes;
+  final double? montantFixe;
 
   const PaymentScreen({
     super.key,
@@ -30,6 +31,7 @@ class PaymentScreen extends ConsumerStatefulWidget {
     required this.userId,
     required this.parkingName,
     required this.dureeMinutes,
+    this.montantFixe,
   });
 
   @override
@@ -75,8 +77,8 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
     super.dispose();
   }
 
-  double get _montant =>
-      MockPaymentService.calculerMontant(widget.dureeMinutes);
+  double get _montant => widget.montantFixe
+      ?? MockPaymentService.calculerMontant(widget.dureeMinutes);
 
   void _onStateChange(PaymentState? _, PaymentState next) {
     if (next.isSuccess && next.transaction != null) {
@@ -283,7 +285,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
         const SizedBox(height: 2),
         Text(widget.parkingName,
             style: const TextStyle(fontSize: 13, color: _kTextMid)),
-        Text(MockPaymentService.formaterDuree(widget.dureeMinutes),
+        Text(widget.montantFixe != null ? 'Acompte réservation' : MockPaymentService.formaterDuree(widget.dureeMinutes),
             style: const TextStyle(fontSize: 13,
                 fontWeight: FontWeight.w600, color: _kBlue)),
         const SizedBox(height: 14),

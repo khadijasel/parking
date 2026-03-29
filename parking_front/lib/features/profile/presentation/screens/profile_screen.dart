@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:parking_front/features/auth/presentation/login_screen.dart';
 import 'package:parking_front/features/profile/presentation/screens/my_reservations_screen.dart';
 import 'parking_history_screen.dart';
 import 'edit_profile_screen.dart';
@@ -155,7 +156,13 @@ class ProfileScreen extends StatelessWidget {
             iconColor: _kRed,
             title: 'Déconnexion',
             titleColor: _kRed,
-            onTap: () {},
+            onTap: () {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                (route) => false,
+              );
+            },
             showArrow: false,
             bgColor: _kRedBg,
           ),

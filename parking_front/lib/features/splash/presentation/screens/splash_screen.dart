@@ -268,7 +268,7 @@ class _SplashScreenState extends State<SplashScreen>
               Icon(Icons.location_on_outlined,
                   size: 16, color: _SplashColors.slate300),
               SizedBox(width: 6),
-              Text('ALGER, ALGÉRIE',
+              Text('ALGÉRIE',
                   style: TextStyle(
                       fontSize: 9,
                       fontWeight: FontWeight.w600,

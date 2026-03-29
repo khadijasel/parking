@@ -19,9 +19,9 @@ class _Session {
   final String spotLabel;
   final DateTime entryTime;
   final double tarifActuel;
-  final bool canFindCar; // nécessite scan
-  final bool canExit; // nécessite scan
-  final bool canPay; // dispo après 1h
+  final bool canFindCar;
+  final bool canExit;
+  final bool canPay;
 
   const _Session(this.canFindCar, this.canExit, this.canPay, {
     required this.parkingName,
@@ -40,7 +40,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Session simulée
   final _Session _session = _Session(
     false,
     false,
@@ -70,7 +69,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  // ── helpers ────────────────────────────────────────────────────────────────
   String get _hh => (_elapsedSec ~/ 3600).toString().padLeft(2, '0');
   String get _mm => ((_elapsedSec % 3600) ~/ 60).toString().padLeft(2, '0');
   String get _ss => (_elapsedSec % 60).toString().padLeft(2, '0');
@@ -104,7 +102,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -160,18 +157,18 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
-        // Avatar bouton
+        // ✅ CORRECTION : icône ticket/QR au lieu de profil
         GestureDetector(
           onTap: () {},
           child: Container(
             width: 46,
             height: 46,
-            decoration: const BoxDecoration(
-              color: Color(0xFFDDE3EE),
-              shape: BoxShape.circle,
+            decoration: BoxDecoration(
+              color: const Color(0xFFDDE3EE),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.person_outline_rounded,
-                color: _kBlue, size: 24),
+            child: const Icon(Icons.qr_code_2_rounded,
+                color: _kBlue, size: 26),
           ),
         ),
       ],
@@ -223,7 +220,6 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
         child: Column(
           children: [
-            // ── Digits HH:MM:SS ──────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -237,7 +233,6 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 24),
             const Divider(color: Color(0xFFF0F2F5), thickness: 1.5),
             const SizedBox(height: 18),
-            // ── Entrée + Total ────────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -280,7 +275,6 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 18),
             const Divider(color: Color(0xFFF0F2F5), thickness: 1.5),
             const SizedBox(height: 18),
-            // ── Place + Tarif ─────────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -340,7 +334,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-        // Underline bleue
         const SizedBox(height: 6),
         Container(
           width: 40,
@@ -457,7 +450,6 @@ class _ActionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Icône dans bulle
             Container(
               width: 44,
               height: 44,
@@ -471,7 +463,6 @@ class _ActionCard extends StatelessWidget {
                   size: 22, color: isActive ? Colors.white : _kTextMid),
             ),
             const Spacer(),
-            // Titre
             Text(
               title,
               style: TextStyle(
@@ -482,7 +473,6 @@ class _ActionCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 6),
-            // Sous-titre avec icône cadenas
             Row(children: [
               if (locked)
                 Icon(Icons.lock_outline_rounded,
