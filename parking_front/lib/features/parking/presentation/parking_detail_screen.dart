@@ -3,7 +3,6 @@ import 'package:latlong2/latlong.dart';
 import '../../../theme/app_colors.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../../reservation/presentation/screens/reservation_screen.dart';
-import 'map_home_screen.dart';
 import '../../main/main_screen.dart';
 import '../models/parking.dart';
 
@@ -11,6 +10,7 @@ class ParkingDetailScreen extends StatelessWidget {
   final Parking parking;
   final bool isAuthenticated;
   final LatLng? userLocation;
+  final bool directReservation;
   // ✅ NOUVEAU : masque le bouton "Réserver" quand on vient de Mes Réservations
   final bool hideReserveButton;
 
@@ -19,6 +19,7 @@ class ParkingDetailScreen extends StatelessWidget {
     required this.parking,
     this.isAuthenticated = false,
     this.userLocation,
+    this.directReservation = false,
     this.hideReserveButton = false, // false par défaut = comportement normal
   });
 
@@ -338,6 +339,10 @@ class ParkingDetailScreen extends StatelessWidget {
               flex: 1,
               child: OutlinedButton.icon(
                 onPressed: () {
+                  if (directReservation) {
+                    _navigateToReservation(context);
+                    return;
+                  }
                   if (isAuthenticated) {
                     _navigateToReservation(context);
                     return;
@@ -367,26 +372,33 @@ class ParkingDetailScreen extends StatelessWidget {
             flex: hideReserveButton ? 1 : 2,
             child: ElevatedButton.icon(
               onPressed: () {
-                if (!isAuthenticated) {
-                  _navigateToLogin(context);
-                } else {
-                  if (hideReserveButton) {
-                    // On vient de "Mes réservations", on navigue vers la carte principale
-                    Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const MainScreen(
-                          initialIndex: 1, // Onglet Map
-                          isAuthenticated: true,
-                        ),
-                      ),
-                      (route) => false,
-                    );
-                  } else {
-                    // On vient de la carte, on retourne le mot 'navigate' pour tracer l'itinéraire
-                    Navigator.pop(context, 'navigate');
+                if (hideReserveButton) {
+                  if (!isAuthenticated) {
+                    _navigateToLogin(context);
+                    return;
                   }
+                  // On vient de "Mes réservations", on navigue vers la carte principale
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const MainScreen(
+                        initialIndex: 1, // Onglet Map
+                        isAuthenticated: true,
+                      ),
+                    ),
+                    (route) => false,
+                  );
+                  return;
                 }
+
+                if (!isAuthenticated && !directReservation) {
+                  _navigateToLogin(context);
+                  return;
+                }
+
+                // Depuis la carte principale, on retourne l'action de navigation
+                // même si l'utilisateur n'est pas connecté.
+                Navigator.pop(context, 'navigate');
               },
               icon: const Icon(Icons.navigation_rounded, size: 18),
               label: const Text("S'y rendre"),

@@ -54,7 +54,10 @@ class _MainScreenState extends State<MainScreen> {
       case 0:
         return HomeNoSessionScreen(onSearchTap: () => _onTap(1));
       case 1:
-        return MapHomeScreen(isAuthenticated: widget.isAuthenticated);
+        return MapHomeScreen(
+          isAuthenticated: widget.isAuthenticated,
+          directReservationOnDetails: true,
+        );
       case 2:
         return const ScannerScreen();
       case 3:

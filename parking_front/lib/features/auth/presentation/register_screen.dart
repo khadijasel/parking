@@ -4,6 +4,8 @@ import '../../../core/widgets/app_logo.dart';
 import '../../../core/widgets/custom_text_field.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../../theme/app_colors.dart';
+import '../../main/main_screen.dart';
+import '../data/auth_repository.dart';
 
 /// Écran d'inscription SmartPark
 class RegisterScreen extends StatefulWidget {
@@ -18,9 +20,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _matriculeController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
       TextEditingController();
+  final AuthRepository _authRepository = AuthRepository();
 
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
@@ -31,6 +35,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _nameController.dispose();
     _matriculeController.dispose();
     _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -54,21 +59,43 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // TODO: Implémenter la logique d'inscription via le service
-      await Future.delayed(const Duration(seconds: 2));
+      await _authRepository.register(
+        name: _nameController.text.trim(),
+        email: _emailController.text.trim(),
+        phone: _phoneController.text.trim(),
+        matricule: _matriculeController.text.trim(),
+        password: _passwordController.text,
+        passwordConfirmation: _confirmPasswordController.text,
+      );
 
-      // TODO: Naviguer vers l'écran de connexion ou principal
-      if (mounted) {
-        Navigator.pop(context);
-      }
+      if (!mounted) return;
+      _goToMainScreen();
+    } on AuthException catch (error) {
+      _showError(error.message);
     } catch (e) {
-      // TODO: Gérer les erreurs avec un SnackBar ou Dialog
       debugPrint('Erreur d\'inscription: $e');
+      _showError('Inscription impossible pour le moment. Réessayez.');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  void _goToMainScreen() {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const MainScreen(isAuthenticated: true),
+      ),
+      (Route<dynamic> route) => false,
+    );
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   void _navigateToLogin() {
@@ -187,6 +214,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
         const SizedBox(height: AppConstants.paddingMedium),
         CustomTextField(
+          label: 'Téléphone',
+          hint: 'Ex: 0550123456',
+          prefixIcon: Icons.phone_outlined,
+          controller: _phoneController,
+          validator: _validatePhone,
+          keyboardType: TextInputType.phone,
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: AppConstants.paddingMedium),
+        CustomTextField(
           label: 'Mot de passe',
           hint: AppConstants.passwordHint,
           prefixIcon: Icons.lock_outline,
@@ -294,9 +331,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (value == null || value.isEmpty) {
       return 'Veuillez entrer votre mot de passe';
     }
-    if (value.length < 6) {
-      return 'Le mot de passe doit contenir au moins 6 caractères';
+    if (value.length < 8) {
+      return 'Le mot de passe doit contenir au moins 8 caractères';
     }
+    return null;
+  }
+
+  String? _validatePhone(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Veuillez entrer votre numéro de téléphone';
+    }
+
+    if (value.length < 8) {
+      return 'Veuillez entrer un numéro valide';
+    }
+
     return null;
   }
 

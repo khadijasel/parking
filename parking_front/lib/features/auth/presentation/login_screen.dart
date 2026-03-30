@@ -4,6 +4,8 @@ import '../../../core/widgets/app_logo.dart';
 import '../../../core/widgets/custom_text_field.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../../theme/app_colors.dart';
+import '../../main/main_screen.dart';
+import '../data/auth_repository.dart';
 import 'register_screen.dart';
 
 /// Écran de connexion SmartPark
@@ -19,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _matriculeController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final AuthRepository _authRepository = AuthRepository();
 
   bool _isPasswordVisible = false;
   bool _isLoading = false;
@@ -43,18 +46,39 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // TODO: Implémenter la logique d'authentification via le service
-      await Future.delayed(const Duration(seconds: 2));
-      
-      // TODO: Naviguer vers l'écran principal après connexion réussie
+      await _authRepository.login(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+
+      if (!mounted) return;
+      _goToMainScreen();
+    } on AuthException catch (error) {
+      _showError(error.message);
     } catch (e) {
-      // TODO: Gérer les erreurs avec un SnackBar ou Dialog
       debugPrint('Erreur de connexion: $e');
+      _showError('Connexion impossible pour le moment. Réessayez.');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  void _goToMainScreen() {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const MainScreen(isAuthenticated: true),
+      ),
+      (Route<dynamic> route) => false,
+    );
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   void _navigateToRegister() {
@@ -240,7 +264,7 @@ class _LoginScreenState extends State<LoginScreen> {
   // Validators
   String? _validateMatricule(String? value) {
     if (value == null || value.isEmpty) {
-      return 'Veuillez entrer votre matricule';
+      return null;
     }
     return null;
   }
@@ -260,8 +284,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (value == null || value.isEmpty) {
       return 'Veuillez entrer votre mot de passe';
     }
-    if (value.length < 6) {
-      return 'Le mot de passe doit contenir au moins 6 caractères';
+    if (value.length < 8) {
+      return 'Le mot de passe doit contenir au moins 8 caractères';
     }
     return null;
   }

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
+import '../../../auth/data/auth_repository.dart';
+import '../../../auth/presentation/login_screen.dart';
 import '../../../parking/models/parking.dart';
 import '../../../parking/presentation/map_home_screen.dart';
 
@@ -40,6 +42,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final AuthRepository _authRepository = AuthRepository();
+
   final _Session _session = _Session(
     false,
     false,
@@ -99,6 +103,17 @@ class _HomeScreenState extends State<HomeScreen> {
           isAuthenticated: true,
         ),
       ),
+    );
+  }
+
+  Future<void> _handleLogout() async {
+    await _authRepository.logout();
+    if (!mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
     );
   }
 
@@ -391,11 +406,11 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         _ActionCard(
           icon: Icons.logout_rounded,
-          title: 'Guider vers la sortie',
-          subtitle: 'SCANNER REQUIS',
+          title: 'Déconnexion',
+          subtitle: 'SE DÉCONNECTER',
           isActive: false,
-          locked: true,
-          onTap: () {},
+          locked: false,
+          onTap: _handleLogout,
         ),
         _ActionCard(
           icon: Icons.credit_card_rounded,

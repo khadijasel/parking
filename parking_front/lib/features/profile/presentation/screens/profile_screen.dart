@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:parking_front/features/auth/data/auth_repository.dart';
 import 'package:parking_front/features/auth/presentation/login_screen.dart';
 import 'package:parking_front/features/profile/presentation/screens/my_reservations_screen.dart';
 import 'parking_history_screen.dart';
@@ -17,6 +18,8 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AuthRepository authRepository = AuthRepository();
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -156,7 +159,10 @@ class ProfileScreen extends StatelessWidget {
             iconColor: _kRed,
             title: 'Déconnexion',
             titleColor: _kRed,
-            onTap: () {
+            onTap: () async {
+              await authRepository.logout();
+              if (!context.mounted) return;
+
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (_) => const LoginScreen()),

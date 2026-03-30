@@ -12,6 +12,7 @@ class MapHomeScreen extends StatefulWidget {
   final bool isAuthenticated;
   final bool showRouteToSelected;
   final LatLng? initialUserLocation;
+  final bool directReservationOnDetails;
 
   const MapHomeScreen({
     super.key,
@@ -19,6 +20,7 @@ class MapHomeScreen extends StatefulWidget {
     this.isAuthenticated = false,
     this.showRouteToSelected = false,
     this.initialUserLocation,
+    this.directReservationOnDetails = false,
   });
 
   @override
@@ -36,6 +38,9 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
   List<LatLng> _routePoints = const [];
   double _routeDistanceKm = 0;
   int _routeDurationMinutes = 0;
+  bool _isMapReady = false;
+  LatLng? _pendingMapCenter;
+  double? _pendingMapZoom;
 
   LatLng get _routeStartPoint => _userLocation ?? const LatLng(36.7650, 3.0570);
 
@@ -58,6 +63,21 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     _userLocation = widget.initialUserLocation;
     _showRouteToSelected = widget.showRouteToSelected;
     _loadUserLocation();
+  }
+
+  void _moveMap(LatLng center, double zoom) {
+    if (_isMapReady) {
+      _mapController.move(center, zoom);
+      return;
+    }
+    _pendingMapCenter = center;
+    _pendingMapZoom = zoom;
+  }
+
+  void _focusOnNearestParking() {
+    if (_userLocation == null || _parkingsByDistance.isEmpty) return;
+    final nearest = _parkingsByDistance.first;
+    _moveMap(nearest.location, 14.8);
   }
 
   final List<Map<String, dynamic>> _filters = [
@@ -88,7 +108,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
       _isLoadingLocation = false;
     });
     if (location != null) {
-      _mapController.move(location, 15.0);
+      _moveMap(location, 15.0);
+      _focusOnNearestParking();
       return;
     }
 
@@ -106,7 +127,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
   }
 
   void _fitRouteInView() {
-    if (_routePoints.length < 2) return;
+    if (_routePoints.length < 2 || !_isMapReady) return;
     _mapController.fitCamera(
       CameraFit.bounds(
         bounds: LatLngBounds.fromPoints(_routePoints),
@@ -174,12 +195,23 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     _fitRouteInView();
   }
 
+  void _selectParking(Parking parking) {
+    setState(() {
+      _selectedParking = parking;
+      _showRouteToSelected = false;
+      _isLoadingRoute = false;
+      _routePoints = const [];
+      _routeDistanceKm = 0;
+      _routeDurationMinutes = 0;
+    });
+  }
+
   void _centerOnUserLocation() {
     if (_userLocation == null) {
       _loadUserLocation(force: true);
       return;
     }
-    _mapController.move(_userLocation!, 15.0);
+    _moveMap(_userLocation!, 15.0);
   }
 
   Future<void> _openDetails(Parking parking) async {
@@ -190,6 +222,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
           parking: parking,
           isAuthenticated: widget.isAuthenticated,
           userLocation: _userLocation,
+          directReservation: widget.directReservationOnDetails,
         ),
       ),
     );
@@ -233,6 +266,14 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
       options: MapOptions(
         initialCenter: _userLocation ?? const LatLng(36.7650, 3.0570),
         initialZoom: 15.0,
+        onMapReady: () {
+          _isMapReady = true;
+          if (_pendingMapCenter != null && _pendingMapZoom != null) {
+            _mapController.move(_pendingMapCenter!, _pendingMapZoom!);
+            _pendingMapCenter = null;
+            _pendingMapZoom = null;
+          }
+        },
         onTap: (_, __) {
           setState(() {
             _selectedParking = null;
@@ -266,7 +307,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
               width: 80,
               height: 40,
               child: GestureDetector(
-                onTap: () => _activateNavigation(parking),
+                onTap: () => _selectParking(parking),
                 child: _buildPriceMarker(parking),
               ),
             );
