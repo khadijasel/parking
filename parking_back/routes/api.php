@@ -3,6 +3,8 @@
 use App\Http\Controllers\Api\Auth\AdminAuthController;
 use App\Http\Controllers\Api\Auth\OwnerAuthController;
 use App\Http\Controllers\Api\Auth\UserAuthController;
+use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\ReservationController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('user/auth')->group(function (): void {
@@ -32,4 +34,17 @@ Route::prefix('admin/auth')->group(function (): void {
 		Route::get('me', [AdminAuthController::class, 'me']);
 		Route::post('owners', [AdminAuthController::class, 'createOwner']);
 	});
+});
+
+Route::prefix('user')->middleware('auth:user')->group(function (): void {
+	Route::post('reservations', [ReservationController::class, 'store']);
+	Route::get('reservations', [ReservationController::class, 'index']);
+	Route::get('reservations/{reservationId}', [ReservationController::class, 'show']);
+	Route::post('reservations/{reservationId}/go', [ReservationController::class, 'go']);
+	Route::post('reservations/{reservationId}/scan-ticket', [ReservationController::class, 'scanTicket']);
+	Route::delete('reservations/{reservationId}', [ReservationController::class, 'cancel']);
+
+	Route::post('payments/initiate', [PaymentController::class, 'initiate']);
+	Route::post('payments/confirm', [PaymentController::class, 'confirm']);
+	Route::get('payments/history', [PaymentController::class, 'history']);
 });

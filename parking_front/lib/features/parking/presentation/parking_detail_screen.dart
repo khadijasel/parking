@@ -13,6 +13,7 @@ class ParkingDetailScreen extends StatelessWidget {
   final bool directReservation;
   // ✅ NOUVEAU : masque le bouton "Réserver" quand on vient de Mes Réservations
   final bool hideReserveButton;
+  final String? reservationStatus;
 
   const ParkingDetailScreen({
     super.key,
@@ -21,6 +22,7 @@ class ParkingDetailScreen extends StatelessWidget {
     this.userLocation,
     this.directReservation = false,
     this.hideReserveButton = false, // false par défaut = comportement normal
+    this.reservationStatus,
   });
 
   void _navigateToLogin(BuildContext context) {
@@ -319,13 +321,16 @@ class ParkingDetailScreen extends StatelessWidget {
   }
 
   Widget _buildBottomButtons(BuildContext context) {
+    final String status = (reservationStatus ?? '').toLowerCase();
+    final bool scanMode = hideReserveButton && status == 'in_transit';
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, -2),
           ),
@@ -373,6 +378,16 @@ class ParkingDetailScreen extends StatelessWidget {
             child: ElevatedButton.icon(
               onPressed: () {
                 if (hideReserveButton) {
+                  if (scanMode) {
+                    Navigator.pop(context, 'scan-ticket');
+                    return;
+                  }
+
+                  if (status == 'confirmed') {
+                    Navigator.pop(context, 'go');
+                    return;
+                  }
+
                   if (!isAuthenticated) {
                     _navigateToLogin(context);
                     return;
@@ -400,10 +415,10 @@ class ParkingDetailScreen extends StatelessWidget {
                 // même si l'utilisateur n'est pas connecté.
                 Navigator.pop(context, 'navigate');
               },
-              icon: const Icon(Icons.navigation_rounded, size: 18),
-              label: const Text("S'y rendre"),
+              icon: Icon(scanMode ? Icons.qr_code_scanner_rounded : Icons.navigation_rounded, size: 18),
+              label: Text(scanMode ? 'Scanner ticket' : "S'y rendre"),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.blue,
+                backgroundColor: scanMode ? const Color(0xFFEF8D22) : AppColors.blue,
                 foregroundColor: Colors.white,
                 elevation: 0,
                 padding: const EdgeInsets.symmetric(vertical: 14),

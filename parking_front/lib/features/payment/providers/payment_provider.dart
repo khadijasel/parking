@@ -68,28 +68,36 @@ class PaymentNotifier extends StateNotifier<PaymentState> {
 
   // ── Initialiser la transaction ────────────────────────────
   Future<void> initiate({
-    required String sessionId,
-    required String userId,
+    required String reservationId,
     required String parkingName,
     required int    dureeMinutes,
   }) async {
-    final tx = await _repo.initiate(
-      sessionId:    sessionId,
-      userId:       userId,
-      parkingName:  parkingName,
-      dureeMinutes: dureeMinutes,
-      methode:      state.selectedMethod,
-    );
-    state = state.copyWith(transaction: tx);
+    try {
+      final tx = await _repo.initiate(
+        reservationId: reservationId,
+        parkingName: parkingName,
+        dureeMinutes: dureeMinutes,
+        methode: state.selectedMethod,
+      );
+      state = state.copyWith(transaction: tx);
+    } catch (error) {
+      state = state.copyWith(
+        status: PaymentStatus.failed,
+        errorType: PaymentError.unknownError,
+        errorMessage: error.toString().replaceFirst('Exception: ', ''),
+      );
+    }
   }
 
   // ── Méthode de paiement ───────────────────────────────────
   void selectMethod(PaymentMethod m) {
     state = state.copyWith(
+      status:         PaymentStatus.idle,
       selectedMethod: m,
       pin:            '',
       errorType:      PaymentError.none,
       errorMessage:   null,
+      remainingAttempts: 3,
     );
   }
 
@@ -111,6 +119,7 @@ class PaymentNotifier extends StateNotifier<PaymentState> {
 
     final result = await _repo.confirm(
       transaction: state.transaction!,
+      method: state.selectedMethod,
       pin: state.selectedMethod == PaymentMethod.cash ? null : state.pin,
     );
 

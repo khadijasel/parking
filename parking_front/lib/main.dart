@@ -38,9 +38,8 @@ class SmartParkApp extends StatelessWidget {
         },
       ),
       //home: const HomeScreen(),
-     /* home: const PaymentScreen(
-        sessionId: 'test_session',
-        userId: 'test_user',
+      /* home: const PaymentScreen(
+        reservationId: 'reservation_12345',
         parkingName: 'Parking Sidi Yahia',
         dureeMinutes: 90,
       ),*/

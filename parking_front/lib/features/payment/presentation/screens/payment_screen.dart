@@ -19,19 +19,21 @@ const _kTextDark = Color(0xFF1A1A2E);
 const _kTextMid  = Color(0xFF8A9BB5);
 
 class PaymentScreen extends ConsumerStatefulWidget {
-  final String  sessionId;
-  final String  userId;
+  final String  reservationId;
   final String  parkingName;
   final int     dureeMinutes;
   final double? montantFixe;
+  final bool    allowCash;
+  final bool    returnToCallerOnSuccess;
 
   const PaymentScreen({
     super.key,
-    required this.sessionId,
-    required this.userId,
+    required this.reservationId,
     required this.parkingName,
     required this.dureeMinutes,
     this.montantFixe,
+    this.allowCash = true,
+    this.returnToCallerOnSuccess = false,
   });
 
   @override
@@ -60,9 +62,15 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(paymentProvider.notifier).initiate(
-        sessionId:    widget.sessionId,
-        userId:       widget.userId,
+      final notifier = ref.read(paymentProvider.notifier);
+      notifier.reset();
+
+      if (!widget.allowCash) {
+        notifier.selectMethod(PaymentMethod.edahabia);
+      }
+
+      notifier.initiate(
+        reservationId: widget.reservationId,
         parkingName:  widget.parkingName,
         dureeMinutes: widget.dureeMinutes,
       );
@@ -80,9 +88,20 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
   double get _montant => widget.montantFixe
       ?? MockPaymentService.calculerMontant(widget.dureeMinutes);
 
+    List<PaymentMethod> get _availableMethods => widget.allowCash
+      ? PaymentMethod.values
+      : const <PaymentMethod>[PaymentMethod.edahabia, PaymentMethod.cib];
+
   void _onStateChange(PaymentState? _, PaymentState next) {
     if (next.isSuccess && next.transaction != null) {
       HapticFeedback.heavyImpact();
+
+      if (widget.returnToCallerOnSuccess) {
+        Navigator.pop(context, true);
+        ref.read(paymentProvider.notifier).reset();
+        return;
+      }
+
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
@@ -157,10 +176,16 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
             Expanded(
               child: OutlinedButton(
                 onPressed: () {
+                  final PaymentMethod replacementMethod = widget.allowCash
+                      ? PaymentMethod.cash
+                      : (ref.read(paymentProvider).selectedMethod == PaymentMethod.edahabia
+                          ? PaymentMethod.cib
+                          : PaymentMethod.edahabia);
+
                   Navigator.pop(context);
                   _pinController.clear();
                   ref.read(paymentProvider.notifier)
-                      .selectMethod(PaymentMethod.cash);
+                      .selectMethod(replacementMethod);
                 },
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: _kBorder),
@@ -196,6 +221,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
   Widget build(BuildContext context) {
     ref.listen<PaymentState>(paymentProvider, _onStateChange);
     final state = ref.watch(paymentProvider);
+    final bool isCashSelected = widget.allowCash && state.selectedMethod == PaymentMethod.cash;
 
     return Scaffold(
       backgroundColor: _kBg,
@@ -215,11 +241,11 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
             const SizedBox(height: 16),
             _methodSelector(state),
             const SizedBox(height: 20),
-            if (state.selectedMethod != PaymentMethod.cash) ...[
+            if (!isCashSelected) ...[
               _pinSection(state),
               const SizedBox(height: 20),
             ],
-            if (state.selectedMethod == PaymentMethod.cash) ...[
+            if (isCashSelected) ...[
               _cashInfo(),
               const SizedBox(height: 20),
             ],
@@ -335,10 +361,13 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
   }
 
   Widget _methodSelector(PaymentState state) {
+    final methods = _availableMethods;
+
     return Row(
-      children: PaymentMethod.values.map((m) {
+      children: methods.asMap().entries.map((entry) {
+        final idx = entry.key;
+        final m = entry.value;
         final selected = state.selectedMethod == m;
-        final idx      = PaymentMethod.values.indexOf(m);
         return Expanded(
           child: GestureDetector(
             onTap: () {
@@ -351,7 +380,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
               duration: const Duration(milliseconds: 200),
               margin: EdgeInsets.only(
                 left:  idx == 0 ? 0 : 6,
-                right: idx == PaymentMethod.values.length - 1 ? 0 : 6,
+                right: idx == methods.length - 1 ? 0 : 6,
               ),
               padding: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
@@ -498,7 +527,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
   );
 
   Widget _confirmButton(PaymentState state) {
-    final canConfirm = state.selectedMethod == PaymentMethod.cash
+    final canConfirm = (widget.allowCash && state.selectedMethod == PaymentMethod.cash)
         || _pinController.text.length == 4;
 
     return SizedBox(

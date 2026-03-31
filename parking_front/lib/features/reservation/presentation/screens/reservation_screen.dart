@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:parking_front/features/payment/presentation/screens/payment_screen.dart';
+import 'package:parking_front/features/profile/presentation/screens/my_reservations_screen.dart';
+import 'package:parking_front/features/reservation/data/reservation_repository.dart';
 
 const _kBlue     = Color(0xFF4A90E2);
 const _kDark     = Color(0xFF1A1A2E);
@@ -29,6 +31,8 @@ class ReservationScreen extends StatefulWidget {
 
 class _ReservationScreenState extends State<ReservationScreen> {
   _DurationType _selected = _DurationType.courte;
+  final ReservationRepository _reservationRepository = ReservationRepository();
+  bool _isSubmitting = false;
 
   bool get _isCourte => _selected == _DurationType.courte;
 
@@ -67,71 +71,109 @@ class _ReservationScreenState extends State<ReservationScreen> {
     ),
   ];
 
-  void _handleConfirm() {
-    if (_isCourte) {
-      // ── Courte durée : confirmation directe ──────────────
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20)),
-          contentPadding: const EdgeInsets.all(24),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-              width: 60, height: 60,
-              decoration: BoxDecoration(
-                  color: _kGreen.withOpacity(0.12),
-                  shape: BoxShape.circle),
-              child: Icon(Icons.check_circle_outline_rounded,
-                  color: _kGreen, size: 34),
-            ),
-            const SizedBox(height: 14),
-            const Text('Réservation confirmée !',
-                style: TextStyle(fontSize: 17,
-                    fontWeight: FontWeight.w700, color: _kDark)),
-            const SizedBox(height: 8),
-            const Text(
-              'Votre place est réservée gratuitement\npendant 30 minutes.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13,
-                  color: _kMid, height: 1.5),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);  // ferme dialog
-                  Navigator.pop(context);  // retour
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _kBlue, elevation: 0,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text('OK',
-                    style: TextStyle(color: Colors.white,
-                        fontWeight: FontWeight.w700)),
-              ),
-            ),
-          ]),
+  Future<void> _handleConfirm() async {
+    if (_isSubmitting) {
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final reservation = await _reservationRepository.createReservation(
+        parkingName: widget.parkingName,
+        parkingAddress: widget.parkingAddress,
+        equipments: widget.equipments,
+        durationType: _selected.name,
+        durationMinutes: _durationMinutes(_selected),
+        amount: _amountFor(_selected),
+        depositAmount: _isCourte ? 0 : 200,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      if (_isCourte) {
+      // ── Courte durée : redirection directe vers Mes Réservations ──
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const MyReservationsScreen(),
         ),
       );
-    } else {
-      // ── Longue durée : naviguer vers PaymentScreen (200 DA fixe) ──
-      final opt = _options.firstWhere((o) => o.type == _selected);
-      Navigator.push(
+      } else {
+      // ── Longue durée : paiement puis redirection Mes Réservations ──
+      final bool? paymentConfirmed = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
           builder: (_) => PaymentScreen(
-            sessionId:    'reservation_${_selected.name}',
-            userId:       'user_current',
+            reservationId: reservation.id,
             parkingName:  widget.parkingName,
-            dureeMinutes: 0,
+            dureeMinutes: reservation.durationMinutes,
             montantFixe: 200.0,  // acompte fixe réservation longue durée
+            allowCash: false,
+            returnToCallerOnSuccess: true,
           ),
         ),
       );
+
+      if (!mounted || paymentConfirmed != true) {
+        return;
+      }
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const MyReservationsScreen(),
+        ),
+      );
+    }
+    } on ReservationException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erreur lors de la reservation. Veuillez reessayer.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
+
+  int _durationMinutes(_DurationType type) {
+    switch (type) {
+      case _DurationType.courte:
+        return 30;
+      case _DurationType.journee:
+        return 24 * 60;
+      case _DurationType.semaine:
+        return 7 * 24 * 60;
+      case _DurationType.mois:
+        return 30 * 24 * 60;
+    }
+  }
+
+  double _amountFor(_DurationType type) {
+    switch (type) {
+      case _DurationType.courte:
+        return 0;
+      case _DurationType.journee:
+        return 800;
+      case _DurationType.semaine:
+        return 4500;
+      case _DurationType.mois:
+        return 15000;
     }
   }
 
@@ -376,7 +418,7 @@ class _ReservationScreenState extends State<ReservationScreen> {
           child: SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _handleConfirm,
+              onPressed: _isSubmitting ? null : _handleConfirm,
               style: ElevatedButton.styleFrom(
                 backgroundColor: _kBlue,
                 foregroundColor: Colors.white,
@@ -388,8 +430,21 @@ class _ReservationScreenState extends State<ReservationScreen> {
               child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
+                if (_isSubmitting) ...[
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
                 Text(
-                  _isCourte
+                  _isSubmitting
+                      ? 'Traitement...'
+                      : _isCourte
                       ? 'Confirmer la réservation'
                       : 'Payer 200 DA & Confirmer',
                   style: const TextStyle(fontSize: 16,
