@@ -25,6 +25,7 @@ class PaymentRepository {
     required String reservationId,
     required String parkingName,
     required int dureeMinutes,
+    required double amount,
     required PaymentMethod methode,
   }) async {
     final String? token = await _localStorage.readToken();
@@ -37,6 +38,8 @@ class PaymentRepository {
         token: token,
         reservationId: reservationId,
         method: methode.name,
+        durationMinutes: dureeMinutes,
+        amount: amount,
       );
 
       return _transactionFromApi(
@@ -75,8 +78,7 @@ class PaymentRepository {
         pin: pin,
       );
 
-      final PaymentTransaction updatedTransaction =
-          _transactionFromApi(
+      final PaymentTransaction updatedTransaction = _transactionFromApi(
         json: (data['transaction'] is Map<String, dynamic>)
             ? data['transaction'] as Map<String, dynamic>
             : <String, dynamic>{},
@@ -110,6 +112,13 @@ class PaymentRepository {
         errorMessage: error.message,
         transaction: transaction,
       );
+    } catch (_) {
+      return const PaymentResult(
+        success: false,
+        status: PaymentStatus.failed,
+        errorType: PaymentError.unknownError,
+        errorMessage: 'Impossible de confirmer le paiement pour le moment.',
+      );
     }
   }
 
@@ -121,7 +130,8 @@ class PaymentRepository {
     }
 
     try {
-      final List<Map<String, dynamic>> data = await _apiService.history(token: token);
+      final List<Map<String, dynamic>> data =
+          await _apiService.history(token: token);
       return data
           .map(
             (Map<String, dynamic> item) => _transactionFromApi(
@@ -148,7 +158,8 @@ class PaymentRepository {
     required String fallbackReservationId,
   }) {
     final String statusRaw = (json['statut'] ?? 'idle').toString();
-    final String methodRaw = (json['methode'] ?? fallbackMethod.name).toString();
+    final String methodRaw =
+        (json['methode'] ?? fallbackMethod.name).toString();
 
     return PaymentTransaction(
       id: (json['id'] ?? '').toString(),

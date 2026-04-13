@@ -9,7 +9,8 @@ class PaymentApiException implements Exception {
   const PaymentApiException(this.message, {this.statusCode});
 
   @override
-  String toString() => 'PaymentApiException(statusCode: $statusCode, message: $message)';
+  String toString() =>
+      'PaymentApiException(statusCode: $statusCode, message: $message)';
 }
 
 class PaymentApiService {
@@ -33,6 +34,8 @@ class PaymentApiService {
     required String token,
     required String reservationId,
     required String method,
+    required int durationMinutes,
+    required double amount,
   }) async {
     try {
       final Response<dynamic> response = await _dio.post<dynamic>(
@@ -40,6 +43,8 @@ class PaymentApiService {
         data: <String, dynamic>{
           'reservation_id': reservationId,
           'method': method,
+          'duration_minutes': durationMinutes,
+          'amount': amount,
         },
         options: _authorizedOptions(token),
       );
@@ -48,17 +53,20 @@ class PaymentApiService {
       final Map<String, dynamic> payload = _normalizePayload(response.data);
 
       if (statusCode != 201) {
-        throw PaymentApiException(_extractMessage(payload), statusCode: statusCode);
+        throw PaymentApiException(_extractMessage(payload),
+            statusCode: statusCode);
       }
 
       final Object? data = payload['data'];
       if (data is! Map<String, dynamic>) {
-        throw const PaymentApiException('Format de reponse inattendu du serveur.');
+        throw const PaymentApiException(
+            'Format de reponse inattendu du serveur.');
       }
 
       final Object? transaction = data['transaction'];
       if (transaction is! Map<String, dynamic>) {
-        throw const PaymentApiException('Transaction invalide recue depuis le serveur.');
+        throw const PaymentApiException(
+            'Transaction invalide recue depuis le serveur.');
       }
 
       return transaction;
@@ -88,12 +96,14 @@ class PaymentApiService {
       final Map<String, dynamic> payload = _normalizePayload(response.data);
 
       if (statusCode != 200 && statusCode != 422) {
-        throw PaymentApiException(_extractMessage(payload), statusCode: statusCode);
+        throw PaymentApiException(_extractMessage(payload),
+            statusCode: statusCode);
       }
 
       final Object? data = payload['data'];
       if (data is! Map<String, dynamic>) {
-        throw const PaymentApiException('Format de reponse inattendu du serveur.');
+        throw const PaymentApiException(
+            'Format de reponse inattendu du serveur.');
       }
 
       return data;
@@ -115,7 +125,8 @@ class PaymentApiService {
       final Map<String, dynamic> payload = _normalizePayload(response.data);
 
       if (statusCode != 200) {
-        throw PaymentApiException(_extractMessage(payload), statusCode: statusCode);
+        throw PaymentApiException(_extractMessage(payload),
+            statusCode: statusCode);
       }
 
       final Object? data = payload['data'];
@@ -125,7 +136,8 @@ class PaymentApiService {
 
       return data.whereType<Map>().map((Map<dynamic, dynamic> item) {
         return item.map<String, dynamic>(
-          (dynamic key, dynamic value) => MapEntry<String, dynamic>(key.toString(), value),
+          (dynamic key, dynamic value) =>
+              MapEntry<String, dynamic>(key.toString(), value),
         );
       }).toList(growable: false);
     } on DioException catch (error) {
@@ -144,7 +156,8 @@ class PaymentApiService {
 
   PaymentApiException _mapDioException(DioException error) {
     final int? statusCode = error.response?.statusCode;
-    final Map<String, dynamic> payload = _normalizePayload(error.response?.data);
+    final Map<String, dynamic> payload =
+        _normalizePayload(error.response?.data);
 
     if (statusCode != null) {
       return PaymentApiException(
@@ -157,7 +170,8 @@ class PaymentApiService {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
-        return const PaymentApiException('Delai depasse. Verifiez votre connexion puis reessayez.');
+        return const PaymentApiException(
+            'Delai depasse. Verifiez votre connexion puis reessayez.');
       case DioExceptionType.connectionError:
         return const PaymentApiException('Impossible de contacter le serveur.');
       case DioExceptionType.cancel:
@@ -166,7 +180,8 @@ class PaymentApiService {
         return const PaymentApiException('Certificat serveur invalide.');
       case DioExceptionType.unknown:
       case DioExceptionType.badResponse:
-        return const PaymentApiException('Une erreur est survenue, veuillez reessayer.');
+        return const PaymentApiException(
+            'Une erreur est survenue, veuillez reessayer.');
     }
   }
 

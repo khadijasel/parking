@@ -1,0 +1,233 @@
+classDiagram
+  direction LR
+
+  class User {
+    <<table: users>>
+    +String id
+    +String name
+    +String email
+    +String phone
+    +String matricule
+    +String city
+    +String address
+    +Float latitude
+    +Float longitude
+    +String avatar_data_url
+    +String password
+  }
+
+  class Admin {
+    <<table: admins>>
+    +String id
+    +String name
+    +String email
+    +String phone
+    +String password
+  }
+
+  class SousAdmin {
+    <<table: parking_owners>>
+    +String id
+    +String name
+    +String email
+    +String phone
+    +String password
+  }
+
+  class Parking {
+    <<front model>>
+    +String id
+    +String name
+    +String address
+    +double pricePerHour
+    +double rating
+    +int availableSpots
+    +bool isOpen24h
+    +double maxVehicleHeightMeters
+    +String[] supportedVehicleTypes
+  }
+
+  class ParkingAvailability {
+    <<table: parking_availabilities>>
+    +String id
+    +String parking_id
+    +String parking_name
+    +int total_spots
+    +int available_spots
+    +bool is_arduino
+    +DateTime last_sensor_at
+  }
+
+  class Reservation {
+    <<table: reservations>>
+    +String id
+    +String user_id
+    +String parking_id
+    +String parking_name
+    +String parking_address
+    +String[] equipments
+    +TypeReservation duration_type
+    +int duration_minutes
+    +float amount
+    +bool deposit_required
+    +float deposit_amount
+    +StatutReservation reservation_status
+    +StatutPaiementReservation payment_status
+    +bool spot_locked
+    +DateTime expires_at
+    +DateTime cancelled_at
+  }
+
+  class Payment {
+    <<table: payments + front transaction>>
+    +String id
+    +String user_id
+    +String reservation_id
+    +String parking_name
+    +int duration_minutes
+    +float amount
+    +ModePaiement method
+    +StatutTransaction status
+    +String transaction_ref
+    +int pin_attempts
+    +int remaining_attempts
+    +String error_code
+    +String error_message
+    +DateTime paid_at
+  }
+
+  class ParkingSession {
+    <<table: parking_sessions>>
+    +String id
+    +String user_id
+    +String reservation_id
+    +String parking_name
+    +String parking_address
+    +String ticket_code
+    +StatutSession status
+    +DateTime started_at
+    +DateTime ended_at
+  }
+
+  class Abonnement {
+    <<metier front>>
+    +String id
+    +String user_id
+    +String parking_id
+    +TypeAbonnement type
+    +DateTime date_debut
+    +DateTime date_fin
+    +float montant
+    +String statut
+  }
+
+  class CarteParking {
+    <<metier sous-admin>>
+    +String id
+    +String owner_id
+    +String parking_id
+    +String nom
+    +String niveau
+    +String contour_geojson
+    +DateTime updated_at
+  }
+
+  class PlaceParking {
+    <<metier sous-admin>>
+    +String id
+    +String map_id
+    +String code
+    +String polygon
+    +EtatPlace etat
+    +bool sensor_enabled
+  }
+
+  class TypeReservation {
+    <<enumeration>>
+    courte
+    journee
+    semaine
+    mois
+  }
+
+  class TypeAbonnement {
+    <<enumeration>>
+    journee
+    semaine
+    mois
+  }
+
+  class ModePaiement {
+    <<enumeration>>
+    cib
+    edahabia
+    cash
+  }
+
+  class StatutReservation {
+    <<enumeration>>
+    pending_payment
+    confirmed
+    in_transit
+    completed
+    cancelled_by_user
+    cancelled_timeout
+  }
+
+  class StatutPaiementReservation {
+    <<enumeration>>
+    unpaid
+    paid
+    cancelled
+    not_required
+  }
+
+  class StatutTransaction {
+    <<enumeration>>
+    idle
+    processing
+    success
+    failed
+    timeout
+    blocked
+  }
+
+  class StatutSession {
+    <<enumeration>>
+    active
+    completed
+  }
+
+  class EtatPlace {
+    <<enumeration>>
+    libre
+    reservee
+    occupee
+    hors_service
+  }
+
+  Admin "1" --> "0..*" SousAdmin : cree / gere
+  SousAdmin "1" --> "0..*" Parking : gere
+  SousAdmin "1" --> "0..*" CarteParking : dessine
+  CarteParking "1" --> "1..*" PlaceParking : contient
+
+  Parking "1" --> "1" ParkingAvailability : disponibilite
+  Parking "1" --> "0..*" Reservation : concerne
+  Parking "1" --> "0..*" Abonnement : propose
+
+  User "1" --> "0..*" Reservation : effectue
+  User "1" --> "0..*" Payment : paie
+  User "1" --> "0..*" ParkingSession : utilise
+  User "1" --> "0..*" Abonnement : souscrit
+
+  Reservation "1" --> "0..*" Payment : transactions
+  Reservation "1" --> "0..1" ParkingSession : ouvre
+
+  Reservation ..> TypeReservation
+  Abonnement ..> TypeAbonnement
+  Payment ..> ModePaiement
+  Reservation ..> StatutReservation
+  Reservation ..> StatutPaiementReservation
+  Payment ..> StatutTransaction
+  ParkingSession ..> StatutSession
+  PlaceParking ..> EtatPlace

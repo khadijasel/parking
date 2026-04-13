@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'arduino' => [
+        'key' => env('ARDUINO_API_KEY'),
+    ],
+
 ];

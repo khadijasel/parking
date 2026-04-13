@@ -7,54 +7,55 @@ import '../data/payment_repository.dart';
 // ════════════════════════════════════════════════════════════
 
 class PaymentState {
-  final PaymentStatus       status;
+  final PaymentStatus status;
   final PaymentTransaction? transaction;
-  final PaymentError        errorType;
-  final String?             errorMessage;
-  final int                 remainingAttempts;
-  final PaymentMethod       selectedMethod;
-  final String              pin;
-  final bool                showDemoHint;
+  final PaymentError errorType;
+  final String? errorMessage;
+  final int remainingAttempts;
+  final PaymentMethod selectedMethod;
+  final String pin;
+  final bool showDemoHint;
 
   const PaymentState({
-    this.status            = PaymentStatus.idle,
+    this.status = PaymentStatus.idle,
     this.transaction,
-    this.errorType         = PaymentError.none,
+    this.errorType = PaymentError.none,
     this.errorMessage,
     this.remainingAttempts = 3,
-    this.selectedMethod    = PaymentMethod.edahabia,
-    this.pin               = '',
-    this.showDemoHint      = true,
+    this.selectedMethod = PaymentMethod.edahabia,
+    this.pin = '',
+    this.showDemoHint = true,
   });
 
-  bool get isIdle       => status == PaymentStatus.idle;
+  bool get isIdle => status == PaymentStatus.idle;
   bool get isProcessing => status == PaymentStatus.processing;
-  bool get isSuccess    => status == PaymentStatus.success;
-  bool get isFailed     => status == PaymentStatus.failed;
-  bool get isTimeout    => status == PaymentStatus.timeout;
-  bool get isBlocked    => status == PaymentStatus.blocked;
-  bool get hasError     => isFailed || isTimeout || isBlocked;
-  bool get canConfirm   => selectedMethod == PaymentMethod.cash || pin.length == 4;
+  bool get isSuccess => status == PaymentStatus.success;
+  bool get isFailed => status == PaymentStatus.failed;
+  bool get isTimeout => status == PaymentStatus.timeout;
+  bool get isBlocked => status == PaymentStatus.blocked;
+  bool get hasError => isFailed || isTimeout || isBlocked;
+  bool get canConfirm =>
+      selectedMethod == PaymentMethod.cash || pin.length == 4;
 
   PaymentState copyWith({
-    PaymentStatus?      status,
+    PaymentStatus? status,
     PaymentTransaction? transaction,
-    PaymentError?       errorType,
-    String?             errorMessage,
-    int?                remainingAttempts,
-    PaymentMethod?      selectedMethod,
-    String?             pin,
-    bool?               showDemoHint,
+    PaymentError? errorType,
+    String? errorMessage,
+    int? remainingAttempts,
+    PaymentMethod? selectedMethod,
+    String? pin,
+    bool? showDemoHint,
   }) =>
       PaymentState(
-        status:            status            ?? this.status,
-        transaction:       transaction       ?? this.transaction,
-        errorType:         errorType         ?? this.errorType,
-        errorMessage:      errorMessage      ?? this.errorMessage,
+        status: status ?? this.status,
+        transaction: transaction ?? this.transaction,
+        errorType: errorType ?? this.errorType,
+        errorMessage: errorMessage ?? this.errorMessage,
         remainingAttempts: remainingAttempts ?? this.remainingAttempts,
-        selectedMethod:    selectedMethod    ?? this.selectedMethod,
-        pin:               pin               ?? this.pin,
-        showDemoHint:      showDemoHint      ?? this.showDemoHint,
+        selectedMethod: selectedMethod ?? this.selectedMethod,
+        pin: pin ?? this.pin,
+        showDemoHint: showDemoHint ?? this.showDemoHint,
       );
 }
 
@@ -70,13 +71,15 @@ class PaymentNotifier extends StateNotifier<PaymentState> {
   Future<void> initiate({
     required String reservationId,
     required String parkingName,
-    required int    dureeMinutes,
+    required int dureeMinutes,
+    required double amount,
   }) async {
     try {
       final tx = await _repo.initiate(
         reservationId: reservationId,
         parkingName: parkingName,
         dureeMinutes: dureeMinutes,
+        amount: amount,
         methode: state.selectedMethod,
       );
       state = state.copyWith(transaction: tx);
@@ -92,11 +95,11 @@ class PaymentNotifier extends StateNotifier<PaymentState> {
   // ── Méthode de paiement ───────────────────────────────────
   void selectMethod(PaymentMethod m) {
     state = state.copyWith(
-      status:         PaymentStatus.idle,
+      status: PaymentStatus.idle,
       selectedMethod: m,
-      pin:            '',
-      errorType:      PaymentError.none,
-      errorMessage:   null,
+      pin: '',
+      errorType: PaymentError.none,
+      errorMessage: null,
       remainingAttempts: 3,
     );
   }
@@ -112,33 +115,42 @@ class PaymentNotifier extends StateNotifier<PaymentState> {
     if (state.transaction == null) return;
 
     state = state.copyWith(
-      status:       PaymentStatus.processing,
-      errorType:    PaymentError.none,
+      status: PaymentStatus.processing,
+      errorType: PaymentError.none,
       errorMessage: null,
     );
 
-    final result = await _repo.confirm(
-      transaction: state.transaction!,
-      method: state.selectedMethod,
-      pin: state.selectedMethod == PaymentMethod.cash ? null : state.pin,
-    );
-
-    if (result.success) {
-      state = state.copyWith(
-        status:      PaymentStatus.success,
-        transaction: result.transaction,
-        pin:         '',
+    try {
+      final result = await _repo.confirm(
+        transaction: state.transaction!,
+        method: state.selectedMethod,
+        pin: state.selectedMethod == PaymentMethod.cash ? null : state.pin,
       );
-    } else {
-      final finalStatus = result.errorType == PaymentError.accountBlocked
-          ? PaymentStatus.blocked
-          : result.status;
+
+      if (result.success) {
+        state = state.copyWith(
+          status: PaymentStatus.success,
+          transaction: result.transaction,
+          pin: '',
+        );
+      } else {
+        final finalStatus = result.errorType == PaymentError.accountBlocked
+            ? PaymentStatus.blocked
+            : result.status;
+        state = state.copyWith(
+          status: finalStatus,
+          errorType: result.errorType,
+          errorMessage: result.errorMessage,
+          remainingAttempts: result.remainingAttempts,
+          pin: '',
+        );
+      }
+    } catch (_) {
       state = state.copyWith(
-        status:            finalStatus,
-        errorType:         result.errorType,
-        errorMessage:      result.errorMessage,
-        remainingAttempts: result.remainingAttempts,
-        pin:               '',
+        status: PaymentStatus.failed,
+        errorType: PaymentError.unknownError,
+        errorMessage: 'Une erreur est survenue lors du paiement. Reessayez.',
+        pin: '',
       );
     }
   }
@@ -146,15 +158,15 @@ class PaymentNotifier extends StateNotifier<PaymentState> {
   void retry() {
     if (state.isBlocked) return;
     state = state.copyWith(
-      status:       PaymentStatus.idle,
-      errorType:    PaymentError.none,
+      status: PaymentStatus.idle,
+      errorType: PaymentError.none,
       errorMessage: null,
-      pin:          '',
+      pin: '',
     );
   }
 
   void hideDemoHint() => state = state.copyWith(showDemoHint: false);
-  void reset()        => state = const PaymentState();
+  void reset() => state = const PaymentState();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -173,8 +185,8 @@ final paymentProvider =
 final paymentStatusProvider =
     Provider<PaymentStatus>((ref) => ref.watch(paymentProvider).status);
 
-final paymentTransactionProvider =
-    Provider<PaymentTransaction?>((ref) => ref.watch(paymentProvider).transaction);
+final paymentTransactionProvider = Provider<PaymentTransaction?>(
+    (ref) => ref.watch(paymentProvider).transaction);
 
 final canConfirmProvider =
     Provider<bool>((ref) => ref.watch(paymentProvider).canConfirm);

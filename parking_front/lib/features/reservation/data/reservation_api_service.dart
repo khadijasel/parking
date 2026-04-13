@@ -9,7 +9,8 @@ class ReservationApiException implements Exception {
   const ReservationApiException(this.message, {this.statusCode});
 
   @override
-  String toString() => 'ReservationApiException(statusCode: $statusCode, message: $message)';
+  String toString() =>
+      'ReservationApiException(statusCode: $statusCode, message: $message)';
 }
 
 class ReservationApiService {
@@ -31,6 +32,7 @@ class ReservationApiService {
 
   Future<Map<String, dynamic>> createReservation({
     required String token,
+    required String parkingId,
     required String parkingName,
     required String parkingAddress,
     required List<String> equipments,
@@ -43,6 +45,7 @@ class ReservationApiService {
       final Response<dynamic> response = await _dio.post<dynamic>(
         ApiConstants.userReservationsPath,
         data: <String, dynamic>{
+          'parking_id': parkingId,
           'parking_name': parkingName,
           'parking_address': parkingAddress,
           'equipments': equipments,
@@ -71,12 +74,14 @@ class ReservationApiService {
 
       final Object? data = payload['data'];
       if (data is! Map<String, dynamic>) {
-        throw const ReservationApiException('Format de reponse inattendu du serveur.');
+        throw const ReservationApiException(
+            'Format de reponse inattendu du serveur.');
       }
 
       final Object? reservation = data['reservation'];
       if (reservation is! Map<String, dynamic>) {
-        throw const ReservationApiException('Reservation invalide recue depuis le serveur.');
+        throw const ReservationApiException(
+            'Reservation invalide recue depuis le serveur.');
       }
 
       return reservation;
@@ -183,7 +188,8 @@ class ReservationApiService {
 
       final Object? data = payload['data'];
       if (data is! Map<String, dynamic>) {
-        throw const ReservationApiException('Reservation invalide recue depuis le serveur.');
+        throw const ReservationApiException(
+            'Reservation invalide recue depuis le serveur.');
       }
 
       return data;
@@ -219,7 +225,8 @@ class ReservationApiService {
 
       final Object? data = payload['data'];
       if (data is! Map<String, dynamic>) {
-        throw const ReservationApiException('Reservation invalide recue depuis le serveur.');
+        throw const ReservationApiException(
+            'Reservation invalide recue depuis le serveur.');
       }
 
       return data;
@@ -228,9 +235,128 @@ class ReservationApiService {
     }
   }
 
+  Future<Map<String, dynamic>?> fetchCurrentParkingSession({
+    required String token,
+  }) async {
+    try {
+      final Response<dynamic> response = await _dio.get<dynamic>(
+        ApiConstants.userParkingSessionCurrentPath,
+        options: Options(
+          headers: <String, String>{
+            'Authorization': 'Bearer $token',
+          },
+          validateStatus: (int? status) => status != null && status < 500,
+        ),
+      );
+
+      final int statusCode = response.statusCode ?? 0;
+      final Map<String, dynamic> payload = _normalizePayload(response.data);
+
+      if (statusCode != 200) {
+        throw ReservationApiException(
+          _extractMessage(payload),
+          statusCode: statusCode,
+        );
+      }
+
+      final Object? data = payload['data'];
+      if (data == null) {
+        return null;
+      }
+
+      if (data is! Map<String, dynamic>) {
+        throw const ReservationApiException(
+            'Session parking invalide recue depuis le serveur.');
+      }
+
+      return data;
+    } on DioException catch (error) {
+      throw _mapDioException(error);
+    }
+  }
+
+  Future<Map<String, dynamic>> exitCurrentParkingSession({
+    required String token,
+  }) async {
+    try {
+      final Response<dynamic> response = await _dio.post<dynamic>(
+        ApiConstants.userParkingSessionExitPath,
+        options: Options(
+          headers: <String, String>{
+            'Authorization': 'Bearer $token',
+          },
+          validateStatus: (int? status) => status != null && status < 500,
+        ),
+      );
+
+      final int statusCode = response.statusCode ?? 0;
+      final Map<String, dynamic> payload = _normalizePayload(response.data);
+
+      if (statusCode != 200) {
+        throw ReservationApiException(
+          _extractMessage(payload),
+          statusCode: statusCode,
+        );
+      }
+
+      final Object? data = payload['data'];
+      if (data is! Map<String, dynamic>) {
+        throw const ReservationApiException(
+            'Session parking invalide recue depuis le serveur.');
+      }
+
+      return data;
+    } on DioException catch (error) {
+      throw _mapDioException(error);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchParkingSessionHistory({
+    required String token,
+  }) async {
+    try {
+      final Response<dynamic> response = await _dio.get<dynamic>(
+        ApiConstants.userParkingSessionHistoryPath,
+        options: Options(
+          headers: <String, String>{
+            'Authorization': 'Bearer $token',
+          },
+          validateStatus: (int? status) => status != null && status < 500,
+        ),
+      );
+
+      final int statusCode = response.statusCode ?? 0;
+      final Map<String, dynamic> payload = _normalizePayload(response.data);
+
+      if (statusCode != 200) {
+        throw ReservationApiException(
+          _extractMessage(payload),
+          statusCode: statusCode,
+        );
+      }
+
+      final Object? data = payload['data'];
+      if (data is! List) {
+        return const <Map<String, dynamic>>[];
+      }
+
+      return data.whereType<Map>().map((Map<dynamic, dynamic> item) {
+        return item.map<String, dynamic>(
+          (dynamic key, dynamic value) => MapEntry<String, dynamic>(
+            key.toString(),
+            value,
+          ),
+        );
+      }).toList(growable: false);
+    } on DioException catch (error) {
+      throw _mapDioException(error);
+    }
+  }
+
   ReservationApiException _mapDioException(DioException error) {
     final int? statusCode = error.response?.statusCode;
-    final Map<String, dynamic> payload = _normalizePayload(error.response?.data);
+    final Map<String, dynamic> payload =
+        _normalizePayload(error.response?.data);
 
     if (statusCode != null) {
       return ReservationApiException(
@@ -243,16 +369,19 @@ class ReservationApiService {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
-        return const ReservationApiException('Delai depasse. Verifiez votre connexion puis reessayez.');
+        return const ReservationApiException(
+            'Delai depasse. Verifiez votre connexion puis reessayez.');
       case DioExceptionType.connectionError:
-        return const ReservationApiException('Impossible de contacter le serveur.');
+        return const ReservationApiException(
+            'Impossible de contacter le serveur.');
       case DioExceptionType.cancel:
         return const ReservationApiException('Requete annulee.');
       case DioExceptionType.badCertificate:
         return const ReservationApiException('Certificat serveur invalide.');
       case DioExceptionType.unknown:
       case DioExceptionType.badResponse:
-        return const ReservationApiException('Une erreur est survenue, veuillez reessayer.');
+        return const ReservationApiException(
+            'Une erreur est survenue, veuillez reessayer.');
     }
   }
 

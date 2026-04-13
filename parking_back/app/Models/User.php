@@ -25,6 +25,11 @@ class User extends Authenticatable
         'email',
         'phone',
         'matricule',
+        'city',
+        'address',
+        'latitude',
+        'longitude',
+        'avatar_data_url',
         'password',
     ];
 

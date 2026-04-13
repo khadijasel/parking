@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../../theme/app_colors.dart';
+import '../../theme/app_colors.dart';
+import '../home/presentation/screens/home_screen.dart';
 import '../home/presentation/screens/home_no_session_screen.dart';
+import '../parking/models/parking.dart';
 import '../parking/presentation/map_home_screen.dart';
 import '../profile/presentation/screens/profile_screen.dart';
+import '../reservation/data/models/parking_session_api_model.dart';
+import '../reservation/data/reservation_repository.dart';
 import '../scanner/presentation/screens/scanner_screen.dart';
 
 const _kLabels = ['ACCUEIL', 'CARTE', 'SCANNER', 'PROFIL'];
@@ -23,11 +27,15 @@ const _kActiveIcons = [
 class MainScreen extends StatefulWidget {
   final int initialIndex;
   final bool isAuthenticated;
-  
+  final Parking? initialMapParking;
+  final bool initialMapRoute;
+
   const MainScreen({
-    super.key, 
+    super.key,
     this.initialIndex = 0,
     this.isAuthenticated = false,
+    this.initialMapParking,
+    this.initialMapRoute = false,
   });
 
   @override
@@ -36,6 +44,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   late int _currentIndex;
+  int _homeRefreshTick = 0;
 
   @override
   void initState() {
@@ -46,20 +55,47 @@ class _MainScreenState extends State<MainScreen> {
   void _onTap(int index) {
     if (index == _currentIndex) return;
     HapticFeedback.selectionClick();
-    setState(() => _currentIndex = index);
+
+    setState(() {
+      _currentIndex = index;
+      if (index == 0) {
+        _homeRefreshTick++;
+      }
+    });
+  }
+
+  void _openHomeWithRefresh() {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _homeRefreshTick++;
+      _currentIndex = 0;
+    });
+  }
+
+  Widget _buildHomeTab() {
+    return _HomeTabGate(
+      refreshToken: _homeRefreshTick,
+      onSearchTap: () => _onTap(1),
+    );
   }
 
   Widget _buildBody(int index) {
     switch (index) {
       case 0:
-        return HomeNoSessionScreen(onSearchTap: () => _onTap(1));
+        return _buildHomeTab();
       case 1:
         return MapHomeScreen(
           isAuthenticated: widget.isAuthenticated,
+          isActive: _currentIndex == 1,
           directReservationOnDetails: true,
+          autoNavigateParking: widget.initialMapParking,
+          showRouteToSelected: widget.initialMapRoute,
         );
       case 2:
-        return const ScannerScreen();
+        return ScannerScreen(onScanSuccess: _openHomeWithRefresh);
       case 3:
         return const ProfileScreen();
       default:
@@ -87,6 +123,118 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
+class _HomeTabGate extends StatefulWidget {
+  final int refreshToken;
+  final VoidCallback onSearchTap;
+
+  const _HomeTabGate({
+    required this.refreshToken,
+    required this.onSearchTap,
+  });
+
+  @override
+  State<_HomeTabGate> createState() => _HomeTabGateState();
+}
+
+class _HomeTabGateState extends State<_HomeTabGate> {
+  final ReservationRepository _reservationRepository = ReservationRepository();
+  ParkingSessionApiModel? _session;
+  bool _isBootstrapping = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSession(showLoader: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _HomeTabGate oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshToken != widget.refreshToken) {
+      _refreshSession();
+    }
+  }
+
+  void _refreshSession() {
+    _loadSession(retryOnNull: true);
+  }
+
+  Future<void> _loadSession({
+    bool showLoader = false,
+    bool forceRefresh = false,
+    bool retryOnNull = false,
+  }) async {
+    final ParkingSessionApiModel? previousSession = _session;
+
+    if (showLoader) {
+      setState(() {
+        _isBootstrapping = true;
+      });
+    }
+
+    try {
+      ParkingSessionApiModel? session =
+          await _reservationRepository.fetchCurrentParkingSession(
+        forceRefresh: forceRefresh,
+      );
+
+      if (!forceRefresh && retryOnNull && (session == null || !session.isActive)) {
+        session = await _reservationRepository.fetchCurrentParkingSession(
+          forceRefresh: true,
+        );
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _session = (session != null && session.isActive) ? session : null;
+        _isBootstrapping = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _session = previousSession;
+        _isBootstrapping = false;
+      });
+    }
+  }
+
+  void _handleSessionClosed() {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _session = null;
+      _isBootstrapping = false;
+    });
+
+    _loadSession(forceRefresh: true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isBootstrapping && _session == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final ParkingSessionApiModel? session = _session;
+    if (session == null) {
+      return HomeNoSessionScreen(onSearchTap: widget.onSearchTap);
+    }
+
+    return HomeScreen(
+      initialSession: session,
+      onSessionClosed: _handleSessionClosed,
+    );
+  }
+}
+
 // ─── Navbar ──────────────────────────────────────────────────────────────────
 class _BottomNav extends StatelessWidget {
   final int current;
@@ -100,7 +248,7 @@ class _BottomNav extends StatelessWidget {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.08),
+              color: Colors.black.withValues(alpha: 0.08),
               blurRadius: 20,
               offset: const Offset(0, -4))
         ],
@@ -123,7 +271,7 @@ class _BottomNav extends StatelessWidget {
                         const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
                     decoration: BoxDecoration(
                       color: active
-                          ? AppColors.blue.withOpacity(0.10)
+                          ? AppColors.blue.withValues(alpha: 0.10)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -153,29 +301,6 @@ class _BottomNav extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-// ─── Placeholder Carte ────────────────────────────────────────────────────────
-class _MapBody extends StatelessWidget {
-  const _MapBody();
-  @override
-  Widget build(BuildContext context) {
-    return const SafeArea(
-      child: Center(
-          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(Icons.map_rounded, size: 64, color: AppColors.textMid),
-        SizedBox(height: 16),
-        Text('Carte des parkings',
-            style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppColors.dark)),
-        SizedBox(height: 8),
-        Text('Connecte MapHomeScreen ici',
-            style: TextStyle(fontSize: 13, color: AppColors.textMid)),
-      ])),
     );
   }
 }

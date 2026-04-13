@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:parking_front/features/home/presentation/screens/home_no_session_screen.dart';
-import 'package:parking_front/features/home/presentation/screens/home_screen.dart';
-import 'package:parking_front/features/home/presentation/screens/home_screen.dart';
+import 'package:parking_front/features/main/main_screen.dart';
+import 'package:parking_front/features/profile/presentation/screens/my_reservations_screen.dart';
 import '../../data/mock_payment_service.dart';
 
 const _kBlue = Color(0xFF4A90E2);
@@ -18,118 +17,155 @@ const _kTextMid = Color(0xFF8A9BB5);
 
 class PaymentConfirmationScreen extends StatelessWidget {
   final PaymentTransaction transaction;
+  final bool openReservationsOnPrimaryAction;
 
   const PaymentConfirmationScreen({
     super.key,
     required this.transaction,
+    this.openReservationsOnPrimaryAction = false,
   });
+
+  void _goPrimaryDestination(BuildContext context) {
+    if (openReservationsOnPrimaryAction) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const MyReservationsScreen()),
+        (Route<dynamic> route) => false,
+      );
+      return;
+    }
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const MainScreen(
+          initialIndex: 0,
+          isAuthenticated: true,
+        ),
+      ),
+      (Route<dynamic> route) => false,
+    );
+  }
+
+  void _goHome(BuildContext context) {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const MainScreen(
+          initialIndex: 0,
+          isAuthenticated: true,
+        ),
+      ),
+      (Route<dynamic> route) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _kBg,
-      appBar: _appBar(context),
-      body: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-        child: Column(children: [
-          const Spacer(),
-
-          // ── Check animé ──────────────────────────────────
-          TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0.0, end: 1.0),
-            duration: const Duration(milliseconds: 700),
-            curve: Curves.elasticOut,
-            builder: (_, v, child) => Transform.scale(scale: v, child: child),
-            child: Container(
-              width: 92,
-              height: 92,
-              decoration: BoxDecoration(
-                  color: _kGreen.withOpacity(0.10), shape: BoxShape.circle),
-              child: Center(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) {
+          return;
+        }
+        _goPrimaryDestination(context);
+      },
+      child: Scaffold(
+        backgroundColor: _kBg,
+        appBar: _appBar(context),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            children: [
+              // ── Check animé ──────────────────────────────────
+              TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: 1.0),
+                duration: const Duration(milliseconds: 700),
+                curve: Curves.elasticOut,
+                builder: (_, v, child) =>
+                    Transform.scale(scale: v, child: child),
                 child: Container(
-                  width: 68,
-                  height: 68,
+                  width: 92,
+                  height: 92,
                   decoration: BoxDecoration(
-                      color: _kGreen.withOpacity(0.18), shape: BoxShape.circle),
-                  child: Icon(Icons.check_circle_outline_rounded,
-                      color: _kGreen, size: 44),
+                      color: _kGreen.withValues(alpha: 0.10),
+                      shape: BoxShape.circle),
+                  child: Center(
+                    child: Container(
+                      width: 68,
+                      height: 68,
+                      decoration: BoxDecoration(
+                          color: _kGreen.withValues(alpha: 0.18),
+                          shape: BoxShape.circle),
+                      child: const Icon(Icons.check_circle_outline_rounded,
+                          color: _kGreen, size: 44),
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-          const Text('Paiement réussi !',
-              style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  color: _kTextDark)),
-          const SizedBox(height: 6),
-          const Text('Votre transaction a été traitée avec succès.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: _kTextMid)),
-          const SizedBox(height: 24),
-
-          // ── Reçu ─────────────────────────────────────────
-          _receipt(),
-
-          const Spacer(),
-
-          // ── Bouton "Guider vers la sortie" ────────────────
-          // Remplacer le body quand GuidanceScreen sera créé :
-          // Navigator.pushReplacement(context,
-          //   MaterialPageRoute(builder: (_) => GuidanceScreen()));
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => HomeNoSessionScreen(onSearchTap: () {}),
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _kBlue,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18)),
-              ),
-              icon: const Icon(Icons.meeting_room_outlined,
-                  color: Colors.white, size: 20),
-              label: const Text('Guider vers la sortie',
+              const SizedBox(height: 20),
+              const Text('Paiement réussi !',
+                  textAlign: TextAlign.center,
                   style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: _kTextDark)),
+              const SizedBox(height: 6),
+              const Text('Votre transaction a été traitée avec succès.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: _kTextMid)),
+              const SizedBox(height: 24),
+              _receipt(),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton.icon(
+                  onPressed: () => _goPrimaryDestination(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kBlue,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18)),
+                  ),
+                  icon: Icon(
+                    openReservationsOnPrimaryAction
+                        ? Icons.list_alt_rounded
+                        : Icons.meeting_room_outlined,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  label: Text(
+                    openReservationsOnPrimaryAction
+                        ? 'Voir mes réservations'
+                        : 'Guider vers la sortie',
+                    style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
-                      fontSize: 15)),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // ── Bouton "Retour à l'accueil" ───────────────────
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: OutlinedButton(
-              onPressed: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const HomeScreen(),
+                      fontSize: 15,
+                    ),
+                  ),
                 ),
               ),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: _kBorder),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18)),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: OutlinedButton(
+                  onPressed: () => _goHome(context),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: _kBorder),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18)),
+                  ),
+                  child: const Text("Retour à l'accueil",
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600, color: _kTextDark)),
+                ),
               ),
-              child: const Text("Retour à l'accueil",
-                  style: TextStyle(
-                      fontWeight: FontWeight.w600, color: _kTextDark)),
-            ),
+            ],
           ),
-        ]),
+        ),
       ),
     );
   }
@@ -142,7 +178,7 @@ class PaymentConfirmationScreen extends StatelessWidget {
         leading: Padding(
           padding: const EdgeInsets.all(8),
           child: GestureDetector(
-            onTap: () => Navigator.pop(context),
+            onTap: () => _goPrimaryDestination(context),
             child: Container(
               decoration: BoxDecoration(
                   color: Colors.white, borderRadius: BorderRadius.circular(12)),
@@ -185,7 +221,7 @@ class PaymentConfirmationScreen extends StatelessWidget {
           ]),
         ]),
         const SizedBox(height: 16),
-        Divider(color: _kBorder),
+        const Divider(color: _kBorder),
         _row('Statut', null, badge: 'PAYÉ'),
         _row('ID Transaction', '#${transaction.transactionRef}'),
         _row('Durée',
@@ -194,9 +230,19 @@ class PaymentConfirmationScreen extends StatelessWidget {
             'Méthode',
             transaction.methode.name[0].toUpperCase() +
                 transaction.methode.name.substring(1)),
-        _row('Total', '${transaction.montant.toInt()} DA', isTotal: true),
+        _row('Total', '${_formatAmount(transaction.montant)} DA',
+            isTotal: true),
       ]),
     );
+  }
+
+  String _formatAmount(double amount) {
+    final double safe = amount < 0 ? 0 : amount;
+    final double rounded = safe.roundToDouble();
+    if ((safe - rounded).abs() < 0.01) {
+      return '${rounded.toInt()}';
+    }
+    return safe.toStringAsFixed(2);
   }
 
   Widget _row(String label, String? value,
@@ -210,11 +256,11 @@ class PaymentConfirmationScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: _kGreen.withOpacity(0.12),
+              color: _kGreen.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(badge,
-                style: TextStyle(
+                style: const TextStyle(
                     fontSize: 11, fontWeight: FontWeight.w700, color: _kGreen)),
           )
         else

@@ -15,6 +15,7 @@ class CreateReservationRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'parking_id' => ['nullable', 'string', 'max:80'],
             'parking_name' => ['required', 'string', 'max:120'],
             'parking_address' => ['nullable', 'string', 'max:255'],
             'equipments' => ['nullable', 'array'],

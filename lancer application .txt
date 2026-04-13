@@ -1,0 +1,22 @@
+server 
+php artisan serve --host=0.0.0.0 --port=8000 
+
+front
+flutter avec --dart-define=API_BASE_URL=http://192.168.1.14:8000/api
+flutter run -d 55bfa800 --dart-define="API_BASE_URL=http://192.168.1.14:8000/api"
+Set-Location "C:\Users\HP\Desktop\parking\parking\parking_front" flutter run -d 55bfa800 --dart-define="API_BASE_URL=http://127.0.0.1:8000/api"
+
+
+
+
+arduino-sim Notre parking                              5           6
+5           Parking Audin                              8           8
+6           Parking Centre Ville Tlemcen              24          24
+1           Parking Didouche Mourad                   20          20
+3           Parking Grande Poste                      10          10
+8           Parking Imama Tlemcen                     32          32
+9           Parking Kiffane                           21          21
+7           Parking Lalla Setti                       18          18
+4           Parking Place des Martyrs                 15          15
+2           Parking Port d'Alger                      35          35
+10          Parking Universite Tlemcen                45          45

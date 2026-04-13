@@ -17,6 +17,8 @@ class InitiatePaymentRequest extends FormRequest
         return [
             'reservation_id' => ['required', 'string'],
             'method' => ['required', Rule::in(['edahabia', 'cib', 'cash'])],
+            'duration_minutes' => ['nullable', 'integer', 'min:0'],
+            'amount' => ['nullable', 'numeric', 'min:0'],
         ];
     }
 }

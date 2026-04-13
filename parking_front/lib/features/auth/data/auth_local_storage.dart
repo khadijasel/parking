@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class AuthLocalStorage {
   static const String _tokenKey = 'auth_user_token';
   static const String _userKey = 'auth_user_payload';
+  static const int _maxCachedAvatarLength = 180000;
 
   Future<void> saveSession({
     required String token,
@@ -12,7 +13,7 @@ class AuthLocalStorage {
   }) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tokenKey, token);
-    await prefs.setString(_userKey, jsonEncode(user));
+    await prefs.setString(_userKey, jsonEncode(_sanitizeUserForCache(user)));
   }
 
   Future<String?> readToken() async {
@@ -32,6 +33,22 @@ class AuthLocalStorage {
       return decoded;
     }
     return null;
+  }
+
+  Future<void> updateUser(Map<String, dynamic> user) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_userKey, jsonEncode(_sanitizeUserForCache(user)));
+  }
+
+  Map<String, dynamic> _sanitizeUserForCache(Map<String, dynamic> user) {
+    final Map<String, dynamic> sanitized = Map<String, dynamic>.from(user);
+    final Object? avatar = sanitized['avatar_data_url'];
+
+    if (avatar is String && avatar.length > _maxCachedAvatarLength) {
+      sanitized.remove('avatar_data_url');
+    }
+
+    return sanitized;
   }
 
   Future<void> clearSession() async {

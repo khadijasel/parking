@@ -5,11 +5,19 @@ import '../../../core/constants/api_constants.dart';
 class AuthApiException implements Exception {
   final String message;
   final int? statusCode;
+  final Map<String, String> fieldErrors;
+  final bool isRetryable;
 
-  const AuthApiException(this.message, {this.statusCode});
+  const AuthApiException(
+    this.message, {
+    this.statusCode,
+    this.fieldErrors = const <String, String>{},
+    this.isRetryable = false,
+  });
 
   @override
-  String toString() => 'AuthApiException(statusCode: $statusCode, message: $message)';
+  String toString() =>
+      'AuthApiException(statusCode: $statusCode, message: $message, fieldErrors: $fieldErrors, isRetryable: $isRetryable)';
 }
 
 class AuthApiResult {
@@ -40,6 +48,7 @@ class AuthApiService {
             );
 
   Future<AuthApiResult> login({
+    required String matricule,
     required String email,
     required String password,
   }) async {
@@ -47,6 +56,7 @@ class AuthApiService {
       final Response<dynamic> response = await _dio.post<dynamic>(
         ApiConstants.userLoginPath,
         data: <String, dynamic>{
+          'matricule': matricule,
           'email': email,
           'password': password,
         },
@@ -56,9 +66,12 @@ class AuthApiService {
       final Map<String, dynamic> payload = _normalizePayload(response.data);
 
       if (statusCode != 200) {
+        final Map<String, String> fieldErrors = _extractFieldErrors(payload);
         throw AuthApiException(
-          _extractMessage(payload),
+          _extractMessage(payload, fieldErrors: fieldErrors),
           statusCode: statusCode,
+          fieldErrors: fieldErrors,
+          isRetryable: statusCode >= 500,
         );
       }
 
@@ -93,9 +106,12 @@ class AuthApiService {
       final Map<String, dynamic> payload = _normalizePayload(response.data);
 
       if (statusCode != 201) {
+        final Map<String, String> fieldErrors = _extractFieldErrors(payload);
         throw AuthApiException(
-          _extractMessage(payload),
+          _extractMessage(payload, fieldErrors: fieldErrors),
           statusCode: statusCode,
+          fieldErrors: fieldErrors,
+          isRetryable: statusCode >= 500,
         );
       }
 
@@ -113,12 +129,30 @@ class AuthApiService {
           headers: <String, String>{
             'Authorization': 'Bearer $token',
           },
+          validateStatus: (int? status) => status != null && status < 500,
         ),
       );
 
-      return response.statusCode == 200;
-    } on DioException {
-      return false;
+      final int statusCode = response.statusCode ?? 0;
+      if (statusCode == 200) {
+        return true;
+      }
+
+      // Explicit auth failures should invalidate local session.
+      if (statusCode == 401 || statusCode == 403) {
+        return false;
+      }
+
+      // Preserve local session on transient backend issues.
+      return true;
+    } on DioException catch (error) {
+      final int? statusCode = error.response?.statusCode;
+      if (statusCode == 401 || statusCode == 403) {
+        return false;
+      }
+
+      // Network errors should not force logout.
+      return true;
     }
   }
 
@@ -136,9 +170,12 @@ class AuthApiService {
       final int statusCode = response.statusCode ?? 0;
       if (statusCode != 200 && statusCode != 204) {
         final Map<String, dynamic> payload = _normalizePayload(response.data);
+        final Map<String, String> fieldErrors = _extractFieldErrors(payload);
         throw AuthApiException(
-          _extractMessage(payload),
+          _extractMessage(payload, fieldErrors: fieldErrors),
           statusCode: statusCode,
+          fieldErrors: fieldErrors,
+          isRetryable: statusCode >= 500,
         );
       }
     } on DioException catch (error) {
@@ -189,9 +226,12 @@ class AuthApiService {
     final String serverHint = 'Serveur: ${ApiConstants.baseUrl}';
 
     if (statusCode != null) {
+      final Map<String, String> fieldErrors = _extractFieldErrors(payload);
       return AuthApiException(
-        _extractMessage(payload),
+        _extractMessage(payload, fieldErrors: fieldErrors),
         statusCode: statusCode,
+        fieldErrors: fieldErrors,
+        isRetryable: statusCode >= 500,
       );
     }
 
@@ -200,11 +240,13 @@ class AuthApiService {
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
         return AuthApiException(
-          'Délai dépassé. Vérifiez votre connexion puis réessayez. $serverHint',
+          'Délai dépassé. Vérifiez votre connexion puis appuyez sur Réessayer. $serverHint',
+          isRetryable: true,
         );
       case DioExceptionType.connectionError:
         return AuthApiException(
-          'Impossible de contacter le serveur. Vérifiez votre connexion. $serverHint',
+          'Impossible de contacter le serveur. Vérifiez votre connexion puis appuyez sur Réessayer. $serverHint',
+          isRetryable: true,
         );
       case DioExceptionType.cancel:
         return const AuthApiException('Requête annulée.');
@@ -212,11 +254,21 @@ class AuthApiService {
         return const AuthApiException('Certificat serveur invalide.');
       case DioExceptionType.unknown:
       case DioExceptionType.badResponse:
-        return const AuthApiException('Une erreur est survenue, veuillez réessayer.');
+        return const AuthApiException(
+          'Une erreur réseau est survenue. Appuyez sur Réessayer.',
+          isRetryable: true,
+        );
     }
   }
 
-  String _extractMessage(Map<String, dynamic> payload) {
+  String _extractMessage(
+    Map<String, dynamic> payload, {
+    Map<String, String>? fieldErrors,
+  }) {
+    if (fieldErrors != null && fieldErrors.isNotEmpty) {
+      return fieldErrors.values.first;
+    }
+
     final Object? message = payload['message'];
     if (message is String && message.trim().isNotEmpty) {
       return message;
@@ -232,5 +284,26 @@ class AuthApiService {
     }
 
     return 'Une erreur est survenue, veuillez réessayer.';
+  }
+
+  Map<String, String> _extractFieldErrors(Map<String, dynamic> payload) {
+    final Object? errorsObj = payload['errors'];
+    if (errorsObj is! Map<String, dynamic>) {
+      return const <String, String>{};
+    }
+
+    final Map<String, String> fieldErrors = <String, String>{};
+    for (final MapEntry<String, dynamic> entry in errorsObj.entries) {
+      final dynamic value = entry.value;
+      if (value is List && value.isNotEmpty && value.first is String) {
+        fieldErrors[entry.key] = (value.first as String).trim();
+        continue;
+      }
+      if (value is String && value.trim().isNotEmpty) {
+        fieldErrors[entry.key] = value.trim();
+      }
+    }
+
+    return fieldErrors;
   }
 }

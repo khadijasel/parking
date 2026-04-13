@@ -76,7 +76,7 @@ class HomeNoSessionScreen extends StatelessWidget {
                       Positioned(
                         bottom: 50,
                         child: Icon(Icons.directions_car,
-                            size: 80, color: Colors.white.withOpacity(0.5)),
+                            size: 80, color: Colors.white.withValues(alpha: 0.5)),
                       ),
 
                       // 2. Le "P" en avant-plan (INCLINÉ)
@@ -96,7 +96,7 @@ class HomeNoSessionScreen extends StatelessWidget {
                                   BorderRadius.circular(22), // Coins arrondis
                               boxShadow: [
                                 BoxShadow(
-                                    color: Colors.black.withOpacity(0.12),
+                                    color: Colors.black.withValues(alpha: 0.12),
                                     blurRadius: 16,
                                     offset: const Offset(0, 6)),
                               ],

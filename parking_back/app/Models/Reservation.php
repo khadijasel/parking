@@ -12,6 +12,7 @@ class Reservation extends Model
 
     protected $fillable = [
         'user_id',
+        'parking_id',
         'parking_name',
         'parking_address',
         'equipments',
@@ -24,6 +25,7 @@ class Reservation extends Model
         'payment_status',
         'expires_at',
         'cancelled_at',
+        'spot_locked',
     ];
 
     protected $casts = [
@@ -34,5 +36,6 @@ class Reservation extends Model
         'duration_minutes' => 'integer',
         'expires_at' => 'datetime',
         'cancelled_at' => 'datetime',
+        'spot_locked' => 'boolean',
     ];
 }

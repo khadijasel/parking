@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:parking_front/core/widgets/app_feedback.dart';
 import '../../../core/services/location_service.dart';
+import '../data/parking_availability_repository.dart';
 import '../../../theme/app_colors.dart';
 import '../data/parking_data.dart';
 import '../models/parking.dart';
@@ -10,6 +14,7 @@ import 'parking_detail_screen.dart';
 class MapHomeScreen extends StatefulWidget {
   final Parking? autoNavigateParking;
   final bool isAuthenticated;
+  final bool isActive;
   final bool showRouteToSelected;
   final LatLng? initialUserLocation;
   final bool directReservationOnDetails;
@@ -18,6 +23,7 @@ class MapHomeScreen extends StatefulWidget {
     super.key,
     this.autoNavigateParking,
     this.isAuthenticated = false,
+    this.isActive = true,
     this.showRouteToSelected = false,
     this.initialUserLocation,
     this.directReservationOnDetails = false,
@@ -29,8 +35,12 @@ class MapHomeScreen extends StatefulWidget {
 
 class _MapHomeScreenState extends State<MapHomeScreen> {
   final MapController _mapController = MapController();
+  final ParkingAvailabilityRepository _availabilityRepository =
+      ParkingAvailabilityRepository();
   Parking? _selectedParking;
   final List<String> _activeFilters = [];
+  String _selectedVehicleType = 'car';
+  String _searchQuery = '';
   LatLng? _userLocation;
   bool _isLoadingLocation = false;
   bool _showRouteToSelected = false;
@@ -41,13 +51,20 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
   bool _isMapReady = false;
   LatLng? _pendingMapCenter;
   double? _pendingMapZoom;
+  Map<String, int> _dynamicSpotsById = const <String, int>{};
+  Map<String, int> _dynamicSpotsByName = const <String, int>{};
+  Timer? _availabilityRefreshTimer;
+  bool _isRefreshingAvailability = false;
+
+  static const Duration _availabilityRefreshInterval = Duration(seconds: 15);
 
   LatLng get _routeStartPoint => _userLocation ?? const LatLng(36.7650, 3.0570);
 
   double get _navigationDistanceKm {
     if (_routeDistanceKm > 0) return _routeDistanceKm;
     if (_selectedParking == null || _userLocation == null) return 0;
-    return LocationService.distanceKm(_routeStartPoint, _selectedParking!.location);
+    return LocationService.distanceKm(
+        _routeStartPoint, _selectedParking!.location);
   }
 
   int get _navigationMinutes {
@@ -63,6 +80,142 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     _userLocation = widget.initialUserLocation;
     _showRouteToSelected = widget.showRouteToSelected;
     _loadUserLocation();
+    _loadDynamicAvailability();
+    if (widget.showRouteToSelected && widget.autoNavigateParking != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+
+        _activateNavigation(widget.autoNavigateParking!);
+      });
+    }
+    _setAvailabilityAutoRefreshEnabled(widget.isActive);
+  }
+
+  @override
+  void didUpdateWidget(covariant MapHomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive != widget.isActive) {
+      _setAvailabilityAutoRefreshEnabled(widget.isActive);
+      if (widget.isActive) {
+        _loadDynamicAvailability();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _availabilityRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _setAvailabilityAutoRefreshEnabled(bool enabled) {
+    _availabilityRefreshTimer?.cancel();
+    _availabilityRefreshTimer = null;
+
+    if (!enabled) {
+      return;
+    }
+
+    _availabilityRefreshTimer = Timer.periodic(
+      _availabilityRefreshInterval,
+      (_) => _loadDynamicAvailability(),
+    );
+  }
+
+  String _normalizeParkingName(String value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .replaceAll('à', 'a')
+        .replaceAll('â', 'a')
+        .replaceAll('ä', 'a')
+        .replaceAll('á', 'a')
+        .replaceAll('ã', 'a')
+        .replaceAll('å', 'a')
+        .replaceAll('ç', 'c')
+        .replaceAll('é', 'e')
+        .replaceAll('è', 'e')
+        .replaceAll('ê', 'e')
+        .replaceAll('ë', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ì', 'i')
+        .replaceAll('î', 'i')
+        .replaceAll('ï', 'i')
+        .replaceAll('ñ', 'n')
+        .replaceAll('ó', 'o')
+        .replaceAll('ò', 'o')
+        .replaceAll('ô', 'o')
+        .replaceAll('ö', 'o')
+        .replaceAll('õ', 'o')
+        .replaceAll('ú', 'u')
+        .replaceAll('ù', 'u')
+        .replaceAll('û', 'u')
+        .replaceAll('ü', 'u')
+        .replaceAll('ý', 'y')
+        .replaceAll('ÿ', 'y');
+  }
+
+  Future<void> _loadDynamicAvailability() async {
+    if (_isRefreshingAvailability) {
+      return;
+    }
+
+    _isRefreshingAvailability = true;
+    try {
+      final availability = await _availabilityRepository.fetchAvailability();
+      if (!mounted) {
+        return;
+      }
+
+      final Map<String, int> mapped = <String, int>{};
+      final Map<String, int> byId = <String, int>{};
+      for (final item in availability) {
+        final String id = item.parkingId.trim();
+        if (id.isNotEmpty) {
+          byId[id] = item.availableSpots;
+        }
+
+        final String key = _normalizeParkingName(item.parkingName);
+        if (key.isEmpty) {
+          continue;
+        }
+
+        mapped[key] = item.availableSpots;
+      }
+
+      setState(() {
+        _dynamicSpotsById = byId;
+        _dynamicSpotsByName = mapped;
+      });
+    } catch (_) {
+      // Keep static data if server availability is temporarily unreachable.
+    } finally {
+      _isRefreshingAvailability = false;
+    }
+  }
+
+  int _resolveAvailableSpots(Parking parking) {
+    final int? byId = _dynamicSpotsById[parking.id];
+    if (byId != null) {
+      return byId;
+    }
+
+    return _dynamicSpotsByName[_normalizeParkingName(parking.name)] ??
+        parking.availableSpots;
+  }
+
+  Parking _withDynamicAvailability(Parking parking) {
+    final int dynamicSpots = _resolveAvailableSpots(parking);
+    if (dynamicSpots == parking.availableSpots) {
+      return parking;
+    }
+
+    return parking.copyWith(
+      availableSpots: dynamicSpots,
+      lastUpdate: 'Mis a jour via serveur',
+    );
   }
 
   void _moveMap(LatLng center, double zoom) {
@@ -75,20 +228,23 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
   }
 
   void _focusOnNearestParking() {
-    if (_userLocation == null || _parkingsByDistance.isEmpty) return;
-    final nearest = _parkingsByDistance.first;
+    if (_userLocation == null || _visibleParkings.isEmpty) return;
+    final nearest = _visibleParkings.first;
     _moveMap(nearest.location, 14.8);
   }
 
   final List<Map<String, dynamic>> _filters = [
     {'label': 'Électrique', 'icon': Icons.bolt},
     {'label': 'Tramway', 'icon': Icons.tram},
+    {'label': 'Téléphérique', 'icon': Icons.cable_rounded},
     {'label': '24h/7j', 'icon': Icons.access_time},
     {'label': 'Handicapé', 'icon': Icons.accessible},
   ];
 
   List<Parking> get _parkingsByDistance {
-    final all = List<Parking>.from(ParkingData.parkings);
+    final all = ParkingData.parkings
+        .map(_withDynamicAvailability)
+        .toList(growable: false);
     if (_userLocation == null) return all;
     all.sort((a, b) {
       final da = LocationService.distanceKm(_userLocation!, a.location);
@@ -96,6 +252,199 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
       return da.compareTo(db);
     });
     return all;
+  }
+
+  bool _matchesFilter(Parking parking, String filter) {
+    final String tags = parking.tags.join(' ').toLowerCase();
+    final String equipments = parking.equipments.join(' ').toLowerCase();
+    final String nameAndAddress =
+        '${parking.name} ${parking.address}'.toLowerCase();
+
+    switch (filter) {
+      case 'Électrique':
+        return tags.contains('élec') ||
+            tags.contains('elec') ||
+            tags.contains('borne') ||
+            equipments.contains('élec') ||
+            equipments.contains('elec');
+      case 'Tramway':
+        return tags.contains('tram') || nameAndAddress.contains('tram');
+      case 'Téléphérique':
+        return parking.nearTelepherique ||
+            tags.contains('téléph') ||
+            tags.contains('teleph');
+      case '24h/7j':
+        return parking.isOpen24h;
+      case 'Handicapé':
+        return tags.contains('handi') ||
+            equipments.contains('handi') ||
+            equipments.contains('accessible');
+      default:
+        return true;
+    }
+  }
+
+  bool _supportsVehicleConstraints(Parking parking) {
+    final Set<String> supported = parking.supportedVehicleTypes
+        .map((String value) => value.trim().toLowerCase())
+        .where((String value) => value.isNotEmpty)
+        .toSet();
+
+    if (supported.isNotEmpty && !supported.contains(_selectedVehicleType)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  String get _vehicleTypeLabel {
+    switch (_selectedVehicleType) {
+      case 'moto':
+        return 'Moto';
+      case 'truck':
+        return 'Camion';
+      default:
+        return 'Voiture';
+    }
+  }
+
+  Future<void> _showVehicleFilterSheet() async {
+    String tempType = _selectedVehicleType;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Text(
+                      'Filtrer par vehicule',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: <Map<String, String>>[
+                        <String, String>{'value': 'car', 'label': 'Voiture'},
+                        <String, String>{'value': 'moto', 'label': 'Moto'},
+                        <String, String>{'value': 'truck', 'label': 'Camion'},
+                      ].map((Map<String, String> item) {
+                        final bool active = tempType == item['value'];
+                        return ChoiceChip(
+                          label: Text(item['label']!),
+                          selected: active,
+                          onSelected: (_) {
+                            setModalState(() => tempType = item['value']!);
+                          },
+                          selectedColor: AppColors.blue.withValues(alpha: 0.14),
+                          labelStyle: TextStyle(
+                            color: active ? AppColors.blue : AppColors.textDark,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        );
+                      }).toList(growable: false),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          setState(() {
+                            _selectedVehicleType = tempType;
+
+                            if (_selectedParking != null &&
+                                !_isSelectedParkingVisible()) {
+                              _selectedParking = null;
+                              _showRouteToSelected = false;
+                              _routePoints = const [];
+                              _routeDistanceKm = 0;
+                              _routeDurationMinutes = 0;
+                            }
+                          });
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.blue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text(
+                          'Appliquer',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  List<Parking> get _visibleParkings {
+    final String query = _searchQuery.trim().toLowerCase();
+
+    return _parkingsByDistance.where((Parking parking) {
+      if (!_supportsVehicleConstraints(parking)) {
+        return false;
+      }
+
+      if (_activeFilters.isNotEmpty) {
+        final bool passesAllFilters = _activeFilters
+            .every((String filter) => _matchesFilter(parking, filter));
+        if (!passesAllFilters) {
+          return false;
+        }
+      }
+
+      if (query.isEmpty) {
+        return true;
+      }
+
+      final String haystack =
+          '${parking.name} ${parking.address} ${parking.tags.join(' ')} ${parking.equipments.join(' ')}'
+              .toLowerCase();
+      return haystack.contains(query);
+    }).toList(growable: false);
+  }
+
+  String get _searchCityHint {
+    if (_visibleParkings.isEmpty) {
+      return 'votre ville';
+    }
+
+    final String source =
+        '${_visibleParkings.first.name} ${_visibleParkings.first.address}'
+            .toLowerCase();
+
+    if (source.contains('tlemcen')) {
+      return 'Tlemcen';
+    }
+
+    if (source.contains('alger')) {
+      return 'Alger';
+    }
+
+    return 'votre ville';
   }
 
   Future<void> _loadUserLocation({bool force = false}) async {
@@ -113,10 +462,9 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Activez la localisation GPS et autorisez l\'application.'),
-      ),
+    AppFeedback.showWarning(
+      context,
+      'Activez la localisation GPS et autorisez l\'application.',
     );
   }
 
@@ -149,21 +497,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     final userLocation = await _ensureUserLocation();
     if (!mounted) return;
 
-    if (userLocation == null) {
-      setState(() {
-        _isLoadingRoute = false;
-        _showRouteToSelected = false;
-        _routePoints = const [];
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Localisation introuvable. Activez le GPS puis réessayez.'),
-        ),
-      );
-      return;
-    }
-
-    final start = userLocation;
+    final LatLng start = userLocation ?? const LatLng(36.7650, 3.0570);
     final route = await LocationService.getDrivingRoute(
       from: start,
       to: parking.location,
@@ -172,15 +506,22 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     if (!mounted) return;
 
     if (route == null || route.points.length < 2) {
+      final double fallbackDistance =
+          LocationService.distanceKm(start, parking.location);
+      final int fallbackDuration =
+          ((fallbackDistance / 28.0) * 60).round().clamp(1, 9999);
+
       setState(() {
+        _routePoints = <LatLng>[start, parking.location];
+        _routeDistanceKm = fallbackDistance;
+        _routeDurationMinutes = fallbackDuration;
         _isLoadingRoute = false;
-        _showRouteToSelected = false;
-        _routePoints = const [];
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Impossible de calculer un vrai itinéraire pour le moment.'),
-        ),
+
+      _fitRouteInView();
+      AppFeedback.showInfo(
+        context,
+        'Itineraire simplifie active (mode hors ligne).',
       );
       return;
     }
@@ -214,6 +555,25 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     _moveMap(_userLocation!, 15.0);
   }
 
+  void _zoomBy(double delta) {
+    if (!_isMapReady) {
+      return;
+    }
+
+    final MapCamera camera = _mapController.camera;
+    final double nextZoom = (camera.zoom + delta).clamp(5.0, 18.5);
+    _mapController.move(camera.center, nextZoom);
+  }
+
+  bool _isSelectedParkingVisible() {
+    final String? selectedId = _selectedParking?.id;
+    if (selectedId == null) {
+      return false;
+    }
+
+    return _visibleParkings.any((Parking parking) => parking.id == selectedId);
+  }
+
   Future<void> _openDetails(Parking parking) async {
     final action = await Navigator.push<String>(
       context,
@@ -231,6 +591,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     if (action == 'navigate') {
       await _activateNavigation(parking);
     }
+
+    await _loadDynamicAvailability();
   }
 
   String _distanceLabel(Parking parking) {
@@ -301,7 +663,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
             ],
           ),
         MarkerLayer(
-          markers: _parkingsByDistance.map((parking) {
+          markers: _visibleParkings.map((parking) {
             return Marker(
               point: parking.location,
               width: 80,
@@ -337,14 +699,21 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
 
   Widget _buildPriceMarker(Parking parking) {
     final isSelected = _selectedParking?.id == parking.id;
+    final bool isArduinoParking = parking.id == 'arduino-sim';
+    final Color markerColor = isSelected
+        ? AppColors.blue
+        : (isArduinoParking
+            ? const Color(0xFFEF8D22)
+            : const Color(0xFF2ECC71));
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: isSelected ? AppColors.blue : const Color(0xFF2ECC71),
+        color: markerColor,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -379,19 +748,36 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                       borderRadius: BorderRadius.circular(30),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
+                          color: Colors.black.withValues(alpha: 0.1),
                           blurRadius: 10,
                           offset: const Offset(0, 2),
                         ),
                       ],
                     ),
                     child: TextField(
+                      onChanged: (String value) {
+                        setState(() {
+                          _searchQuery = value;
+
+                          if (_selectedParking != null &&
+                              !_isSelectedParkingVisible()) {
+                            _selectedParking = null;
+                            _showRouteToSelected = false;
+                            _routePoints = const [];
+                            _routeDistanceKm = 0;
+                            _routeDurationMinutes = 0;
+                          }
+                        });
+                      },
                       decoration: InputDecoration(
-                        hintText: 'Rechercher à Alger...',
-                        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 15),
-                        prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                        hintText: 'Rechercher a $_searchCityHint...',
+                        hintStyle: TextStyle(
+                            color: Colors.grey.shade400, fontSize: 15),
+                        prefixIcon:
+                            const Icon(Icons.search, color: Colors.grey),
                         border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 14),
                       ),
                     ),
                   ),
@@ -405,33 +791,70 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
+                        color: Colors.black.withValues(alpha: 0.1),
                         blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
                     ],
                   ),
-                  child: const Icon(Icons.tune, color: AppColors.textDark),
+                  child: GestureDetector(
+                    onTap: _showVehicleFilterSheet,
+                    child: const Icon(Icons.tune, color: AppColors.textDark),
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 10),
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: <Widget>[
+                  const Icon(Icons.directions_car_filled_rounded,
+                      size: 16, color: AppColors.blue),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _vehicleTypeLabel,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textDark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             if (_isLoadingLocation)
               const Padding(
                 padding: EdgeInsets.only(bottom: 8),
                 child: LinearProgressIndicator(minHeight: 2),
               ),
-            if (_userLocation != null && _parkingsByDistance.isNotEmpty)
+            if (_userLocation != null && _visibleParkings.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
+                        color: Colors.black.withValues(alpha: 0.06),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -439,12 +862,14 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.near_me_rounded, size: 16, color: AppColors.blue),
+                      const Icon(Icons.near_me_rounded,
+                          size: 16, color: AppColors.blue),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          'Plus proche: ${_parkingsByDistance.first.name} (${_distanceLabel(_parkingsByDistance.first)})',
-                          style: const TextStyle(fontSize: 12, color: AppColors.textDark),
+                          'Plus proche: ${_visibleParkings.first.name} (${_distanceLabel(_visibleParkings.first)})',
+                          style: const TextStyle(
+                              fontSize: 12, color: AppColors.textDark),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -470,16 +895,26 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                         } else {
                           _activeFilters.add(filter['label'] as String);
                         }
+
+                        if (_selectedParking != null &&
+                            !_isSelectedParkingVisible()) {
+                          _selectedParking = null;
+                          _showRouteToSelected = false;
+                          _routePoints = const [];
+                          _routeDistanceKm = 0;
+                          _routeDurationMinutes = 0;
+                        }
                       });
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
                         color: isActive ? AppColors.blue : Colors.white,
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.08),
+                            color: Colors.black.withValues(alpha: 0.08),
                             blurRadius: 6,
                             offset: const Offset(0, 2),
                           ),
@@ -497,14 +932,16 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                           Text(
                             filter['label'] as String,
                             style: TextStyle(
-                              color: isActive ? Colors.white : AppColors.textDark,
+                              color:
+                                  isActive ? Colors.white : AppColors.textDark,
                               fontWeight: FontWeight.w600,
                               fontSize: 13,
                             ),
                           ),
                           if (isActive) ...[
                             const SizedBox(width: 4),
-                            const Icon(Icons.close, size: 14, color: Colors.white),
+                            const Icon(Icons.close,
+                                size: 14, color: Colors.white),
                           ],
                         ],
                       ),
@@ -513,6 +950,37 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                 },
               ),
             ),
+            if (_visibleParkings.isEmpty)
+              Container(
+                margin: const EdgeInsets.only(top: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded,
+                        color: AppColors.textMid, size: 16),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Aucun parking ne correspond a votre recherche.',
+                        style:
+                            TextStyle(fontSize: 12, color: AppColors.textMid),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -522,17 +990,16 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
   Widget _buildMapControls() {
     return Positioned(
       right: 16,
-      bottom: _showRouteToSelected
-          ? 235
-          : (_selectedParking != null ? 280 : 40),
+      bottom:
+          _showRouteToSelected ? 235 : (_selectedParking != null ? 280 : 40),
       child: Column(
         children: [
           _buildControlButton(Icons.add, () {
-            // Zoom in - approximate by moving
+            _zoomBy(0.8);
           }),
           const SizedBox(height: 8),
           _buildControlButton(Icons.remove, () {
-            // Zoom out
+            _zoomBy(-0.8);
           }),
           const SizedBox(height: 16),
           _buildControlButton(Icons.navigation_outlined, () {
@@ -597,7 +1064,9 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            _isLoadingRoute ? 'Calcul...' : '$_navigationMinutes min',
+                            _isLoadingRoute
+                                ? 'Calcul...'
+                                : '$_navigationMinutes min',
                             style: const TextStyle(
                               fontSize: 13,
                               color: Color(0xFF8A9BB5),
@@ -672,7 +1141,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withValues(alpha: 0.1),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -685,6 +1154,11 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
 
   Widget _buildParkingPreview() {
     final parking = _selectedParking!;
+    final String imageUrl =
+        (parking.imageUrl != null && parking.imageUrl!.trim().isNotEmpty)
+            ? parking.imageUrl!.trim()
+            : kParkingPreviewImageUrl;
+
     return Positioned(
       left: 0,
       right: 0,
@@ -697,7 +1171,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.12),
+              color: Colors.black.withValues(alpha: 0.12),
               blurRadius: 16,
               offset: const Offset(0, -2),
             ),
@@ -715,13 +1189,19 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                   height: 90,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
-                    gradient: LinearGradient(
-                      colors: [Colors.orange.shade200, Colors.orange.shade100],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                    color: const Color(0xFFEAF1FB),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Image.network(
+                      imageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Image.asset(
+                        'assets/images/parking.png',
+                        fit: BoxFit.contain,
+                      ),
                     ),
                   ),
-                  child: const Icon(Icons.local_parking, color: Colors.white, size: 36),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -739,12 +1219,14 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          Icon(Icons.location_on_outlined, size: 14, color: Colors.grey.shade500),
+                          Icon(Icons.location_on_outlined,
+                              size: 14, color: Colors.grey.shade500),
                           const SizedBox(width: 4),
                           Flexible(
                             child: Text(
                               '${parking.address} • ${_distanceLabel(parking)}',
-                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey.shade600),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -757,7 +1239,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                           spacing: 6,
                           children: parking.tags.map((tag) {
                             return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
                                 color: tag.contains('Élec')
                                     ? const Color(0xFFE8F5E9)
@@ -768,7 +1251,9 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    tag.contains('Élec') ? Icons.bolt : Icons.tram,
+                                    tag.contains('Élec')
+                                        ? Icons.bolt
+                                        : Icons.tram,
                                     size: 12,
                                     color: tag.contains('Élec')
                                         ? AppColors.green
@@ -792,13 +1277,6 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                         ),
                     ],
                   ),
-                ),
-                // Bookmark icon
-                IconButton(
-                  icon: const Icon(Icons.bookmark_border, color: AppColors.textDark),
-                  onPressed: () {},
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
                 ),
               ],
             ),
@@ -844,7 +1322,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                     ),
                     child: const Text(
                       'Voir détails',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                      style:
+                          TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
                     ),
                   ),
                 ),

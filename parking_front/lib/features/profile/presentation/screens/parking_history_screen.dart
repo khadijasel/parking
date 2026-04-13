@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../../../features/home/presentation/screens/home_screen.dart';
+import '../../../../features/main/main_screen.dart';
+import '../../../parking/data/parking_data.dart';
+import '../../../parking/models/parking.dart';
+import '../../../parking/presentation/parking_detail_screen.dart';
+import '../../../reservation/data/models/parking_session_api_model.dart';
+import '../../../reservation/data/reservation_repository.dart';
 
 // ─── Constantes locales ─────────────────────────────────────────────────────
 const _kBg = Color(0xFFF4F7FC);
@@ -13,8 +18,11 @@ const _kBlueBg = Color(0xFFEAF1FB);
 // ─── Modèle simplifié ───────────────────────────────────────────────────────
 enum _SessionStatus { enCours, termine }
 
+enum _HistoryFilter { toutes, enCours, terminees }
+
 class _ParkingSession {
   final String parkingName;
+  final String parkingImageUrl;
   final String sessionId;
   final String dateHeure;
   final String duree;
@@ -23,6 +31,7 @@ class _ParkingSession {
 
   const _ParkingSession({
     required this.parkingName,
+    required this.parkingImageUrl,
     required this.sessionId,
     required this.dateHeure,
     required this.duree,
@@ -32,51 +41,246 @@ class _ParkingSession {
 }
 
 // ─── Données statiques ──────────────────────────────────────────────────────
-const List<_ParkingSession> _kSessions = [
-  _ParkingSession(
-    parkingName: 'Place Audin',
-    sessionId: 'PK-994201',
-    dateHeure: "Aujourd'hui, 09:15",
-    duree: '1h 45min',
-    totalCost: 150,
-    status: _SessionStatus.enCours,
-  ),
-  _ParkingSession(
-    parkingName: 'Sidi Yahia Central',
-    sessionId: 'PK-882910',
-    dateHeure: '12 Oct 2023, 14:30',
-    duree: '2h 30min',
-    totalCost: 450,
-    status: _SessionStatus.termine,
-  ),
-  _ParkingSession(
-    parkingName: 'El Biar Heights',
-    sessionId: 'PK-661554',
-    dateHeure: '08 Oct 2023, 18:00',
-    duree: '1h 00min',
-    totalCost: 200,
-    status: _SessionStatus.termine,
-  ),
-  _ParkingSession(
-    parkingName: 'Bab Ezzouar Mall',
-    sessionId: 'PK-110293',
-    dateHeure: '05 Oct 2023, 11:45',
-    duree: '4h 15min',
-    totalCost: 850,
-    status: _SessionStatus.termine,
-  ),
-];
-
 // ─── ÉCRAN HISTORIQUE ───────────────────────────────────────────────────────
-class ParkingHistoryScreen extends StatelessWidget {
+class ParkingHistoryScreen extends StatefulWidget {
   const ParkingHistoryScreen({super.key});
 
   @override
+  State<ParkingHistoryScreen> createState() => _ParkingHistoryScreenState();
+}
+
+class _ParkingHistoryScreenState extends State<ParkingHistoryScreen> {
+  static const Duration _screenCacheTtl = Duration(seconds: 20);
+  static List<_ParkingSession>? _screenCache;
+  static DateTime? _screenCacheAt;
+
+  final ReservationRepository _reservationRepository = ReservationRepository();
+
+  bool _isLoading = true;
+  String? _errorMessage;
+  List<_ParkingSession> _sessions = <_ParkingSession>[];
+  _HistoryFilter _historyFilter = _HistoryFilter.toutes;
+
+  @override
+  void initState() {
+    super.initState();
+    final bool hasFreshScreenCache = _screenCache != null &&
+        _screenCacheAt != null &&
+        DateTime.now().difference(_screenCacheAt!) < _screenCacheTtl;
+
+    if (hasFreshScreenCache) {
+      _sessions = List<_ParkingSession>.from(_screenCache!);
+      _isLoading = false;
+    }
+
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory({
+    bool forceRefresh = false,
+  }) async {
+    final bool shouldShowBlockingLoader = _sessions.isEmpty;
+
+    setState(() {
+      _isLoading = shouldShowBlockingLoader;
+      _errorMessage = null;
+    });
+
+    try {
+      final Future<ParkingSessionApiModel?> currentSessionFuture =
+          _reservationRepository.fetchCurrentParkingSession(
+        forceRefresh: forceRefresh,
+      );
+      final Future<List<ParkingSessionApiModel>> historyFuture =
+          _reservationRepository.fetchParkingSessionHistory(
+        forceRefresh: forceRefresh,
+      );
+
+      final ParkingSessionApiModel? currentSession = await currentSessionFuture;
+      final List<ParkingSessionApiModel> history = await historyFuture;
+
+      final List<_ParkingSession> mapped = <_ParkingSession>[];
+
+      if (currentSession != null && currentSession.isActive) {
+        final int liveDurationSeconds =
+            _computeLiveDurationSeconds(currentSession);
+
+        mapped.add(_ParkingSession(
+          parkingName: currentSession.parkingName.isEmpty
+              ? 'Session parking'
+              : currentSession.parkingName,
+          parkingImageUrl: _resolveParkingImageUrl(
+            currentSession.parkingName,
+          ),
+          sessionId: currentSession.ticketCode.isEmpty
+              ? currentSession.id
+              : currentSession.ticketCode,
+          dateHeure: _formatDate(currentSession.startedAt),
+          duree: _formatDuration(liveDurationSeconds),
+          totalCost: _computeSessionCost(
+            currentSession,
+            durationSecondsOverride: liveDurationSeconds,
+          ),
+          status: _SessionStatus.enCours,
+        ));
+      }
+
+      mapped.addAll(history.map((ParkingSessionApiModel item) {
+        return _ParkingSession(
+          parkingName:
+              item.parkingName.isEmpty ? 'Session parking' : item.parkingName,
+          parkingImageUrl: _resolveParkingImageUrl(item.parkingName),
+          sessionId: item.ticketCode.isEmpty ? item.id : item.ticketCode,
+          dateHeure: _formatDate(item.endedAt ?? item.startedAt),
+          duree: _formatDuration(item.durationSeconds),
+          totalCost: _computeSessionCost(item),
+          status: _SessionStatus.termine,
+        );
+      }));
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _sessions = mapped;
+        _isLoading = false;
+      });
+
+      _screenCache = List<_ParkingSession>.from(mapped);
+      _screenCacheAt = DateTime.now();
+    } on ReservationException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        if (_sessions.isEmpty) {
+          _sessions = <_ParkingSession>[];
+        }
+        _isLoading = false;
+        _errorMessage = error.message;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        if (_sessions.isEmpty) {
+          _sessions = <_ParkingSession>[];
+        }
+        _isLoading = false;
+        _errorMessage = 'Impossible de charger l\'historique.';
+      });
+    }
+  }
+
+  String _formatDate(DateTime? date) {
+    if (date == null) {
+      return 'Date inconnue';
+    }
+
+    final DateTime local = date.toLocal();
+    final String dd = local.day.toString().padLeft(2, '0');
+    final String mm = local.month.toString().padLeft(2, '0');
+    final String yyyy = local.year.toString();
+    final String hh = local.hour.toString().padLeft(2, '0');
+    final String min = local.minute.toString().padLeft(2, '0');
+    return '$dd/$mm/$yyyy, $hh:$min';
+  }
+
+  String _formatDuration(int? durationSeconds) {
+    if (durationSeconds == null || durationSeconds <= 0) {
+      return '0h 00min';
+    }
+
+    final int totalMinutes = durationSeconds ~/ 60;
+    final int hours = totalMinutes ~/ 60;
+    final int minutes = totalMinutes % 60;
+    return '${hours}h ${minutes.toString().padLeft(2, '0')}min';
+  }
+
+  double _resolveParkingRate(String parkingName) {
+    final String needle = parkingName.trim().toLowerCase();
+
+    for (final Parking parking in ParkingData.parkings) {
+      final String candidate = parking.name.trim().toLowerCase();
+      if (candidate == needle ||
+          candidate.contains(needle) ||
+          needle.contains(candidate)) {
+        return parking.pricePerHour.toDouble();
+      }
+    }
+
+    return 100;
+  }
+
+  String _resolveParkingImageUrl(String parkingName) {
+    final String needle = parkingName.trim().toLowerCase();
+    if (needle.isEmpty) {
+      return kParkingPreviewImageUrl;
+    }
+
+    for (final Parking parking in ParkingData.parkings) {
+      final String candidate = parking.name.trim().toLowerCase();
+      if (candidate == needle ||
+          candidate.contains(needle) ||
+          needle.contains(candidate)) {
+        final String? imageUrl = parking.imageUrl?.trim();
+        if (imageUrl != null && imageUrl.isNotEmpty) {
+          return imageUrl;
+        }
+        return kParkingPreviewImageUrl;
+      }
+    }
+
+    return kParkingPreviewImageUrl;
+  }
+
+  int _computeLiveDurationSeconds(ParkingSessionApiModel session) {
+    final DateTime? start = session.startedAt ?? session.createdAt;
+    if (start == null) {
+      return (session.durationSeconds ?? 0).clamp(0, 2147483647).toInt();
+    }
+
+    final int live = DateTime.now().difference(start).inSeconds;
+    return live < 0 ? 0 : live;
+  }
+
+  int _computeSessionCost(
+    ParkingSessionApiModel session, {
+    int? durationSecondsOverride,
+  }) {
+    final int durationSeconds =
+        durationSecondsOverride ?? session.durationSeconds ?? 0;
+    if (durationSeconds <= 0) {
+      return 0;
+    }
+
+    final double total =
+        _resolveParkingRate(session.parkingName) * (durationSeconds / 3600.0);
+    return total < 0 ? 0 : total.round();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final List<_ParkingSession> enCours =
-        _kSessions.where((s) => s.status == _SessionStatus.enCours).toList();
-    final List<_ParkingSession> terminees =
-        _kSessions.where((s) => s.status == _SessionStatus.termine).toList();
+    final List<_ParkingSession> filteredSessions = switch (_historyFilter) {
+      _HistoryFilter.toutes => _sessions,
+      _HistoryFilter.enCours => _sessions
+          .where((s) => s.status == _SessionStatus.enCours)
+          .toList(growable: false),
+      _HistoryFilter.terminees => _sessions
+          .where((s) => s.status == _SessionStatus.termine)
+          .toList(growable: false),
+    };
+
+    final List<_ParkingSession> enCours = filteredSessions
+        .where((s) => s.status == _SessionStatus.enCours)
+        .toList(growable: false);
+    final List<_ParkingSession> terminees = filteredSessions
+        .where((s) => s.status == _SessionStatus.termine)
+        .toList(growable: false);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -111,8 +315,35 @@ class ParkingHistoryScreen extends StatelessWidget {
               color: _kBg,
               borderRadius: BorderRadius.circular(12),
             ),
-            child:
-                const Icon(Icons.filter_list_rounded, size: 20, color: _kDark),
+            child: PopupMenuButton<_HistoryFilter>(
+              tooltip: 'Filtrer',
+              initialValue: _historyFilter,
+              onSelected: (_HistoryFilter selected) {
+                setState(() {
+                  _historyFilter = selected;
+                });
+              },
+              itemBuilder: (BuildContext context) =>
+                  const <PopupMenuEntry<_HistoryFilter>>[
+                PopupMenuItem<_HistoryFilter>(
+                  value: _HistoryFilter.toutes,
+                  child: Text('Toutes'),
+                ),
+                PopupMenuItem<_HistoryFilter>(
+                  value: _HistoryFilter.enCours,
+                  child: Text('En cours'),
+                ),
+                PopupMenuItem<_HistoryFilter>(
+                  value: _HistoryFilter.terminees,
+                  child: Text('Terminees'),
+                ),
+              ],
+              icon: const Icon(
+                Icons.filter_list_rounded,
+                size: 20,
+                color: _kDark,
+              ),
+            ),
           ),
         ],
       ),
@@ -121,19 +352,52 @@ class ParkingHistoryScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (_isLoading)
+              const Padding(
+                padding: EdgeInsets.only(top: 24),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            if (!_isLoading && _errorMessage != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 16, bottom: 12),
+                child: Text(
+                  _errorMessage!,
+                  style: const TextStyle(color: _kMid, fontSize: 13),
+                ),
+              ),
+
             // ── Section EN COURS ──────────────────────────────────────
-            if (enCours.isNotEmpty) ...[
+            if (!_isLoading && enCours.isNotEmpty) ...[
               const _SectionTitle(title: 'EN COURS'),
               const SizedBox(height: 12),
               ...enCours.map((s) => Padding(
                     padding: const EdgeInsets.only(bottom: 12),
-                    child: _ActiveSessionCard(session: s),
+                    child: _ActiveSessionCard(
+                      session: s,
+                      onManage: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (BuildContext context) => const MainScreen(
+                              initialIndex: 0,
+                              isAuthenticated: true,
+                            ),
+                          ),
+                        );
+
+                        if (!mounted) {
+                          return;
+                        }
+
+                        await _loadHistory(forceRefresh: true);
+                      },
+                    ),
                   )),
               const SizedBox(height: 12),
             ],
 
             // ── Section TERMINÉES ─────────────────────────────────────
-            if (terminees.isNotEmpty) ...[
+            if (!_isLoading && terminees.isNotEmpty) ...[
               const _SectionTitle(title: 'TERMINÉES'),
               const SizedBox(height: 12),
               ...terminees.map((s) => Padding(
@@ -141,6 +405,18 @@ class ParkingHistoryScreen extends StatelessWidget {
                     child: _CompletedSessionCard(session: s),
                   )),
             ],
+            if (!_isLoading && enCours.isEmpty && terminees.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 24),
+                child: Center(
+                  child: Text(
+                    _historyFilter == _HistoryFilter.toutes
+                        ? 'Aucune session de parking.'
+                        : 'Aucun resultat pour ce filtre.',
+                    style: const TextStyle(color: _kMid, fontSize: 13),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -170,7 +446,12 @@ class _SectionTitle extends StatelessWidget {
 // ─── Carte session EN COURS ─────────────────────────────────────────────────
 class _ActiveSessionCard extends StatelessWidget {
   final _ParkingSession session;
-  const _ActiveSessionCard({required this.session});
+  final Future<void> Function() onManage;
+
+  const _ActiveSessionCard({
+    required this.session,
+    required this.onManage,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -179,10 +460,10 @@ class _ActiveSessionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _kBlue.withOpacity(0.3), width: 1.5),
+        border: Border.all(color: _kBlue.withValues(alpha: 0.3), width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: _kBlue.withOpacity(0.08),
+            color: _kBlue.withValues(alpha: 0.08),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -194,7 +475,10 @@ class _ActiveSessionCard extends StatelessWidget {
           // Header : icône P + nom + badge
           Row(
             children: [
-              _buildParkingIcon(isActive: true),
+              _buildParkingIcon(
+                imageUrl: session.parkingImageUrl,
+                isActive: true,
+              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -259,12 +543,7 @@ class _ActiveSessionCard extends StatelessWidget {
               ),
               ElevatedButton.icon(
                 onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const HomeScreen(),
-                    ),
-                  );
+                  onManage();
                 },
                 icon: const Icon(Icons.open_in_new_rounded, size: 16),
                 label: const Text('Gérer'),
@@ -303,7 +582,7 @@ class _CompletedSessionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -315,7 +594,10 @@ class _CompletedSessionCard extends StatelessWidget {
           // Header : icône P + nom + badge
           Row(
             children: [
-              _buildParkingIcon(isActive: false),
+              _buildParkingIcon(
+                imageUrl: session.parkingImageUrl,
+                isActive: false,
+              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -350,9 +632,9 @@ class _CompletedSessionCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          // Total cost
+          // Coût total
           const Text(
-            'TOTAL COST',
+            'COÛT TOTAL',
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w600,
@@ -376,21 +658,22 @@ class _CompletedSessionCard extends StatelessWidget {
 }
 
 // ─── Helpers partagés ───────────────────────────────────────────────────────
-Widget _buildParkingIcon({required bool isActive}) {
+Widget _buildParkingIcon({required String imageUrl, required bool isActive}) {
   return Container(
     width: 48,
     height: 48,
     decoration: BoxDecoration(
-      color: isActive ? _kBlueBg : _kBg,
+      color: const Color(0xFFEAF1FB),
       borderRadius: BorderRadius.circular(14),
     ),
-    child: Center(
-      child: Text(
-        'P',
-        style: TextStyle(
-          fontSize: 22,
-          fontWeight: FontWeight.w900,
-          color: isActive ? _kBlue : _kMid,
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Image.asset(
+          'assets/images/parking.png',
+          fit: BoxFit.contain,
         ),
       ),
     ),

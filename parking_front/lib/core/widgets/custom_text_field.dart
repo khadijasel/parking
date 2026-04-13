@@ -14,6 +14,7 @@ class CustomTextField extends StatelessWidget {
   final TextInputType keyboardType;
   final TextInputAction textInputAction;
   final void Function(String)? onChanged;
+  final String? errorText;
 
   const CustomTextField({
     super.key,
@@ -27,6 +28,7 @@ class CustomTextField extends StatelessWidget {
     this.keyboardType = TextInputType.text,
     this.textInputAction = TextInputAction.next,
     this.onChanged,
+    this.errorText,
   });
 
   @override
@@ -56,6 +58,7 @@ class CustomTextField extends StatelessWidget {
           ),
           decoration: InputDecoration(
             hintText: hint,
+            errorText: errorText,
             hintStyle: TextStyle(
               fontSize: 14,
               color: Colors.grey.shade400,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/widgets/app_logo.dart';
+import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/custom_text_field.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../../theme/app_colors.dart';
@@ -29,6 +30,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
   bool _isLoading = false;
+  String? _nameInlineError;
+  String? _matriculeInlineError;
+  String? _emailInlineError;
+  String? _phoneInlineError;
+  String? _passwordInlineError;
+  String? _confirmPasswordInlineError;
 
   @override
   void dispose() {
@@ -56,7 +63,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _nameInlineError = null;
+      _matriculeInlineError = null;
+      _emailInlineError = null;
+      _phoneInlineError = null;
+      _passwordInlineError = null;
+      _confirmPasswordInlineError = null;
+    });
 
     try {
       await _authRepository.register(
@@ -71,7 +86,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
       _goToMainScreen();
     } on AuthException catch (error) {
-      _showError(error.message);
+      if (error.fieldErrors.isNotEmpty) {
+        _applyFieldErrors(error.fieldErrors);
+      } else {
+        _showError(error.message);
+      }
     } catch (e) {
       debugPrint('Erreur d\'inscription: $e');
       _showError('Inscription impossible pour le moment. Réessayez.');
@@ -93,9 +112,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    AppFeedback.showError(context, message);
+  }
+
+  void _applyFieldErrors(Map<String, String> fieldErrors) {
+    final String? passwordError = fieldErrors['password'];
+    final String? confirmError = fieldErrors['password_confirmation'];
+    final bool passwordLooksLikeConfirmIssue =
+        (passwordError ?? '').toLowerCase().contains('confirm');
+
+    setState(() {
+      _nameInlineError = fieldErrors['name'];
+      _matriculeInlineError = fieldErrors['matricule'];
+      _emailInlineError = fieldErrors['email'];
+      _phoneInlineError = fieldErrors['phone'];
+      _passwordInlineError = passwordError;
+      _confirmPasswordInlineError = confirmError ??
+          (passwordLooksLikeConfirmIssue ? passwordError : null);
+    });
   }
 
   void _navigateToLogin() {
@@ -191,7 +225,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
           prefixIcon: Icons.person_outline,
           controller: _nameController,
           validator: _validateName,
+          errorText: _nameInlineError,
           textInputAction: TextInputAction.next,
+          onChanged: (_) {
+            if (_nameInlineError != null) {
+              setState(() {
+                _nameInlineError = null;
+              });
+            }
+          },
         ),
         const SizedBox(height: AppConstants.paddingMedium),
         CustomTextField(
@@ -200,7 +242,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
           prefixIcon: Icons.directions_car_outlined,
           controller: _matriculeController,
           validator: _validateMatricule,
+          errorText: _matriculeInlineError,
           textInputAction: TextInputAction.next,
+          onChanged: (_) {
+            if (_matriculeInlineError != null) {
+              setState(() {
+                _matriculeInlineError = null;
+              });
+            }
+          },
         ),
         const SizedBox(height: AppConstants.paddingMedium),
         CustomTextField(
@@ -209,8 +259,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
           prefixIcon: Icons.email_outlined,
           controller: _emailController,
           validator: _validateEmail,
+          errorText: _emailInlineError,
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
+          onChanged: (_) {
+            if (_emailInlineError != null) {
+              setState(() {
+                _emailInlineError = null;
+              });
+            }
+          },
         ),
         const SizedBox(height: AppConstants.paddingMedium),
         CustomTextField(
@@ -219,8 +277,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
           prefixIcon: Icons.phone_outlined,
           controller: _phoneController,
           validator: _validatePhone,
+          errorText: _phoneInlineError,
           keyboardType: TextInputType.phone,
           textInputAction: TextInputAction.next,
+          onChanged: (_) {
+            if (_phoneInlineError != null) {
+              setState(() {
+                _phoneInlineError = null;
+              });
+            }
+          },
         ),
         const SizedBox(height: AppConstants.paddingMedium),
         CustomTextField(
@@ -230,7 +296,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
           controller: _passwordController,
           obscureText: !_isPasswordVisible,
           validator: _validatePassword,
+          errorText: _passwordInlineError,
           textInputAction: TextInputAction.next,
+          onChanged: (_) {
+            if (_passwordInlineError != null ||
+                _confirmPasswordInlineError != null) {
+              setState(() {
+                _passwordInlineError = null;
+                _confirmPasswordInlineError = null;
+              });
+            }
+          },
           suffixIcon: IconButton(
             icon: Icon(
               _isPasswordVisible ? Icons.visibility_off : Icons.visibility,
@@ -247,7 +323,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
           controller: _confirmPasswordController,
           obscureText: !_isConfirmPasswordVisible,
           validator: _validateConfirmPassword,
+          errorText: _confirmPasswordInlineError,
           textInputAction: TextInputAction.done,
+          onChanged: (_) {
+            if (_confirmPasswordInlineError != null) {
+              setState(() {
+                _confirmPasswordInlineError = null;
+              });
+            }
+          },
           suffixIcon: IconButton(
             icon: Icon(
               _isConfirmPasswordVisible

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../reservation/data/models/reservation_api_model.dart';
+import '../../../reservation/data/reservation_repository.dart';
+
 // ════════════════════════════════════════════════════════════
 //  SCANNER SCREEN
 //  — Cadre QR animé avec ligne de scan
@@ -15,10 +18,11 @@ import 'package:flutter/services.dart';
 // import 'package:mobile_scanner/mobile_scanner.dart'; // ← décommenter
 
 const _kBlue    = Color(0xFF4A90E2);
-const _kWhite   = Colors.white;
 
 class ScannerScreen extends StatefulWidget {
-  const ScannerScreen({super.key});
+  final VoidCallback? onScanSuccess;
+
+  const ScannerScreen({super.key, this.onScanSuccess});
 
   @override
   State<ScannerScreen> createState() => _ScannerScreenState();
@@ -29,6 +33,8 @@ class _ScannerScreenState extends State<ScannerScreen>
 
   bool _torchOn = false;
   bool _isScanning = true;
+  bool _isSubmitting = false;
+  final ReservationRepository _reservationRepository = ReservationRepository();
 
   // Animation ligne de scan
   late AnimationController _scanCtrl;
@@ -63,28 +69,127 @@ class _ScannerScreenState extends State<ScannerScreen>
     // _cameraCtrl.toggleTorch();
   }
 
-  void _onQRDetected(String code) {
+  Future<void> _onQRDetected(String code) async {
+    if (_isSubmitting) {
+      return;
+    }
+
     HapticFeedback.heavyImpact();
     setState(() => _isScanning = false);
     _scanCtrl.stop();
-    _showResultSheet(code);
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final ReservationApiModel reservation =
+          await _reservationRepository.completeReservationByTicket(code);
+      _showResultSheet(
+        code,
+        isValid: true,
+        message: 'Votre ticket a ete scanne avec succes.',
+        ticketReference: reservation.id,
+        afterClose: widget.onScanSuccess,
+      );
+    } on ReservationException catch (error) {
+      _showResultSheet(
+        code,
+        isValid: false,
+        message: error.message,
+      );
+    } catch (_) {
+      _showResultSheet(
+        code,
+        isValid: false,
+        message: 'Impossible de valider ce ticket pour le moment.',
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
   }
 
-  void _showResultSheet(String code) {
+  void _showResultSheet(
+    String code, {
+    required bool isValid,
+    required String message,
+    String? ticketReference,
+    VoidCallback? afterClose,
+  }) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isDismissible: false,
       builder: (_) => _ScanResultSheet(
         code: code,
+        isValid: isValid,
+        message: message,
+        ticketReference: ticketReference,
         onRetry: () {
           Navigator.pop(context);
-          setState(() => _isScanning = true);
+          setState(() {
+            _isScanning = true;
+            _isSubmitting = false;
+          });
           _scanCtrl.repeat(reverse: true);
         },
-        onClose: () => Navigator.pop(context),
+        onClose: () {
+          Navigator.pop(context);
+          afterClose?.call();
+        },
       ),
     );
+  }
+
+  Future<void> _simulateScanFromCurrentReservation() async {
+    if (_isSubmitting) {
+      return;
+    }
+
+    try {
+      final List<ReservationApiModel> reservations =
+          await _reservationRepository.fetchMyReservations();
+
+      ReservationApiModel? candidate;
+      for (final ReservationApiModel reservation in reservations) {
+        if (reservation.reservationStatus.toLowerCase() == 'in_transit') {
+          candidate = reservation;
+          break;
+        }
+      }
+
+      if (candidate == null) {
+        for (final ReservationApiModel reservation in reservations) {
+          if (reservation.reservationStatus.toLowerCase() == 'confirmed') {
+            candidate = reservation;
+            break;
+          }
+        }
+      }
+
+      if (candidate == null || candidate.id.isEmpty) {
+        _showResultSheet(
+          'AUCUNE-RESERVATION',
+          isValid: false,
+          message: 'Aucune reservation valide a scanner.',
+        );
+        return;
+      }
+
+      await _onQRDetected(candidate.id);
+    } on ReservationException catch (error) {
+      _showResultSheet(
+        'ERREUR-SCAN',
+        isValid: false,
+        message: error.message,
+      );
+    } catch (_) {
+      _showResultSheet(
+        'ERREUR-SCAN',
+        isValid: false,
+        message: 'Impossible de recuperer une reservation a scanner.',
+      );
+    }
   }
 
   @override
@@ -121,7 +226,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                 // Fond semi-transparent dans le cadre
                 Container(
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
+                    color: Colors.white.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
@@ -140,7 +245,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                           color: _kBlue,
                           borderRadius: BorderRadius.circular(1),
                           boxShadow: [
-                            BoxShadow(color: _kBlue.withOpacity(0.6),
+                            BoxShadow(color: _kBlue.withValues(alpha: 0.6),
                                 blurRadius: 8, spreadRadius: 2),
                           ],
                         ),
@@ -203,17 +308,17 @@ class _ScannerScreenState extends State<ScannerScreen>
     return Stack(children: [
       // Haut
       Positioned(top: 0, left: 0, right: 0, height: cy,
-          child: Container(color: Colors.black.withOpacity(0.6))),
+          child: Container(color: Colors.black.withValues(alpha: 0.6))),
       // Bas
       Positioned(top: cy + frameH, left: 0, right: 0,
           bottom: 0,
-          child: Container(color: Colors.black.withOpacity(0.6))),
+          child: Container(color: Colors.black.withValues(alpha: 0.6))),
       // Gauche
       Positioned(top: cy, left: 0, width: cx, height: frameH,
-          child: Container(color: Colors.black.withOpacity(0.6))),
+          child: Container(color: Colors.black.withValues(alpha: 0.6))),
       // Droite
       Positioned(top: cy, left: cx + frameW, right: 0, height: frameH,
-          child: Container(color: Colors.black.withOpacity(0.6))),
+          child: Container(color: Colors.black.withValues(alpha: 0.6))),
     ]);
   }
 
@@ -262,7 +367,7 @@ class _ScannerScreenState extends State<ScannerScreen>
       child: Container(
         width: 46, height: 46,
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.55),
+          color: Colors.black.withValues(alpha: 0.55),
           shape: BoxShape.circle,
         ),
         child: Icon(icon, color: Colors.white, size: 22),
@@ -281,7 +386,7 @@ class _ScannerScreenState extends State<ScannerScreen>
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
+          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.7)],
         ),
       ),
       child: Row(
@@ -298,7 +403,7 @@ class _ScannerScreenState extends State<ScannerScreen>
           GestureDetector(
             onTap: () {
               // Test : simuler un scan
-              _onQRDetected('SP-TICKET-2024-TEST-001');
+              _simulateScanFromCurrentReservation();
             },
             child: Container(
               width: 68, height: 68,
@@ -306,7 +411,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                 color: _kBlue,
                 shape: BoxShape.circle,
                 boxShadow: [
-                  BoxShadow(color: _kBlue.withOpacity(0.4),
+                  BoxShadow(color: _kBlue.withValues(alpha: 0.4),
                       blurRadius: 16, spreadRadius: 2),
                 ],
               ),
@@ -333,7 +438,7 @@ class _ScannerScreenState extends State<ScannerScreen>
       child: Container(
         width: 48, height: 48,
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.55),
+          color: Colors.black.withValues(alpha: 0.55),
           shape: BoxShape.circle,
         ),
         child: Icon(icon, color: Colors.white, size: 22),
@@ -410,20 +515,23 @@ class _CornerPainter extends CustomPainter {
 
 class _ScanResultSheet extends StatelessWidget {
   final String code;
+  final bool isValid;
+  final String message;
+  final String? ticketReference;
   final VoidCallback onRetry;
   final VoidCallback onClose;
 
   const _ScanResultSheet({
     required this.code,
+    required this.isValid,
+    required this.message,
+    this.ticketReference,
     required this.onRetry,
     required this.onClose,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Simuler succès si code commence par SP-
-    final isValid = code.startsWith('SP-');
-
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -446,8 +554,8 @@ class _ScanResultSheet extends StatelessWidget {
           width: 72, height: 72,
           decoration: BoxDecoration(
             color: isValid
-                ? const Color(0xFF2ECC71).withOpacity(0.12)
-                : const Color(0xFFE53935).withOpacity(0.12),
+                ? const Color(0xFF2ECC71).withValues(alpha: 0.12)
+                : const Color(0xFFE53935).withValues(alpha: 0.12),
             shape: BoxShape.circle,
           ),
           child: Icon(
@@ -471,8 +579,8 @@ class _ScanResultSheet extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           isValid
-              ? 'Votre ticket a été scanné avec succès.'
-              : 'Ce code QR n\'est pas reconnu.\nVeuillez réessayer.',
+            ? message
+            : '$message\nVeuillez réessayer.',
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 14,
               color: Color(0xFF8A9BB5), height: 1.5),
@@ -495,7 +603,7 @@ class _ScanResultSheet extends StatelessWidget {
                 const Text('Référence ticket',
                     style: TextStyle(fontSize: 11,
                         color: Color(0xFF8A9BB5))),
-                Text(code,
+                Text(ticketReference ?? code,
                     style: const TextStyle(fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF1A1A2E))),

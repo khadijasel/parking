@@ -2,8 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:parking_front/core/widgets/app_feedback.dart';
+import 'package:parking_front/features/main/main_screen.dart';
 
 import '../../../parking/data/parking_data.dart';
+import '../../../parking/data/parking_availability_repository.dart';
 import '../../../parking/models/parking.dart';
 import '../../../parking/presentation/parking_detail_screen.dart';
 import '../../../reservation/data/models/reservation_api_model.dart';
@@ -24,9 +27,31 @@ enum ReservationUiStatus { active, completed, cancelled }
 
 enum ReservationType { mensuel, hebdomadaire, journalier, courteDuree }
 
+String _resolveParkingImageUrlByName(String parkingName) {
+  final String needle = parkingName.trim().toLowerCase();
+  if (needle.isEmpty) {
+    return kParkingPreviewImageUrl;
+  }
+
+  for (final Parking parking in ParkingData.parkings) {
+    final String name = parking.name.trim().toLowerCase();
+    if (name == needle || name.contains(needle) || needle.contains(name)) {
+      final String? imageUrl = parking.imageUrl?.trim();
+      if (imageUrl != null && imageUrl.isNotEmpty) {
+        return imageUrl;
+      }
+      return kParkingPreviewImageUrl;
+    }
+  }
+
+  return kParkingPreviewImageUrl;
+}
+
 class ReservationModel {
   final String id;
+  final String parkingId;
   final String parkingName;
+  final String parkingImageUrl;
   final String spotLabel;
   final String location;
   final ReservationType type;
@@ -40,7 +65,9 @@ class ReservationModel {
 
   const ReservationModel({
     required this.id,
+    required this.parkingId,
     required this.parkingName,
+    required this.parkingImageUrl,
     required this.spotLabel,
     required this.location,
     required this.type,
@@ -57,7 +84,10 @@ class ReservationModel {
 
   bool get canScanTicket => backendStatus == 'in_transit';
 
-  bool get canCancel => backendStatus == 'confirmed' || backendStatus == 'in_transit' || backendStatus == 'pending_payment';
+  bool get canCancel =>
+      backendStatus == 'confirmed' ||
+      backendStatus == 'in_transit' ||
+      backendStatus == 'pending_payment';
 
   String get activeLabel {
     switch (backendStatus) {
@@ -93,7 +123,8 @@ class ReservationModel {
 
     final int guarantee = api.durationType == 'courte' ? 30 : 60;
     final DateTime? start = api.createdAt;
-    final DateTime? fallbackExpires = (start != null) ? start.add(Duration(minutes: guarantee)) : null;
+    final DateTime? fallbackExpires =
+        (start != null) ? start.add(Duration(minutes: guarantee)) : null;
     final DateTime? expires = api.expiresAt ?? fallbackExpires;
 
     String status = api.reservationStatus.trim().toLowerCase();
@@ -101,16 +132,21 @@ class ReservationModel {
       status = 'cancelled';
     }
 
-    final bool expiredByTime = expires != null && DateTime.now().isAfter(expires);
-    if (expiredByTime && (status == 'confirmed' || status == 'in_transit')) {
+    if (status == 'pending_payment' &&
+        api.paymentStatus.trim().toLowerCase() == 'paid') {
+      status = 'confirmed';
+    }
+
+    final bool expiredByTime =
+        expires != null && DateTime.now().isAfter(expires);
+    if (expiredByTime && status == 'pending_payment') {
       status = 'cancelled_timeout';
     }
 
     final ReservationUiStatus uiStatus;
     if (status == 'completed') {
       uiStatus = ReservationUiStatus.completed;
-    } else if (
-        status == 'cancelled_by_user' ||
+    } else if (status == 'cancelled_by_user' ||
         status == 'cancelled_timeout' ||
         status == 'cancelled' ||
         status == 'expired') {
@@ -130,9 +166,13 @@ class ReservationModel {
 
     return ReservationModel(
       id: api.id,
+      parkingId: api.parkingId,
       parkingName: api.parkingName,
+      parkingImageUrl: _resolveParkingImageUrlByName(api.parkingName),
       spotLabel: label,
-      location: api.parkingAddress.isEmpty ? 'Alger-Algerie' : api.parkingAddress,
+      location: api.parkingAddress.isEmpty
+          ? 'Adresse indisponible'
+          : api.parkingAddress,
       type: mappedType,
       uiStatus: uiStatus,
       backendStatus: status,
@@ -153,18 +193,36 @@ class MyReservationsScreen extends StatefulWidget {
 }
 
 class _MyReservationsScreenState extends State<MyReservationsScreen> {
+  static const Duration _screenCacheTtl = Duration(seconds: 20);
+  static List<ReservationModel>? _screenCache;
+  static DateTime? _screenCacheAt;
+
   final ReservationRepository _reservationRepository = ReservationRepository();
+  final ParkingAvailabilityRepository _availabilityRepository =
+      ParkingAvailabilityRepository();
 
   late Timer _timer;
   List<ReservationModel> _reservations = <ReservationModel>[];
   bool _isLoading = true;
   String? _errorMessage;
   String? _cancellingId;
+  Map<String, int> _dynamicSpotsById = const <String, int>{};
+  Map<String, int> _dynamicSpotsByName = const <String, int>{};
 
   @override
   void initState() {
     super.initState();
+    final bool hasFreshScreenCache = _screenCache != null &&
+        _screenCacheAt != null &&
+        DateTime.now().difference(_screenCacheAt!) < _screenCacheTtl;
+
+    if (hasFreshScreenCache) {
+      _reservations = List<ReservationModel>.from(_screenCache!);
+      _isLoading = false;
+    }
+
     _loadReservations();
+    _refreshDynamicAvailability();
 
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
@@ -179,19 +237,29 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
     super.dispose();
   }
 
-  Future<void> _loadReservations() async {
+  Future<void> _loadReservations({
+    bool forceRefresh = false,
+  }) async {
+    final bool showBlockingLoader = _reservations.isEmpty;
+
     setState(() {
-      _isLoading = true;
+      _isLoading = showBlockingLoader;
       _errorMessage = null;
     });
 
     try {
-      final List<ReservationApiModel> data = await _reservationRepository.fetchMyReservations();
-      final List<ReservationModel> mapped = data.map(ReservationModel.fromApi).toList(growable: false);
+      final List<ReservationApiModel> data =
+          await _reservationRepository.fetchMyReservations(
+        forceRefresh: forceRefresh,
+      );
+      final List<ReservationModel> mapped =
+          data.map(ReservationModel.fromApi).toList(growable: false);
 
       mapped.sort((ReservationModel a, ReservationModel b) {
-        final DateTime ad = a.startDate ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final DateTime bd = b.startDate ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final DateTime ad =
+            a.startDate ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final DateTime bd =
+            b.startDate ?? DateTime.fromMillisecondsSinceEpoch(0);
         return bd.compareTo(ad);
       });
 
@@ -203,6 +271,9 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
         _reservations = mapped;
         _isLoading = false;
       });
+
+      _screenCache = List<ReservationModel>.from(mapped);
+      _screenCacheAt = DateTime.now();
     } on ReservationException catch (error) {
       if (!mounted) {
         return;
@@ -225,12 +296,28 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
   }
 
   Duration _remainingFor(ReservationModel reservation) {
-    if (reservation.expiresAt == null || reservation.uiStatus != ReservationUiStatus.active) {
+    if (reservation.expiresAt == null ||
+        reservation.uiStatus != ReservationUiStatus.active) {
       return Duration.zero;
     }
 
-    final Duration diff = reservation.expiresAt!.difference(DateTime.now());
-    return diff.isNegative ? Duration.zero : diff;
+    final DateTime now = DateTime.now();
+    final Duration diff = reservation.expiresAt!.difference(now);
+    if (diff.isNegative) {
+      return Duration.zero;
+    }
+
+    final Duration guarantee = Duration(minutes: reservation.guaranteeMinutes);
+    if (diff > guarantee + const Duration(minutes: 5)) {
+      final DateTime start = reservation.startDate ?? now;
+      final Duration fallback = start.add(guarantee).difference(now);
+      if (fallback.isNegative) {
+        return Duration.zero;
+      }
+      return fallback > guarantee ? guarantee : fallback;
+    }
+
+    return diff;
   }
 
   List<ReservationModel> get _active => _reservations
@@ -238,7 +325,8 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
       .toList(growable: false);
 
   List<ReservationModel> get _completed => _reservations
-      .where((ReservationModel r) => r.uiStatus == ReservationUiStatus.completed)
+      .where(
+          (ReservationModel r) => r.uiStatus == ReservationUiStatus.completed)
       .toList(growable: false);
 
   List<ReservationModel> get _cancelled => _reservations
@@ -255,7 +343,8 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
       return true;
     }
 
-    return DateTime.now().difference(cancelledAt) <= _kCancelledVisibilityDuration;
+    return DateTime.now().difference(cancelledAt) <=
+        _kCancelledVisibilityDuration;
   }
 
   Future<void> _cancelReservation(String reservationId) async {
@@ -265,31 +354,25 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
 
     try {
       await _reservationRepository.cancelReservation(reservationId);
-      await _loadReservations();
+      await _loadReservations(forceRefresh: true);
 
       if (!mounted) {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Reservation annulee avec succes.')),
-      );
+      AppFeedback.showSuccess(context, 'Reservation annulee avec succes.');
     } on ReservationException catch (error) {
       if (!mounted) {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
+      AppFeedback.showError(context, error.message);
     } catch (_) {
       if (!mounted) {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Erreur lors de l annulation.')),
-      );
+      AppFeedback.showError(context, 'Erreur lors de l annulation.');
     } finally {
       if (mounted) {
         setState(() {
@@ -302,71 +385,73 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
   Future<void> _goToParking(String reservationId) async {
     try {
       await _reservationRepository.markReservationEnRoute(reservationId);
-      await _loadReservations();
+      await _loadReservations(forceRefresh: true);
 
       if (!mounted) {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Mode en route active. Scannez le ticket a l arrivee.')),
+      AppFeedback.showSuccess(
+        context,
+        'Mode en route active. Scannez le ticket a l arrivee.',
       );
     } on ReservationException catch (error) {
       if (!mounted) {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
+      AppFeedback.showError(context, error.message);
     } catch (_) {
       if (!mounted) {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Impossible de passer en mode en route.')),
-      );
+      AppFeedback.showError(context, 'Impossible de passer en mode en route.');
     }
   }
 
   Future<void> _scanTicket(String reservationId) async {
     try {
       await _reservationRepository.completeReservationByTicket(reservationId);
-      await _loadReservations();
+      await _loadReservations(forceRefresh: true);
 
       if (!mounted) {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ticket scanne. Reservation terminee.')),
-      );
+      AppFeedback.showSuccess(context, 'Ticket scanne. Reservation terminee.');
     } on ReservationException catch (error) {
       if (!mounted) {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
+      AppFeedback.showError(context, error.message);
     } catch (_) {
       if (!mounted) {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Erreur lors du scan ticket.')),
-      );
+      AppFeedback.showError(context, 'Erreur lors du scan ticket.');
     }
   }
 
   Future<void> _openReservationDetails(ReservationModel reservation) async {
+    await _refreshDynamicAvailability();
+
+    if (!mounted) {
+      return;
+    }
+
+    final Parking resolvedParking = _withDynamicAvailability(
+      _resolveParking(reservation.parkingName,
+          parkingId: reservation.parkingId),
+    );
+
     final String? action = await Navigator.push<String>(
       context,
       MaterialPageRoute(
         builder: (BuildContext context) => ParkingDetailScreen(
-          parking: _resolveParking(reservation.parkingName),
+          parking: resolvedParking,
           isAuthenticated: true,
           hideReserveButton: true,
           reservationStatus: reservation.backendStatus,
@@ -388,7 +473,107 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
     }
   }
 
-  Parking _resolveParking(String parkingName) {
+  void _handleBackNavigation() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const MainScreen(
+          initialIndex: 3,
+          isAuthenticated: true,
+        ),
+      ),
+      (Route<dynamic> route) => false,
+    );
+  }
+
+  Future<void> _refreshDynamicAvailability() async {
+    try {
+      final availability = await _availabilityRepository.fetchAvailability();
+      if (!mounted) {
+        return;
+      }
+
+      final Map<String, int> byId = <String, int>{};
+      final Map<String, int> byName = <String, int>{};
+      for (final item in availability) {
+        final String id = item.parkingId.trim();
+        if (id.isNotEmpty) {
+          byId[id] = item.availableSpots;
+        }
+
+        final String key = _normalizeParkingName(item.parkingName);
+        if (key.isNotEmpty) {
+          byName[key] = item.availableSpots;
+        }
+      }
+
+      setState(() {
+        _dynamicSpotsById = byId;
+        _dynamicSpotsByName = byName;
+      });
+    } catch (_) {
+      // Keep static values if availability API is temporarily unreachable.
+    }
+  }
+
+  String _normalizeParkingName(String value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .replaceAll('à', 'a')
+        .replaceAll('â', 'a')
+        .replaceAll('ä', 'a')
+        .replaceAll('á', 'a')
+        .replaceAll('ã', 'a')
+        .replaceAll('å', 'a')
+        .replaceAll('ç', 'c')
+        .replaceAll('é', 'e')
+        .replaceAll('è', 'e')
+        .replaceAll('ê', 'e')
+        .replaceAll('ë', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ì', 'i')
+        .replaceAll('î', 'i')
+        .replaceAll('ï', 'i')
+        .replaceAll('ñ', 'n')
+        .replaceAll('ó', 'o')
+        .replaceAll('ò', 'o')
+        .replaceAll('ô', 'o')
+        .replaceAll('ö', 'o')
+        .replaceAll('õ', 'o')
+        .replaceAll('ú', 'u')
+        .replaceAll('ù', 'u')
+        .replaceAll('û', 'u')
+        .replaceAll('ü', 'u')
+        .replaceAll('ý', 'y')
+        .replaceAll('ÿ', 'y');
+  }
+
+  Parking _withDynamicAvailability(Parking parking) {
+    final int? byId = _dynamicSpotsById[parking.id];
+    final int resolved = byId ??
+        _dynamicSpotsByName[_normalizeParkingName(parking.name)] ??
+        parking.availableSpots;
+
+    if (resolved == parking.availableSpots) {
+      return parking;
+    }
+
+    return parking.copyWith(
+      availableSpots: resolved,
+      lastUpdate: 'Mis a jour via serveur',
+    );
+  }
+
+  Parking _resolveParking(String parkingName, {String? parkingId}) {
+    final String idNeedle = (parkingId ?? '').trim();
+    if (idNeedle.isNotEmpty) {
+      for (final Parking parking in ParkingData.parkings) {
+        if (parking.id.trim() == idNeedle) {
+          return parking;
+        }
+      }
+    }
+
     final String needle = parkingName.trim().toLowerCase();
 
     for (final Parking parking in ParkingData.parkings) {
@@ -403,83 +588,97 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _kBg,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            margin: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: _kBg,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.arrow_back_rounded, size: 20, color: _kTextDark),
-          ),
-        ),
-        title: const Text(
-          'Mes Reservations',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: _kTextDark),
-        ),
-        centerTitle: true,
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadReservations,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                children: [
-                  if (_errorMessage != null && _reservations.isEmpty) ...[
-                    _errorState(_errorMessage!),
-                    const SizedBox(height: 20),
-                  ],
-                  if (_active.isNotEmpty) ...[
-                    _sectionTitle('RESERVATIONS EN COURS'),
-                    const SizedBox(height: 10),
-                    ..._active.map((ReservationModel r) => _ActiveCard(
-                          reservation: r,
-                          remaining: _remainingFor(r),
-                          isCancelling: _cancellingId == r.id,
-                          onCancel: () => _cancelReservation(r.id),
-                          onDetails: () => _openReservationDetails(r),
-                        )),
-                    const SizedBox(height: 20),
-                  ],
-                  if (_completed.isNotEmpty) ...[
-                    _sectionTitle('RESERVATIONS TERMINEES'),
-                    const SizedBox(height: 10),
-                    ..._completed.map((ReservationModel r) => _HistoryCard(
-                          reservation: r,
-                          badgeLabel: 'TERMINEE',
-                          badgeBg: const Color(0xFFE8F8EF),
-                          badgeFg: _kGreen,
-                        )),
-                    const SizedBox(height: 20),
-                  ],
-                  if (_cancelled.isNotEmpty) ...[
-                    _sectionTitle('RESERVATIONS ANNULEES'),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Les reservations annulees restent visibles 24h puis sont masquees.',
-                      style: TextStyle(fontSize: 12, color: _kTextMid),
-                    ),
-                    const SizedBox(height: 10),
-                    ..._cancelled.map((ReservationModel r) => _HistoryCard(
-                          reservation: r,
-                          badgeLabel: r.cancelledLabel.toUpperCase(),
-                          badgeBg: _kRedBg,
-                          badgeFg: _kRed,
-                        )),
-                  ],
-                  if (_active.isEmpty && _completed.isEmpty && _cancelled.isEmpty && _errorMessage == null)
-                    _emptyState(),
-                ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) {
+          return;
+        }
+        _handleBackNavigation();
+      },
+      child: Scaffold(
+        backgroundColor: _kBg,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
+          leading: GestureDetector(
+            onTap: _handleBackNavigation,
+            child: Container(
+              margin: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _kBg,
+                borderRadius: BorderRadius.circular(10),
               ),
+              child: const Icon(Icons.arrow_back_rounded,
+                  size: 20, color: _kTextDark),
             ),
+          ),
+          title: const Text(
+            'Mes Reservations',
+            style: TextStyle(
+                fontWeight: FontWeight.w700, fontSize: 18, color: _kTextDark),
+          ),
+          centerTitle: true,
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _loadReservations,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  children: [
+                    if (_errorMessage != null && _reservations.isEmpty) ...[
+                      _errorState(_errorMessage!),
+                      const SizedBox(height: 20),
+                    ],
+                    if (_active.isNotEmpty) ...[
+                      _sectionTitle('RESERVATIONS EN COURS'),
+                      const SizedBox(height: 10),
+                      ..._active.map((ReservationModel r) => _ActiveCard(
+                            reservation: r,
+                            remaining: _remainingFor(r),
+                            isCancelling: _cancellingId == r.id,
+                            onCancel: () => _cancelReservation(r.id),
+                            onDetails: () => _openReservationDetails(r),
+                          )),
+                      const SizedBox(height: 20),
+                    ],
+                    if (_completed.isNotEmpty) ...[
+                      _sectionTitle('RESERVATIONS TERMINEES'),
+                      const SizedBox(height: 10),
+                      ..._completed.map((ReservationModel r) => _HistoryCard(
+                            reservation: r,
+                            badgeLabel: 'TERMINEE',
+                            badgeBg: const Color(0xFFE8F8EF),
+                            badgeFg: _kGreen,
+                          )),
+                      const SizedBox(height: 20),
+                    ],
+                    if (_cancelled.isNotEmpty) ...[
+                      _sectionTitle('RESERVATIONS ANNULEES'),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Les reservations annulees restent visibles 24h puis sont masquees.',
+                        style: TextStyle(fontSize: 12, color: _kTextMid),
+                      ),
+                      const SizedBox(height: 10),
+                      ..._cancelled.map((ReservationModel r) => _HistoryCard(
+                            reservation: r,
+                            badgeLabel: r.cancelledLabel.toUpperCase(),
+                            badgeBg: _kRedBg,
+                            badgeFg: _kRed,
+                          )),
+                    ],
+                    if (_active.isEmpty &&
+                        _completed.isEmpty &&
+                        _cancelled.isEmpty &&
+                        _errorMessage == null)
+                      _emptyState(),
+                  ],
+                ),
+              ),
+      ),
     );
   }
 
@@ -504,12 +703,16 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
           children: [
             const Icon(Icons.error_outline_rounded, color: _kRed),
             const SizedBox(height: 8),
-            Text(message, textAlign: TextAlign.center, style: const TextStyle(color: _kTextMid)),
+            Text(message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: _kTextMid)),
             const SizedBox(height: 10),
             ElevatedButton(
               onPressed: _loadReservations,
-              style: ElevatedButton.styleFrom(backgroundColor: _kBlue, elevation: 0),
-              child: const Text('Reessayer', style: TextStyle(color: Colors.white)),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: _kBlue, elevation: 0),
+              child: const Text('Reessayer',
+                  style: TextStyle(color: Colors.white)),
             ),
           ],
         ),
@@ -519,14 +722,17 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 80),
           child: Column(children: [
-            Icon(Icons.bookmark_border_rounded, size: 64, color: _kTextMid.withValues(alpha: 0.4)),
+            Icon(Icons.bookmark_border_rounded,
+                size: 64, color: _kTextMid.withValues(alpha: 0.4)),
             const SizedBox(height: 16),
             const Text(
               'Aucune reservation',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: _kTextMid),
+              style: TextStyle(
+                  fontSize: 17, fontWeight: FontWeight.w600, color: _kTextMid),
             ),
             const SizedBox(height: 6),
-            const Text('Vos reservations apparaitront ici.', style: TextStyle(fontSize: 13, color: _kTextMid)),
+            const Text('Vos reservations apparaitront ici.',
+                style: TextStyle(fontSize: 13, color: _kTextMid)),
           ]),
         ),
       );
@@ -563,7 +769,10 @@ class _ActiveCard extends StatelessWidget {
         color: _kCard,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12, offset: const Offset(0, 4)),
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 4)),
         ],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -575,41 +784,66 @@ class _ActiveCard extends StatelessWidget {
               child: Container(
                 width: 64,
                 height: 64,
-                color: const Color(0xFF2D3748),
-                child: const Icon(Icons.local_parking_rounded, color: Colors.white, size: 32),
+                color: const Color(0xFFEAF1FB),
+                child: Image.network(
+                  reservation.parkingImageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Image.asset(
+                    'assets/images/parking.png',
+                    fit: BoxFit.contain,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(
-                  reservation.parkingName,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _kTextDark),
-                ),
-                const SizedBox(height: 2),
-                Text(reservation.spotLabel, style: const TextStyle(fontSize: 12, color: _kTextMid)),
-                const SizedBox(height: 4),
-                Row(children: [
-                  const Icon(Icons.location_on_outlined, size: 13, color: _kBlue),
-                  const SizedBox(width: 3),
-                  Text(
-                    reservation.location,
-                    style: const TextStyle(fontSize: 12, color: _kBlue, fontWeight: FontWeight.w500),
-                  ),
-                ]),
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEAF1FB),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    reservation.activeLabel,
-                    style: const TextStyle(fontSize: 11, color: _kBlue, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ]),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      reservation.parkingName,
+                      style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: _kTextDark),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(reservation.spotLabel,
+                        style: const TextStyle(fontSize: 12, color: _kTextMid)),
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      const Icon(Icons.location_on_outlined,
+                          size: 13, color: _kBlue),
+                      const SizedBox(width: 3),
+                      Expanded(
+                        child: Text(
+                          reservation.location,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: _kBlue,
+                              fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF1FB),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        reservation.activeLabel,
+                        style: const TextStyle(
+                            fontSize: 11,
+                            color: _kBlue,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ]),
             ),
           ]),
         ),
@@ -627,7 +861,9 @@ class _ActiveCard extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          expired ? 'DELAI EXPIRE' : 'GARANTIE ${reservation.guaranteeMinutes} MIN',
+                          expired
+                              ? 'DELAI EXPIRE'
+                              : 'GARANTIE ${reservation.guaranteeMinutes} MIN',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
@@ -635,19 +871,28 @@ class _ActiveCard extends StatelessWidget {
                             letterSpacing: 0.8,
                           ),
                         ),
-                        Icon(Icons.timer_outlined, size: 18, color: expired ? _kRed : _kBlue),
+                        Icon(Icons.timer_outlined,
+                            size: 18, color: expired ? _kRed : _kBlue),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _timeBlock(hh, 'HEURES'),
-                        _colon(),
-                        _timeBlock(mm, 'MIN'),
-                        _colon(),
-                        _timeBlock(ss, 'SEC'),
-                      ],
+                    LayoutBuilder(
+                      builder:
+                          (BuildContext context, BoxConstraints constraints) {
+                        final double blockWidth =
+                            ((constraints.maxWidth - 24) / 3).clamp(50.0, 62.0);
+
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _timeBlock(hh, 'HEURES', width: blockWidth),
+                            _colon(),
+                            _timeBlock(mm, 'MIN', width: blockWidth),
+                            _colon(),
+                            _timeBlock(ss, 'SEC', width: blockWidth),
+                          ],
+                        );
+                      },
                     ),
                   ])
                 : const Center(
@@ -667,36 +912,49 @@ class _ActiveCard extends StatelessWidget {
                 onPressed: onDetails,
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: _kBorder),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  fixedSize: const Size.fromHeight(46),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
-                icon: const Icon(Icons.info_outline_rounded, color: _kTextMid, size: 16),
+                icon: const Icon(Icons.info_outline_rounded,
+                    color: _kTextMid, size: 16),
                 label: const Text(
                   'Details',
-                  style: TextStyle(color: _kTextDark, fontWeight: FontWeight.w600, fontSize: 13),
+                  style: TextStyle(
+                      color: _kTextDark,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13),
                 ),
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: ElevatedButton.icon(
-                onPressed: (!reservation.canCancel || isCancelling) ? null : () => _confirmCancel(context),
+                onPressed: (!reservation.canCancel || isCancelling)
+                    ? null
+                    : () => _confirmCancel(context),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _kRed,
                   elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  fixedSize: const Size.fromHeight(46),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
                 icon: isCancelling
                     ? const SizedBox(
                         width: 14,
                         height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
                       )
-                    : const Icon(Icons.close_rounded, color: Colors.white, size: 16),
+                    : const Icon(Icons.close_rounded,
+                        color: Colors.white, size: 16),
                 label: Text(
                   isCancelling ? 'Annulation...' : 'Annuler reservation',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13),
                 ),
               ),
             ),
@@ -706,12 +964,13 @@ class _ActiveCard extends StatelessWidget {
     );
   }
 
-  Widget _timeBlock(String val, String label) {
+  Widget _timeBlock(String val, String label, {double width = 62}) {
     return Column(children: [
       Container(
-        width: 62,
+        width: width,
         height: 50,
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
+        decoration: BoxDecoration(
+            color: Colors.white, borderRadius: BorderRadius.circular(10)),
         child: Center(
           child: Text(
             val,
@@ -739,7 +998,9 @@ class _ActiveCard extends StatelessWidget {
 
   Widget _colon() => const Padding(
         padding: EdgeInsets.only(bottom: 16),
-        child: Text(' : ', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w300, color: _kTextMid)),
+        child: Text(' : ',
+            style: TextStyle(
+                fontSize: 20, fontWeight: FontWeight.w300, color: _kTextMid)),
       );
 
   void _confirmCancel(BuildContext context) {
@@ -753,13 +1014,15 @@ class _ActiveCard extends StatelessWidget {
           Container(
             width: 56,
             height: 56,
-            decoration: BoxDecoration(color: _kRedBg, borderRadius: BorderRadius.circular(16)),
+            decoration: BoxDecoration(
+                color: _kRedBg, borderRadius: BorderRadius.circular(16)),
             child: const Icon(Icons.cancel_outlined, color: _kRed, size: 28),
           ),
           const SizedBox(height: 14),
           const Text(
             'Annuler la reservation ?',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: _kTextDark),
+            style: TextStyle(
+                fontSize: 17, fontWeight: FontWeight.w700, color: _kTextDark),
           ),
           const SizedBox(height: 8),
           const Text(
@@ -774,10 +1037,13 @@ class _ActiveCard extends StatelessWidget {
                 onPressed: () => Navigator.pop(context),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: _kBorder),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
-                child: const Text('Non, garder', style: TextStyle(color: _kTextDark, fontWeight: FontWeight.w600)),
+                child: const Text('Non, garder',
+                    style: TextStyle(
+                        color: _kTextDark, fontWeight: FontWeight.w600)),
               ),
             ),
             const SizedBox(width: 10),
@@ -790,10 +1056,13 @@ class _ActiveCard extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _kRed,
                   elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
-                child: const Text('Oui, annuler', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                child: const Text('Oui, annuler',
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600)),
               ),
             ),
           ]),
@@ -859,19 +1128,32 @@ class _HistoryCard extends StatelessWidget {
               color: const Color(0xFFEAF1FB),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Center(
-              child: Text('P', style: TextStyle(fontWeight: FontWeight.w800, color: _kBlue, fontSize: 18)),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(
+                reservation.parkingImageUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Image.asset(
+                  'assets/images/parking.png',
+                  fit: BoxFit.contain,
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(
                 reservation.parkingName,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _kTextDark),
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: _kTextDark),
               ),
               const SizedBox(height: 3),
-              Text(reservation.spotLabel, style: const TextStyle(fontSize: 12, color: _kTextMid)),
+              Text(reservation.spotLabel,
+                  style: const TextStyle(fontSize: 12, color: _kTextMid)),
               const SizedBox(height: 3),
               Text(
                 'Debut: ${_fmt(reservation.startDate)} - Fin: ${_fmt(reservation.endDate)}',
@@ -879,8 +1161,14 @@ class _HistoryCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                '${reservation.montant.toStringAsFixed(2).replaceAll('.', ',')} DA',
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _kTextDark),
+                reservation.type == ReservationType.courteDuree &&
+                        reservation.montant <= 0
+                    ? 'Paiement a la sortie'
+                    : '${reservation.montant.toStringAsFixed(2).replaceAll('.', ',')} DA',
+                style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: _kTextDark),
               ),
             ]),
           ),
@@ -888,10 +1176,12 @@ class _HistoryCard extends StatelessWidget {
         const SizedBox(height: 10),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(color: badgeBg, borderRadius: BorderRadius.circular(16)),
+          decoration: BoxDecoration(
+              color: badgeBg, borderRadius: BorderRadius.circular(16)),
           child: Text(
             badgeLabel,
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: badgeFg),
+            style: TextStyle(
+                fontSize: 11, fontWeight: FontWeight.w700, color: badgeFg),
           ),
         ),
       ]),

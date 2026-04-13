@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/widgets/app_logo.dart';
+import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/custom_text_field.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../../theme/app_colors.dart';
 import '../../main/main_screen.dart';
+import '../../parking/presentation/map_home_screen.dart';
 import '../data/auth_repository.dart';
 import 'register_screen.dart';
 
 /// Écran de connexion SmartPark
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final Widget? postLoginRoute;
+
+  const LoginScreen({super.key, this.postLoginRoute});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -25,6 +29,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isPasswordVisible = false;
   bool _isLoading = false;
+  String? _matriculeLoginError;
+  String? _emailLoginError;
+  String? _passwordLoginError;
 
   @override
   void dispose() {
@@ -43,10 +50,16 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _matriculeLoginError = null;
+      _emailLoginError = null;
+      _passwordLoginError = null;
+    });
 
     try {
       await _authRepository.login(
+        matricule: _matriculeController.text.trim(),
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
@@ -54,7 +67,21 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       _goToMainScreen();
     } on AuthException catch (error) {
-      _showError(error.message);
+      if (_applyServerFieldErrors(error.fieldErrors)) {
+        return;
+      }
+
+      if (_shouldShowInlineAuthError(error.message)) {
+        if (_applyMessageFieldError(error.message)) {
+          return;
+        }
+
+        setState(() {
+          _passwordLoginError = error.message;
+        });
+      } else {
+        _showError(error.message);
+      }
     } catch (e) {
       debugPrint('Erreur de connexion: $e');
       _showError('Connexion impossible pour le moment. Réessayez.');
@@ -66,19 +93,125 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _goToMainScreen() {
+    final Widget nextScreen = widget.postLoginRoute ?? const MainScreen(isAuthenticated: true);
+
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
-        builder: (_) => const MainScreen(isAuthenticated: true),
+        builder: (_) => nextScreen,
       ),
       (Route<dynamic> route) => false,
     );
   }
 
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+  void _handleBack() {
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+      return;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const MapHomeScreen(),
+      ),
     );
+  }
+
+  void _showError(String message) {
+    AppFeedback.showError(context, message);
+  }
+
+  bool _applyServerFieldErrors(Map<String, String> fieldErrors) {
+    if (fieldErrors.isEmpty) {
+      return false;
+    }
+
+    final String? emailError = _pickFieldError(fieldErrors, <String>['email']);
+    final String? matriculeError =
+        _pickFieldError(fieldErrors, <String>['matricule']);
+    final String? passwordError =
+        _pickFieldError(fieldErrors, <String>['password']);
+
+    if (emailError == null && passwordError == null && matriculeError == null) {
+      return false;
+    }
+
+    setState(() {
+      _matriculeLoginError = matriculeError;
+      _emailLoginError = emailError;
+      _passwordLoginError = passwordError;
+    });
+
+    return true;
+  }
+
+  String? _pickFieldError(
+    Map<String, String> fieldErrors,
+    List<String> candidateKeys,
+  ) {
+    for (final String key in candidateKeys) {
+      final String? value = fieldErrors[key];
+      if (value != null && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+
+    return null;
+  }
+
+  bool _applyMessageFieldError(String message) {
+    final String normalized = message.toLowerCase();
+
+    if (normalized.contains('email')) {
+      setState(() {
+        _matriculeLoginError = null;
+        _emailLoginError = message;
+        _passwordLoginError = null;
+      });
+      return true;
+    }
+
+    if (normalized.contains('matricule')) {
+      setState(() {
+        _matriculeLoginError = message;
+        _emailLoginError = null;
+        _passwordLoginError = null;
+      });
+      return true;
+    }
+
+    if (normalized.contains('mot de passe') || normalized.contains('password')) {
+      setState(() {
+        _matriculeLoginError = null;
+        _emailLoginError = null;
+        _passwordLoginError = message;
+      });
+      return true;
+    }
+
+    return false;
+  }
+
+  bool _shouldShowInlineAuthError(String message) {
+    final String normalized = message.toLowerCase();
+
+    if (normalized.contains('impossible de contacter le serveur') ||
+        normalized.contains('délai dépassé') ||
+        normalized.contains('requête annulée') ||
+        normalized.contains('certificat serveur invalide')) {
+      return false;
+    }
+
+    return normalized.contains('invalid credentials') ||
+        normalized.contains('provided credentials') ||
+        normalized.contains('incorrect') ||
+      normalized.contains('matricule') ||
+        normalized.contains('password') ||
+        normalized.contains('mot de passe') ||
+        normalized.contains('email') ||
+        normalized.contains('at least') ||
+        normalized.contains('character');
   }
 
   void _navigateToRegister() {
@@ -127,7 +260,7 @@ class _LoginScreenState extends State<LoginScreen> {
       scrolledUnderElevation: 0,
       leading: IconButton(
         icon: const Icon(Icons.arrow_back, color: AppColors.textDark),
-        onPressed: () => Navigator.maybePop(context),
+        onPressed: _handleBack,
       ),
       centerTitle: true,
       title: const Text(
@@ -176,7 +309,19 @@ class _LoginScreenState extends State<LoginScreen> {
           prefixIcon: Icons.directions_car_outlined,
           controller: _matriculeController,
           validator: _validateMatricule,
+          errorText: _matriculeLoginError,
           textInputAction: TextInputAction.next,
+          onChanged: (_) {
+            if (_matriculeLoginError != null ||
+                _emailLoginError != null ||
+                _passwordLoginError != null) {
+              setState(() {
+                _matriculeLoginError = null;
+                _emailLoginError = null;
+                _passwordLoginError = null;
+              });
+            }
+          },
         ),
         const SizedBox(height: AppConstants.paddingMedium),
         CustomTextField(
@@ -185,8 +330,20 @@ class _LoginScreenState extends State<LoginScreen> {
           prefixIcon: Icons.email_outlined,
           controller: _emailController,
           validator: _validateEmail,
+          errorText: _emailLoginError,
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
+          onChanged: (_) {
+            if (_matriculeLoginError != null ||
+                _emailLoginError != null ||
+                _passwordLoginError != null) {
+              setState(() {
+                _matriculeLoginError = null;
+                _emailLoginError = null;
+                _passwordLoginError = null;
+              });
+            }
+          },
         ),
         const SizedBox(height: AppConstants.paddingMedium),
         CustomTextField(
@@ -196,7 +353,19 @@ class _LoginScreenState extends State<LoginScreen> {
           controller: _passwordController,
           obscureText: !_isPasswordVisible,
           validator: _validatePassword,
+          errorText: _passwordLoginError,
           textInputAction: TextInputAction.done,
+          onChanged: (_) {
+            if (_matriculeLoginError != null ||
+                _emailLoginError != null ||
+                _passwordLoginError != null) {
+              setState(() {
+                _matriculeLoginError = null;
+                _emailLoginError = null;
+                _passwordLoginError = null;
+              });
+            }
+          },
           suffixIcon: IconButton(
             icon: Icon(
               _isPasswordVisible ? Icons.visibility_off : Icons.visibility,
@@ -263,8 +432,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // Validators
   String? _validateMatricule(String? value) {
-    if (value == null || value.isEmpty) {
-      return null;
+    if (value == null || value.trim().isEmpty) {
+      return 'Veuillez entrer votre matricule';
     }
     return null;
   }
@@ -283,9 +452,6 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _validatePassword(String? value) {
     if (value == null || value.isEmpty) {
       return 'Veuillez entrer votre mot de passe';
-    }
-    if (value.length < 8) {
-      return 'Le mot de passe doit contenir au moins 8 caractères';
     }
     return null;
   }

@@ -1,0 +1,83 @@
+flowchart LR
+  %% Acteurs
+  U[Utilisateur]
+  A[Admin]
+  O[Sous-admin / Parking Owner]
+  I[Capteur Arduino]
+
+  subgraph SP[Systeme Smart Parking]
+    UC_U1((S inscrire / Se connecter))
+    UC_U2((Consulter disponibilite des parkings))
+    UC_U3((Creer reservation))
+    UC_U4((Payer reservation / session))
+    UC_U5((S y rendre))
+    UC_U6((Scanner ticket))
+    UC_U7((Consulter session active))
+    UC_U8((Sortir du parking))
+    UC_U9((Consulter historique reservations))
+    UC_U10((Consulter historique paiements))
+    UC_U11((Consulter historique sessions))
+    UC_U12((Mettre a jour profil))
+
+    UC_A1((Se connecter admin))
+    UC_A2((Creer sous-admin))
+    UC_A3((Gerer sous-admins))
+
+    UC_O1((Se connecter sous-admin))
+    UC_O2((Consulter profil sous-admin))
+    UC_O3((Dessiner la carte du parking))
+    UC_O4((Gerer zones et places))
+    UC_O5((Mettre a jour disponibilite des places))
+    UC_O6((Suivre occupation en temps reel))
+
+    UC_SYS1((Verrouiller place a la reservation))
+    UC_SYS2((Liberer place a la sortie / annulation))
+    UC_SYS3((Verifier paiement avant sortie))
+    UC_SYS4((Creer session parking apres scan))
+  end
+
+  %% Liens Utilisateur
+  U --> UC_U1
+  U --> UC_U2
+  U --> UC_U3
+  U --> UC_U4
+  U --> UC_U5
+  U --> UC_U6
+  U --> UC_U7
+  U --> UC_U8
+  U --> UC_U9
+  U --> UC_U10
+  U --> UC_U11
+  U --> UC_U12
+
+  %% Liens Admin
+  A --> UC_A1
+  A --> UC_A2
+  A --> UC_A3
+
+  %% Liens Sous-admin
+  O --> UC_O1
+  O --> UC_O2
+  O --> UC_O3
+  O --> UC_O4
+  O --> UC_O5
+  O --> UC_O6
+
+  %% Capteur IoT
+  I --> UC_O5
+
+  %% Includes metier
+  UC_U3 -. include .-> UC_SYS1
+  UC_U8 -. include .-> UC_SYS2
+  UC_U8 -. include .-> UC_SYS3
+  UC_U6 -. include .-> UC_SYS4
+  UC_O4 -. include .-> UC_O3
+  UC_O6 -. include .-> UC_O5
+  UC_A3 -. include .-> UC_A2
+
+  %% Note architecture actuelle
+  NOTE1[Dans le backend actuel: auth owner + profil owner + creation owner par admin sont implementes]
+  NOTE2[Gestion graphique detaillee du plan parking par sous-admin: modulaire et a completer via classes ParkingMap/MapSpot]
+  NOTE1 --- UC_A2
+  NOTE1 --- UC_O1
+  NOTE2 --- UC_O3

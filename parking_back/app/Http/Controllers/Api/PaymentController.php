@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Payment\ConfirmPaymentRequest;
 use App\Http\Requests\Payment\InitiatePaymentRequest;
 use App\Models\Payment;
+use App\Models\ParkingSession;
 use App\Models\Reservation;
 use App\Services\Payment\MockBankService;
 use Carbon\CarbonImmutable;
@@ -23,6 +24,8 @@ class PaymentController extends Controller
     private const STATUS_CANCELLED_TIMEOUT = 'cancelled_timeout';
 
     private const STATUS_COMPLETED = 'completed';
+
+    private const SESSION_STATUS_ACTIVE = 'active';
 
     public function __construct(private readonly MockBankService $mockBankService)
     {
@@ -43,13 +46,28 @@ class PaymentController extends Controller
 
         $this->refreshTimeoutStatus($reservation);
 
-        if ((string) $reservation->payment_status === 'paid') {
+        $activeSession = $this->findActiveSessionForReservation((string) $reservation->getKey());
+        $hasActiveSession = $activeSession instanceof ParkingSession;
+
+        if ($hasActiveSession) {
+            $startedAt = $activeSession->started_at
+                ? CarbonImmutable::instance($activeSession->started_at)
+                : null;
+
+            if ($startedAt && $this->hasSuccessfulPaymentForSession((string) $reservation->getKey(), $startedAt)) {
+                return response()->json([
+                    'message' => 'Current parking session is already paid.',
+                ], 422);
+            }
+        }
+
+        if (! $hasActiveSession && (string) $reservation->payment_status === 'paid') {
             return response()->json([
                 'message' => 'Reservation is already paid.',
             ], 422);
         }
 
-        if ($this->isBlockedForPayment((string) ($reservation->reservation_status ?? 'pending_payment'))) {
+        if ($this->isBlockedForPayment($reservation, $hasActiveSession)) {
             return response()->json([
                 'message' => 'Reservation cannot be paid in its current status.',
             ], 422);
@@ -59,8 +77,8 @@ class PaymentController extends Controller
             'user_id' => (string) $user->getAuthIdentifier(),
             'reservation_id' => (string) $reservation->getKey(),
             'parking_name' => (string) $reservation->parking_name,
-            'duration_minutes' => (int) ($reservation->duration_minutes ?? 0),
-            'amount' => (float) ($reservation->deposit_amount ?? 0),
+            'duration_minutes' => $this->resolveDurationMinutes($reservation, $payload, $hasActiveSession),
+            'amount' => $this->resolveAmount($reservation, $payload, $hasActiveSession),
             'method' => (string) $payload['method'],
             'status' => 'idle',
             'transaction_ref' => 'SP-'.random_int(10000, 99999),
@@ -202,8 +220,19 @@ class PaymentController extends Controller
         $reservation->save();
     }
 
-    private function isBlockedForPayment(string $status): bool
+    private function isBlockedForPayment(Reservation $reservation, bool $hasActiveSession): bool
     {
+        $status = (string) ($reservation->reservation_status ?? 'pending_payment');
+        $isShortDuration = (string) ($reservation->duration_type ?? '') === 'courte';
+
+        if ($status === self::STATUS_COMPLETED && $hasActiveSession) {
+            return false;
+        }
+
+        if ($status === self::STATUS_COMPLETED && $isShortDuration) {
+            return false;
+        }
+
         return in_array($status, [
             self::STATUS_CANCELLED_BY_USER,
             self::STATUS_CANCELLED_TIMEOUT,
@@ -211,5 +240,118 @@ class PaymentController extends Controller
             'cancelled',
             'expired',
         ], true);
+    }
+
+    private function resolveAmount(Reservation $reservation, array $payload, bool $hasActiveSession): float
+    {
+        $isShortDuration = (string) ($reservation->duration_type ?? '') === 'courte';
+        $providedAmount = (float) ($payload['amount'] ?? 0);
+
+        if (! $isShortDuration) {
+            if ($hasActiveSession) {
+                $amount = (float) ($reservation->amount ?? 0);
+                if ($amount > 0) {
+                    return $amount;
+                }
+
+                if ($providedAmount > 0) {
+                    return $providedAmount;
+                }
+
+                return $this->resolveLongDurationFallbackAmount((string) ($reservation->duration_type ?? ''));
+            }
+
+            $depositAmount = (float) ($reservation->deposit_amount ?? 0);
+            if ($depositAmount > 0) {
+                return $depositAmount;
+            }
+
+            if ($providedAmount > 0) {
+                return $providedAmount;
+            }
+
+            return 200.0;
+        }
+
+        if ($providedAmount > 0) {
+            return $providedAmount;
+        }
+
+        return $this->resolveDurationMinutes($reservation, $payload, $hasActiveSession) * (150.0 / 60.0);
+    }
+
+    private function resolveDurationMinutes(Reservation $reservation, array $payload, bool $hasActiveSession): int
+    {
+        $isShortDuration = (string) ($reservation->duration_type ?? '') === 'courte';
+        $provided = (int) ($payload['duration_minutes'] ?? 0);
+
+        if (! $isShortDuration) {
+            return max(0, (int) ($reservation->duration_minutes ?? 0));
+        }
+
+        if ($provided > 0) {
+            return $provided;
+        }
+
+        if ($hasActiveSession) {
+            return max(1, (int) ($reservation->duration_minutes ?? 0));
+        }
+
+        return max(0, (int) ($reservation->duration_minutes ?? 0));
+    }
+
+    private function resolveLongDurationFallbackAmount(string $durationType): float
+    {
+        return match ($durationType) {
+            'journee' => 800.0,
+            'semaine' => 4500.0,
+            'mois' => 15000.0,
+            default => 0.0,
+        };
+    }
+
+    private function findActiveSessionForReservation(string $reservationId): ?ParkingSession
+    {
+        if ($reservationId === '') {
+            return null;
+        }
+
+        return ParkingSession::query()
+            ->where('reservation_id', $reservationId)
+            ->where('status', self::SESSION_STATUS_ACTIVE)
+            ->orderByDesc('started_at')
+            ->first();
+    }
+
+    private function hasSuccessfulPaymentForSession(string $reservationId, CarbonImmutable $sessionStartedAt): bool
+    {
+        if ($reservationId === '') {
+            return false;
+        }
+
+        $threshold = $sessionStartedAt->subSeconds(5);
+
+        $payments = Payment::query()
+            ->where('reservation_id', $reservationId)
+            ->where('status', 'success')
+            ->orderByDesc('paid_at')
+            ->orderByDesc('created_at')
+            ->get();
+
+        foreach ($payments as $payment) {
+            $paidAt = $payment->paid_at
+                ? CarbonImmutable::instance($payment->paid_at)
+                : ($payment->created_at ? CarbonImmutable::instance($payment->created_at) : null);
+
+            if (! $paidAt) {
+                continue;
+            }
+
+            if ($paidAt->greaterThanOrEqualTo($threshold)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

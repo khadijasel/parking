@@ -15,8 +15,17 @@ class ParkingData {
       lastUpdate: 'Mis à jour il y a 2 min',
       isOpen24h: true,
       location: LatLng(36.7650, 3.0590),
-      equipments: ['GPL Autorisé', 'Sécurité 24/7', 'Vidéosurveillance', 'Accessible Handi'],
+      equipments: [
+        'GPL Autorisé',
+        'Sécurité 24/7',
+        'Vidéosurveillance',
+        'Accessible Handi'
+      ],
       tags: ['Borne Élec', 'Proche Tram'],
+      imageUrl:
+          'https://images.unsplash.com/photo-1506521781263-d8422e82f27a?auto=format&fit=crop&w=1200&q=80',
+      maxVehicleHeightMeters: 1.85,
+      supportedVehicleTypes: <String>['car', 'moto'],
     ),
     Parking(
       id: '2',
@@ -31,6 +40,10 @@ class ParkingData {
       location: LatLng(36.7710, 3.0620),
       equipments: ['Sécurité 24/7', 'Vidéosurveillance'],
       tags: [],
+      imageUrl:
+          'https://images.unsplash.com/photo-1536895058696-a69b1c7ba34f?auto=format&fit=crop&w=1200&q=80',
+      maxVehicleHeightMeters: 2.4,
+      supportedVehicleTypes: <String>['car', 'moto', 'truck'],
     ),
     Parking(
       id: '3',
@@ -45,6 +58,8 @@ class ParkingData {
       location: LatLng(36.7595, 3.0535),
       equipments: ['GPL Autorisé', 'Sécurité 24/7', 'Accessible Handi'],
       tags: ['Proche Tram'],
+      imageUrl:
+          'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1200&q=80',
     ),
     Parking(
       id: '4',
@@ -59,6 +74,8 @@ class ParkingData {
       location: LatLng(36.7665, 3.0565),
       equipments: ['Vidéosurveillance', 'Sécurité 24/7'],
       tags: ['Borne Élec'],
+      imageUrl:
+          'https://images.unsplash.com/photo-1493238792000-8113da705763?auto=format&fit=crop&w=1200&q=80',
     ),
     Parking(
       id: '5',
@@ -71,8 +88,15 @@ class ParkingData {
       lastUpdate: 'Mis à jour il y a 1 min',
       isOpen24h: true,
       location: LatLng(36.7580, 3.0510),
-      equipments: ['GPL Autorisé', 'Sécurité 24/7', 'Vidéosurveillance', 'Accessible Handi'],
+      equipments: [
+        'GPL Autorisé',
+        'Sécurité 24/7',
+        'Vidéosurveillance',
+        'Accessible Handi'
+      ],
       tags: ['Borne Élec', 'Proche Tram'],
+      imageUrl:
+          'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?auto=format&fit=crop&w=1200&q=80',
     ),
     Parking(
       id: '6',
@@ -87,6 +111,8 @@ class ParkingData {
       location: LatLng(34.8826, -1.3168),
       equipments: ['GPL Autorisé', 'Sécurité 24/7', 'Vidéosurveillance'],
       tags: ['Proche Tram'],
+      imageUrl:
+          'https://images.unsplash.com/photo-1519583272095-6433daf26b6e?auto=format&fit=crop&w=1200&q=80',
     ),
     Parking(
       id: '7',
@@ -100,7 +126,12 @@ class ParkingData {
       isOpen24h: true,
       location: LatLng(34.8699, -1.3197),
       equipments: ['Sécurité 24/7', 'Vidéosurveillance', 'Accessible Handi'],
-      tags: ['Borne Élec'],
+      tags: ['Borne Élec', 'Téléphérique'],
+      imageUrl:
+          'https://images.unsplash.com/photo-1502877338535-766e1452684a?auto=format&fit=crop&w=1200&q=80',
+      maxVehicleHeightMeters: 1.9,
+      supportedVehicleTypes: <String>['car', 'moto'],
+      nearTelepherique: true,
     ),
     Parking(
       id: '8',
@@ -115,6 +146,10 @@ class ParkingData {
       location: LatLng(34.8958, -1.2894),
       equipments: ['GPL Autorisé', 'Sécurité 24/7'],
       tags: ['Proche Tram'],
+      imageUrl:
+          'https://images.unsplash.com/photo-1519999482648-25049ddd37b1?auto=format&fit=crop&w=1200&q=80',
+      maxVehicleHeightMeters: 1.75,
+      supportedVehicleTypes: <String>['car', 'moto'],
     ),
     Parking(
       id: '9',
@@ -129,6 +164,8 @@ class ParkingData {
       location: LatLng(34.9008, -1.3055),
       equipments: ['Sécurité 24/7', 'Vidéosurveillance', 'Accessible Handi'],
       tags: ['Borne Élec'],
+      imageUrl:
+          'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1200&q=80',
     ),
     Parking(
       id: '10',
@@ -142,7 +179,30 @@ class ParkingData {
       isOpen24h: false,
       location: LatLng(34.8765, -1.3321),
       equipments: ['GPL Autorisé', 'Vidéosurveillance'],
-      tags: ['Proche Tram'],
+      tags: ['Proche Tram', 'Téléphérique'],
+      imageUrl:
+          'https://images.unsplash.com/photo-1545239351-1141bd82e8a6?auto=format&fit=crop&w=1200&q=80',
+      maxVehicleHeightMeters: 2.2,
+      supportedVehicleTypes: <String>['car', 'moto', 'truck'],
+      nearTelepherique: true,
+    ),
+    Parking(
+      id: 'arduino-sim',
+      name: 'Notre parking',
+      address: 'Zone test IoT',
+      walkingTime: '2 mins de marche',
+      rating: 4.7,
+      pricePerHour: 80,
+      availableSpots: 6,
+      lastUpdate: 'Simulation Arduino',
+      isOpen24h: true,
+      location: LatLng(34.8859, -1.3161),
+      equipments: ['Capteurs IoT', 'Vidéosurveillance', 'Sécurité 24/7'],
+      tags: ['Arduino', 'Simulation'],
+      imageUrl:
+          'https://images.unsplash.com/photo-1486006920555-c77dcf18193c?auto=format&fit=crop&w=1200&q=80',
+      maxVehicleHeightMeters: 2.0,
+      supportedVehicleTypes: <String>['car', 'moto'],
     ),
   ];
 }

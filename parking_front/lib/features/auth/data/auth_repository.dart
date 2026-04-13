@@ -3,11 +3,18 @@ import 'auth_local_storage.dart';
 
 class AuthException implements Exception {
   final String message;
+  final Map<String, String> fieldErrors;
+  final bool isRetryable;
 
-  const AuthException(this.message);
+  const AuthException(
+    this.message, {
+    this.fieldErrors = const <String, String>{},
+    this.isRetryable = false,
+  });
 
   @override
-  String toString() => 'AuthException(message: $message)';
+  String toString() =>
+      'AuthException(message: $message, fieldErrors: $fieldErrors, isRetryable: $isRetryable)';
 }
 
 class AuthRepository {
@@ -21,11 +28,13 @@ class AuthRepository {
         _localStorage = localStorage ?? AuthLocalStorage();
 
   Future<void> login({
+    required String matricule,
     required String email,
     required String password,
   }) async {
     try {
       final AuthApiResult result = await _apiService.login(
+        matricule: matricule,
         email: email,
         password: password,
       );
@@ -35,7 +44,11 @@ class AuthRepository {
         user: result.user,
       );
     } on AuthApiException catch (error) {
-      throw AuthException(error.message);
+      throw AuthException(
+        error.message,
+        fieldErrors: error.fieldErrors,
+        isRetryable: error.isRetryable,
+      );
     }
   }
 
@@ -62,7 +75,11 @@ class AuthRepository {
         user: result.user,
       );
     } on AuthApiException catch (error) {
-      throw AuthException(error.message);
+      throw AuthException(
+        error.message,
+        fieldErrors: error.fieldErrors,
+        isRetryable: error.isRetryable,
+      );
     }
   }
 

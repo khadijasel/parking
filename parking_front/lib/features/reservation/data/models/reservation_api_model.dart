@@ -1,6 +1,7 @@
 class ReservationApiModel {
   final String id;
   final String userId;
+  final String parkingId;
   final String parkingName;
   final String parkingAddress;
   final List<String> equipments;
@@ -18,6 +19,7 @@ class ReservationApiModel {
   const ReservationApiModel({
     required this.id,
     required this.userId,
+    required this.parkingId,
     required this.parkingName,
     required this.parkingAddress,
     required this.equipments,
@@ -37,6 +39,7 @@ class ReservationApiModel {
     return ReservationApiModel(
       id: (json['id'] ?? '').toString(),
       userId: (json['user_id'] ?? '').toString(),
+      parkingId: (json['parking_id'] ?? '').toString(),
       parkingName: (json['parking_name'] ?? '').toString(),
       parkingAddress: (json['parking_address'] ?? '').toString(),
       equipments: (json['equipments'] is List)
@@ -48,14 +51,13 @@ class ReservationApiModel {
       durationMinutes: (json['duration_minutes'] is num)
           ? (json['duration_minutes'] as num).toInt()
           : 0,
-      amount: (json['amount'] is num)
-          ? (json['amount'] as num).toDouble()
-          : 0,
+      amount: (json['amount'] is num) ? (json['amount'] as num).toDouble() : 0,
       depositRequired: json['deposit_required'] == true,
       depositAmount: (json['deposit_amount'] is num)
           ? (json['deposit_amount'] as num).toDouble()
           : 0,
-      reservationStatus: (json['reservation_status'] ?? 'pending_payment').toString(),
+      reservationStatus:
+          (json['reservation_status'] ?? 'pending_payment').toString(),
       paymentStatus: (json['payment_status'] ?? 'unpaid').toString(),
       expiresAt: _parseDate(json['expires_at']),
       createdAt: _parseDate(json['created_at']),

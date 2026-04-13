@@ -6,6 +6,9 @@ import '../../reservation/presentation/screens/reservation_screen.dart';
 import '../../main/main_screen.dart';
 import '../models/parking.dart';
 
+const String kParkingPreviewImageUrl =
+    'https://images.unsplash.com/photo-1590674899484-d5640e854abe?w=800';
+
 class ParkingDetailScreen extends StatelessWidget {
   final Parking parking;
   final bool isAuthenticated;
@@ -25,10 +28,12 @@ class ParkingDetailScreen extends StatelessWidget {
     this.reservationStatus,
   });
 
-  void _navigateToLogin(BuildContext context) {
+  void _navigateToLogin(BuildContext context,
+      {required Widget postLoginRoute}) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      MaterialPageRoute(
+          builder: (_) => LoginScreen(postLoginRoute: postLoginRoute)),
     );
   }
 
@@ -37,6 +42,7 @@ class ParkingDetailScreen extends StatelessWidget {
       context,
       MaterialPageRoute(
         builder: (_) => ReservationScreen(
+          parkingId: parking.id,
           parkingName: parking.name,
           parkingAddress: parking.address,
           equipments: parking.equipments,
@@ -73,12 +79,6 @@ class ParkingDetailScreen extends StatelessWidget {
             fontSize: 18,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.share_outlined, color: AppColors.textDark),
-            onPressed: () {},
-          ),
-        ],
       ),
       body: Column(
         children: [
@@ -109,6 +109,11 @@ class ParkingDetailScreen extends StatelessWidget {
   }
 
   Widget _buildImage() {
+    final String imageUrl =
+        (parking.imageUrl != null && parking.imageUrl!.trim().isNotEmpty)
+            ? parking.imageUrl!.trim()
+            : kParkingPreviewImageUrl;
+
     return Container(
       width: double.infinity,
       height: 200,
@@ -116,11 +121,16 @@ class ParkingDetailScreen extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         color: Colors.grey.shade200,
-        image: const DecorationImage(
-          image: NetworkImage(
-            'https://images.unsplash.com/photo-1590674899484-d5640e854abe?w=800',
-          ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Image.network(
+          imageUrl,
           fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Image.asset(
+            'assets/images/parking.png',
+            fit: BoxFit.contain,
+          ),
         ),
       ),
     );
@@ -352,7 +362,16 @@ class ParkingDetailScreen extends StatelessWidget {
                     _navigateToReservation(context);
                     return;
                   }
-                  _navigateToLogin(context);
+                  _navigateToLogin(
+                    context,
+                    postLoginRoute: ReservationScreen(
+                      parkingId: parking.id,
+                      parkingName: parking.name,
+                      parkingAddress: parking.address,
+                      equipments: parking.equipments,
+                      returnHomeOnBack: true,
+                    ),
+                  );
                 },
                 icon: const Icon(Icons.calendar_today_outlined, size: 18),
                 label: const Text('Réserver'),
@@ -389,7 +408,15 @@ class ParkingDetailScreen extends StatelessWidget {
                   }
 
                   if (!isAuthenticated) {
-                    _navigateToLogin(context);
+                    _navigateToLogin(
+                      context,
+                      postLoginRoute: MainScreen(
+                        initialIndex: 1,
+                        isAuthenticated: true,
+                        initialMapParking: parking,
+                        initialMapRoute: true,
+                      ),
+                    );
                     return;
                   }
                   // On vient de "Mes réservations", on navigue vers la carte principale
@@ -407,7 +434,15 @@ class ParkingDetailScreen extends StatelessWidget {
                 }
 
                 if (!isAuthenticated && !directReservation) {
-                  _navigateToLogin(context);
+                  _navigateToLogin(
+                    context,
+                    postLoginRoute: MainScreen(
+                      initialIndex: 1,
+                      isAuthenticated: true,
+                      initialMapParking: parking,
+                      initialMapRoute: true,
+                    ),
+                  );
                   return;
                 }
 
@@ -415,10 +450,15 @@ class ParkingDetailScreen extends StatelessWidget {
                 // même si l'utilisateur n'est pas connecté.
                 Navigator.pop(context, 'navigate');
               },
-              icon: Icon(scanMode ? Icons.qr_code_scanner_rounded : Icons.navigation_rounded, size: 18),
+              icon: Icon(
+                  scanMode
+                      ? Icons.qr_code_scanner_rounded
+                      : Icons.navigation_rounded,
+                  size: 18),
               label: Text(scanMode ? 'Scanner ticket' : "S'y rendre"),
               style: ElevatedButton.styleFrom(
-                backgroundColor: scanMode ? const Color(0xFFEF8D22) : AppColors.blue,
+                backgroundColor:
+                    scanMode ? const Color(0xFFEF8D22) : AppColors.blue,
                 foregroundColor: Colors.white,
                 elevation: 0,
                 padding: const EdgeInsets.symmetric(vertical: 14),

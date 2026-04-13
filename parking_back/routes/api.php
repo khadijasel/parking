@@ -3,9 +3,13 @@
 use App\Http\Controllers\Api\Auth\AdminAuthController;
 use App\Http\Controllers\Api\Auth\OwnerAuthController;
 use App\Http\Controllers\Api\Auth\UserAuthController;
+use App\Http\Controllers\Api\ParkingAvailabilityController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ReservationController;
 use Illuminate\Support\Facades\Route;
+
+Route::get('parkings/availability', [ParkingAvailabilityController::class, 'index']);
+Route::post('parkings/arduino/availability', [ParkingAvailabilityController::class, 'updateArduino']);
 
 Route::prefix('user/auth')->group(function (): void {
 	Route::post('register', [UserAuthController::class, 'register']);
@@ -14,6 +18,7 @@ Route::prefix('user/auth')->group(function (): void {
 	Route::middleware('auth:user')->group(function (): void {
 		Route::post('logout', [UserAuthController::class, 'logout']);
 		Route::get('me', [UserAuthController::class, 'me']);
+		Route::post('profile', [UserAuthController::class, 'updateProfile']);
 	});
 });
 
@@ -43,6 +48,9 @@ Route::prefix('user')->middleware('auth:user')->group(function (): void {
 	Route::post('reservations/{reservationId}/go', [ReservationController::class, 'go']);
 	Route::post('reservations/{reservationId}/scan-ticket', [ReservationController::class, 'scanTicket']);
 	Route::delete('reservations/{reservationId}', [ReservationController::class, 'cancel']);
+	Route::get('parking-sessions/current', [ReservationController::class, 'currentSession']);
+	Route::post('parking-sessions/exit', [ReservationController::class, 'exitSession']);
+	Route::get('parking-sessions/history', [ReservationController::class, 'sessionHistory']);
 
 	Route::post('payments/initiate', [PaymentController::class, 'initiate']);
 	Route::post('payments/confirm', [PaymentController::class, 'confirm']);
