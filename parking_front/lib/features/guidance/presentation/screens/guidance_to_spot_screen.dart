@@ -70,7 +70,8 @@ class _GuidanceToSpotScreenState extends State<GuidanceToSpotScreen>
   late final String _targetSpot;
 
   bool get _targetOnRight {
-    final Match? match = RegExp(r'([AB])').firstMatch(_targetSpot.toUpperCase());
+    final Match? match =
+        RegExp(r'([AB])').firstMatch(_targetSpot.toUpperCase());
     final String letter = match?.group(1) ?? 'A';
 
     return letter == 'A';
@@ -201,14 +202,14 @@ class _GuidanceToSpotScreenState extends State<GuidanceToSpotScreen>
   Future<void> _onArrived() async {
     HapticFeedback.heavyImpact();
     final bool parkedConfirmed = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => VehicleParkedConfirmationScreen(
-          spotLabel: _targetSpot,
-          floor: widget.floor,
-        ),
-      ),
-    ) ??
+          context,
+          MaterialPageRoute(
+            builder: (_) => VehicleParkedConfirmationScreen(
+              spotLabel: _targetSpot,
+              floor: widget.floor,
+            ),
+          ),
+        ) ??
         false;
 
     if (!mounted || !parkedConfirmed) {
@@ -500,7 +501,8 @@ class _SpotFinderPainter extends CustomPainter {
 
     final double startX = size.width * 0.50;
     final double startY = size.height * 0.90;
-    final double targetY = (top + (targetRowIndex * rowStep) + (spotHeight / 2));
+    final double targetY =
+        (top + (targetRowIndex * rowStep) + (spotHeight / 2));
     final double endX = targetOnRight
         ? (rightX + (spotWidth * 0.18))
         : (leftX + (spotWidth * 0.82));
@@ -526,7 +528,8 @@ class _SpotFinderPainter extends CustomPainter {
     );
     if (movingTangent != null) {
       canvas.drawCircle(movingTangent.position, 8, Paint()..color = _kBlue);
-      canvas.drawCircle(movingTangent.position, 3, Paint()..color = Colors.white);
+      canvas.drawCircle(
+          movingTangent.position, 3, Paint()..color = Colors.white);
     }
 
     final Tangent? destination = metric.getTangentForOffset(metric.length);
@@ -564,7 +567,8 @@ class _SpotFinderPainter extends CustomPainter {
       }
     }
 
-    final RRect rRect = RRect.fromRectAndRadius(rect, const Radius.circular(12));
+    final RRect rRect =
+        RRect.fromRectAndRadius(rect, const Radius.circular(12));
 
     canvas.drawRRect(rRect, Paint()..color = fillColor);
 

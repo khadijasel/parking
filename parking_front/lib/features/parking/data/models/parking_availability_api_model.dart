@@ -14,9 +14,8 @@ class ParkingAvailabilityApiModel {
   });
 
   factory ParkingAvailabilityApiModel.fromJson(Map<String, dynamic> json) {
-    final int total = (json['total_spots'] is num)
-        ? (json['total_spots'] as num).toInt()
-        : 0;
+    final int total =
+        (json['total_spots'] is num) ? (json['total_spots'] as num).toInt() : 0;
     final int available = (json['available_spots'] is num)
         ? (json['available_spots'] as num).toInt()
         : 0;

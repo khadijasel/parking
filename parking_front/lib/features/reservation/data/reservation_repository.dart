@@ -192,11 +192,13 @@ class ReservationRepository {
 
       final Object? parkingSessionRaw = data['parking_session'];
       if (parkingSessionRaw is Map<String, dynamic>) {
-        _currentSessionCache = ParkingSessionApiModel.fromJson(parkingSessionRaw);
+        _currentSessionCache =
+            ParkingSessionApiModel.fromJson(parkingSessionRaw);
         _currentSessionCacheAt = DateTime.now();
         _hasCurrentSessionCache = true;
       } else if (parkingSessionRaw is Map) {
-        final Map<String, dynamic> normalized = parkingSessionRaw.map<String, dynamic>(
+        final Map<String, dynamic> normalized =
+            parkingSessionRaw.map<String, dynamic>(
           (dynamic key, dynamic value) => MapEntry<String, dynamic>(
             key.toString(),
             value,
@@ -243,7 +245,8 @@ class ReservationRepository {
         return null;
       }
 
-      final ParkingSessionApiModel mapped = ParkingSessionApiModel.fromJson(data);
+      final ParkingSessionApiModel mapped =
+          ParkingSessionApiModel.fromJson(data);
       _currentSessionCache = mapped;
       _currentSessionCacheAt = DateTime.now();
       _hasCurrentSessionCache = true;
@@ -265,7 +268,8 @@ class ReservationRepository {
           await _apiService.exitCurrentParkingSession(
         token: token,
       );
-      final ParkingSessionApiModel mapped = ParkingSessionApiModel.fromJson(data);
+      final ParkingSessionApiModel mapped =
+          ParkingSessionApiModel.fromJson(data);
 
       _currentSessionCache = null;
       _currentSessionCacheAt = DateTime.now();
@@ -301,7 +305,8 @@ class ReservationRepository {
       );
 
       final List<ParkingSessionApiModel> mapped = data
-          .map((Map<String, dynamic> item) => ParkingSessionApiModel.fromJson(item))
+          .map((Map<String, dynamic> item) =>
+              ParkingSessionApiModel.fromJson(item))
           .toList(growable: false);
 
       _parkingHistoryCache = mapped;

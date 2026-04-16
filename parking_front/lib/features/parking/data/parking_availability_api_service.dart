@@ -76,7 +76,8 @@ class ParkingAvailabilityApiService {
         return 'Certificat serveur invalide.';
       case DioExceptionType.unknown:
       case DioExceptionType.badResponse:
-        final Map<String, dynamic> payload = _normalizePayload(error.response?.data);
+        final Map<String, dynamic> payload =
+            _normalizePayload(error.response?.data);
         return _extractMessage(payload);
     }
   }

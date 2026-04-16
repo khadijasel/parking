@@ -370,8 +370,8 @@ class _ReservationScreenState extends State<ReservationScreen> {
                       Expanded(
                           child: RichText(
                               text: const TextSpan(
-                        style: TextStyle(
-                            fontSize: 13, color: _kDark, height: 1.4),
+                        style:
+                            TextStyle(fontSize: 13, color: _kDark, height: 1.4),
                         children: [
                           TextSpan(text: 'Attention : '),
                           TextSpan(

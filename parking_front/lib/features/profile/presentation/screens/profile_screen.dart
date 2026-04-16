@@ -53,7 +53,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _applyUser(localUser);
 
     try {
-      final Map<String, dynamic> remoteUser = await _profileRepository.fetchProfile();
+      final Map<String, dynamic> remoteUser =
+          await _profileRepository.fetchProfile();
       if (!mounted) {
         return;
       }
@@ -67,11 +68,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final String name = (user['name'] ?? '').toString().trim();
     final String matricule = (user['matricule'] ?? '').toString().trim();
     final String city = (user['city'] ?? '').toString().trim();
-    final String avatarDataUrl = (user['avatar_data_url'] ?? '').toString().trim();
+    final String avatarDataUrl =
+        (user['avatar_data_url'] ?? '').toString().trim();
 
     setState(() {
       _displayName = name.isEmpty ? 'Utilisateur' : name;
-      _displayMatricule = matricule.isEmpty ? 'Matricule non renseigne' : matricule;
+      _displayMatricule =
+          matricule.isEmpty ? 'Matricule non renseigne' : matricule;
       _displayCity = city.isEmpty ? 'Ville non renseignee' : city;
       _avatarDataUrl = avatarDataUrl.isEmpty ? null : avatarDataUrl;
     });
@@ -171,7 +174,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 30),
+                icon: const Icon(Icons.close_rounded,
+                    color: Colors.white, size: 30),
                 onPressed: () => Navigator.of(dialogContext).pop(),
               ),
             ],
@@ -234,7 +238,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   height: 110,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFFD6E6F7), width: 3),
+                    border:
+                        Border.all(color: const Color(0xFFD6E6F7), width: 3),
                   ),
                   child: ClipOval(
                     child: Container(
@@ -278,19 +283,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 16),
 
           // ── Nom + plaque + ville ────────────────────────────────────────
-            Text(_displayName,
+          Text(_displayName,
               style: const TextStyle(
                   fontSize: 24, fontWeight: FontWeight.w800, color: _kDark)),
-            const SizedBox(height: 6),
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const SizedBox(height: 6),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             const Icon(Icons.directions_car_rounded, size: 16, color: _kBlue),
             const SizedBox(width: 6),
             Text(_displayMatricule,
-              style: const TextStyle(
-                fontSize: 15, fontWeight: FontWeight.w600, color: _kDark)),
-            ]),
-            const SizedBox(height: 4),
-            Text(_displayCity,
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600, color: _kDark)),
+          ]),
+          const SizedBox(height: 4),
+          Text(_displayCity,
               style: const TextStyle(fontSize: 14, color: _kMid)),
           const SizedBox(height: 36),
 

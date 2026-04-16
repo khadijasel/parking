@@ -178,7 +178,9 @@ class _HomeTabGateState extends State<_HomeTabGate> {
         forceRefresh: forceRefresh,
       );
 
-      if (!forceRefresh && retryOnNull && (session == null || !session.isActive)) {
+      if (!forceRefresh &&
+          retryOnNull &&
+          (session == null || !session.isActive)) {
         session = await _reservationRepository.fetchCurrentParkingSession(
           forceRefresh: true,
         );

@@ -93,7 +93,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _goToMainScreen() {
-    final Widget nextScreen = widget.postLoginRoute ?? const MainScreen(isAuthenticated: true);
+    final Widget nextScreen =
+        widget.postLoginRoute ?? const MainScreen(isAuthenticated: true);
 
     Navigator.pushAndRemoveUntil(
       context,
@@ -181,7 +182,8 @@ class _LoginScreenState extends State<LoginScreen> {
       return true;
     }
 
-    if (normalized.contains('mot de passe') || normalized.contains('password')) {
+    if (normalized.contains('mot de passe') ||
+        normalized.contains('password')) {
       setState(() {
         _matriculeLoginError = null;
         _emailLoginError = null;
@@ -206,7 +208,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return normalized.contains('invalid credentials') ||
         normalized.contains('provided credentials') ||
         normalized.contains('incorrect') ||
-      normalized.contains('matricule') ||
+        normalized.contains('matricule') ||
         normalized.contains('password') ||
         normalized.contains('mot de passe') ||
         normalized.contains('email') ||

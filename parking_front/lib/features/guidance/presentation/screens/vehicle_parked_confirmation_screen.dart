@@ -6,12 +6,12 @@ import 'package:flutter/services.dart';
 //  "Véhicule garé !" — après que l'utilisateur clique Arrivé
 // ════════════════════════════════════════════════════════════
 
-const _kBg    = Color(0xFFF0F4FA);
+const _kBg = Color(0xFFF0F4FA);
 const _kGreen = Color(0xFF2ECC71);
-const _kBlue  = Color(0xFF4A90E2);
-const _kDark  = Color(0xFF1A1A2E);
-const _kMid   = Color(0xFF8A9BB5);
-const _kBorder= Color(0xFFE2ECF9);
+const _kBlue = Color(0xFF4A90E2);
+const _kDark = Color(0xFF1A1A2E);
+const _kMid = Color(0xFF8A9BB5);
+const _kBorder = Color(0xFFE2ECF9);
 
 class VehicleParkedConfirmationScreen extends StatelessWidget {
   final String spotLabel;
@@ -20,7 +20,7 @@ class VehicleParkedConfirmationScreen extends StatelessWidget {
   const VehicleParkedConfirmationScreen({
     super.key,
     this.spotLabel = 'B2',
-    this.floor     = 'Niveau -1',
+    this.floor = 'Niveau -1',
   });
 
   @override
@@ -38,16 +38,18 @@ class VehicleParkedConfirmationScreen extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06),
-                  blurRadius: 8)],
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)
+              ],
             ),
-            child: const Icon(Icons.arrow_back_rounded,
-                color: _kDark, size: 20),
+            child:
+                const Icon(Icons.arrow_back_rounded, color: _kDark, size: 20),
           ),
         ),
         title: const Text('Confirmation',
-            style: TextStyle(fontWeight: FontWeight.w700,
-                fontSize: 18, color: _kDark)),
+            style: TextStyle(
+                fontWeight: FontWeight.w700, fontSize: 18, color: _kDark)),
         centerTitle: true,
       ),
       body: Padding(
@@ -60,18 +62,19 @@ class VehicleParkedConfirmationScreen extends StatelessWidget {
             tween: Tween(begin: 0.0, end: 1.0),
             duration: const Duration(milliseconds: 700),
             curve: Curves.elasticOut,
-            builder: (_, v, child) =>
-                Transform.scale(scale: v, child: child),
+            builder: (_, v, child) => Transform.scale(scale: v, child: child),
             child: Container(
-              width: 96, height: 96,
+              width: 96,
+              height: 96,
               decoration: BoxDecoration(
-                  color: _kGreen.withValues(alpha: 0.12),
+                color: _kGreen.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: Center(
                 child: Container(
-                  width: 70, height: 70,
-                    decoration: const BoxDecoration(
+                  width: 70,
+                  height: 70,
+                  decoration: const BoxDecoration(
                     color: _kGreen,
                     shape: BoxShape.circle,
                   ),
@@ -84,8 +87,8 @@ class VehicleParkedConfirmationScreen extends StatelessWidget {
 
           const SizedBox(height: 24),
           const Text('Véhicule garé !',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800,
-                  color: _kDark)),
+              style: TextStyle(
+                  fontSize: 26, fontWeight: FontWeight.w800, color: _kDark)),
           const SizedBox(height: 8),
           const Text(
             'Votre stationnement a bien été\nenregistré avec succès.',
@@ -100,16 +103,23 @@ class VehicleParkedConfirmationScreen extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 12, offset: const Offset(0, 4))],
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4))
+              ],
             ),
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('DÉTAILS DU STATIONNEMENT',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                        color: _kMid, letterSpacing: 1.0)),
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: _kMid,
+                        letterSpacing: 1.0)),
                 const SizedBox(height: 16),
                 _detailRow(
                   icon: Icons.location_on_outlined,
@@ -130,7 +140,8 @@ class VehicleParkedConfirmationScreen extends StatelessWidget {
 
           // ── Bouton retour accueil ────────────────────────
           SizedBox(
-            width: double.infinity, height: 56,
+            width: double.infinity,
+            height: 56,
             child: ElevatedButton.icon(
               onPressed: () {
                 HapticFeedback.mediumImpact();
@@ -142,11 +153,13 @@ class VehicleParkedConfirmationScreen extends StatelessWidget {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20)),
               ),
-              icon: const Icon(Icons.home_rounded,
-                  color: Colors.white, size: 22),
+              icon:
+                  const Icon(Icons.home_rounded, color: Colors.white, size: 22),
               label: const Text("Retour à l'accueil",
-                  style: TextStyle(color: Colors.white,
-                      fontWeight: FontWeight.w700, fontSize: 16)),
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16)),
             ),
           ),
         ]),
@@ -161,7 +174,8 @@ class VehicleParkedConfirmationScreen extends StatelessWidget {
   }) {
     return Row(children: [
       Container(
-        width: 38, height: 38,
+        width: 38,
+        height: 38,
         decoration: BoxDecoration(
           color: const Color(0xFFEAF1FB),
           borderRadius: BorderRadius.circular(10),
@@ -172,8 +186,8 @@ class VehicleParkedConfirmationScreen extends StatelessWidget {
       Text(label, style: const TextStyle(fontSize: 15, color: _kMid)),
       const Spacer(),
       Text(value,
-          style: const TextStyle(fontSize: 15,
-              fontWeight: FontWeight.w800, color: _kDark)),
+          style: const TextStyle(
+              fontSize: 15, fontWeight: FontWeight.w800, color: _kDark)),
     ]);
   }
 }

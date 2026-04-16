@@ -23,11 +23,13 @@ class ProfileRepository {
   Future<Map<String, dynamic>> fetchProfile() async {
     final String? token = await _localStorage.readToken();
     if (token == null || token.isEmpty) {
-      throw const ProfileException('Session invalide. Veuillez vous reconnecter.');
+      throw const ProfileException(
+          'Session invalide. Veuillez vous reconnecter.');
     }
 
     try {
-      final Map<String, dynamic> user = await _apiService.fetchProfile(token: token);
+      final Map<String, dynamic> user =
+          await _apiService.fetchProfile(token: token);
       await _localStorage.updateUser(user);
       return user;
     } on ProfileApiException catch (error) {
@@ -48,7 +50,8 @@ class ProfileRepository {
   }) async {
     final String? token = await _localStorage.readToken();
     if (token == null || token.isEmpty) {
-      throw const ProfileException('Session invalide. Veuillez vous reconnecter.');
+      throw const ProfileException(
+          'Session invalide. Veuillez vous reconnecter.');
     }
 
     final Map<String, dynamic> payload = <String, dynamic>{

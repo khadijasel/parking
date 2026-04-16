@@ -17,7 +17,7 @@ import '../../../reservation/data/reservation_repository.dart';
 
 // import 'package:mobile_scanner/mobile_scanner.dart'; // ← décommenter
 
-const _kBlue    = Color(0xFF4A90E2);
+const _kBlue = Color(0xFF4A90E2);
 
 class ScannerScreen extends StatefulWidget {
   final VoidCallback? onScanSuccess;
@@ -30,7 +30,6 @@ class ScannerScreen extends StatefulWidget {
 
 class _ScannerScreenState extends State<ScannerScreen>
     with SingleTickerProviderStateMixin {
-
   bool _torchOn = false;
   bool _isScanning = true;
   bool _isSubmitting = false;
@@ -38,7 +37,7 @@ class _ScannerScreenState extends State<ScannerScreen>
 
   // Animation ligne de scan
   late AnimationController _scanCtrl;
-  late Animation<double>   _scanAnim;
+  late Animation<double> _scanAnim;
 
   // Pour la vraie caméra :
   // final MobileScannerController _cameraCtrl = MobileScannerController();
@@ -194,7 +193,7 @@ class _ScannerScreenState extends State<ScannerScreen>
 
   @override
   Widget build(BuildContext context) {
-    final size   = MediaQuery.of(context).size;
+    final size = MediaQuery.of(context).size;
     final frameW = size.width * 0.72;
     final frameH = frameW * 1.25;
 
@@ -202,7 +201,6 @@ class _ScannerScreenState extends State<ScannerScreen>
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-
           // ── Fond caméra (simulé en noir) ──────────────────
           // Remplacer par :
           // MobileScanner(
@@ -238,15 +236,18 @@ class _ScannerScreenState extends State<ScannerScreen>
                     animation: _scanAnim,
                     builder: (_, __) => Positioned(
                       top: _scanAnim.value * (frameH - 4),
-                      left: 16, right: 16,
+                      left: 16,
+                      right: 16,
                       child: Container(
                         height: 2,
                         decoration: BoxDecoration(
                           color: _kBlue,
                           borderRadius: BorderRadius.circular(1),
                           boxShadow: [
-                            BoxShadow(color: _kBlue.withValues(alpha: 0.6),
-                                blurRadius: 8, spreadRadius: 2),
+                            BoxShadow(
+                                color: _kBlue.withValues(alpha: 0.6),
+                                blurRadius: 8,
+                                spreadRadius: 2),
                           ],
                         ),
                       ),
@@ -259,12 +260,15 @@ class _ScannerScreenState extends State<ScannerScreen>
           // ── Texte instruction ─────────────────────────────
           Positioned(
             top: size.height / 2 - frameH / 2 - 52,
-            left: 0, right: 0,
+            left: 0,
+            right: 0,
             child: const Text(
               'Placez le ticket dans le cadre',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white70,
-                  fontSize: 15, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500),
             ),
           ),
 
@@ -292,7 +296,9 @@ class _ScannerScreenState extends State<ScannerScreen>
 
           // ── Barre actions bas ─────────────────────────────
           Positioned(
-            bottom: 0, left: 0, right: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
             child: _buildBottomBar(),
           ),
         ],
@@ -307,17 +313,32 @@ class _ScannerScreenState extends State<ScannerScreen>
 
     return Stack(children: [
       // Haut
-      Positioned(top: 0, left: 0, right: 0, height: cy,
+      Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: cy,
           child: Container(color: Colors.black.withValues(alpha: 0.6))),
       // Bas
-      Positioned(top: cy + frameH, left: 0, right: 0,
+      Positioned(
+          top: cy + frameH,
+          left: 0,
+          right: 0,
           bottom: 0,
           child: Container(color: Colors.black.withValues(alpha: 0.6))),
       // Gauche
-      Positioned(top: cy, left: 0, width: cx, height: frameH,
+      Positioned(
+          top: cy,
+          left: 0,
+          width: cx,
+          height: frameH,
           child: Container(color: Colors.black.withValues(alpha: 0.6))),
       // Droite
-      Positioned(top: cy, left: cx + frameW, right: 0, height: frameH,
+      Positioned(
+          top: cy,
+          left: cx + frameW,
+          right: 0,
+          height: frameH,
           child: Container(color: Colors.black.withValues(alpha: 0.6))),
     ]);
   }
@@ -329,33 +350,32 @@ class _ScannerScreenState extends State<ScannerScreen>
     const l = 28.0;
     return Stack(children: [
       // Haut gauche
-      Positioned(top: 0, left: 0,
-          child: _corner(l, l, t, r,
-              top: true, left: true)),
+      Positioned(
+          top: 0, left: 0, child: _corner(l, l, t, r, top: true, left: true)),
       // Haut droit
-      Positioned(top: 0, right: 0,
-          child: _corner(l, l, t, r,
-              top: true, left: false)),
+      Positioned(
+          top: 0, right: 0, child: _corner(l, l, t, r, top: true, left: false)),
       // Bas gauche
-      Positioned(bottom: 0, left: 0,
-          child: _corner(l, l, t, r,
-              top: false, left: true)),
+      Positioned(
+          bottom: 0,
+          left: 0,
+          child: _corner(l, l, t, r, top: false, left: true)),
       // Bas droit
-      Positioned(bottom: 0, right: 0,
-          child: _corner(l, l, t, r,
-              top: false, left: false)),
+      Positioned(
+          bottom: 0,
+          right: 0,
+          child: _corner(l, l, t, r, top: false, left: false)),
     ]);
   }
 
   Widget _corner(double w, double h, double t, double r,
       {required bool top, required bool left}) {
     return SizedBox(
-      width: w, height: h,
+      width: w,
+      height: h,
       child: CustomPaint(
         painter: _CornerPainter(
-            top: top, left: left,
-            thickness: t, radius: r,
-            color: _kBlue),
+            top: top, left: left, thickness: t, radius: r, color: _kBlue),
       ),
     );
   }
@@ -365,7 +385,8 @@ class _ScannerScreenState extends State<ScannerScreen>
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 46, height: 46,
+        width: 46,
+        height: 46,
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.55),
           shape: BoxShape.circle,
@@ -406,13 +427,16 @@ class _ScannerScreenState extends State<ScannerScreen>
               _simulateScanFromCurrentReservation();
             },
             child: Container(
-              width: 68, height: 68,
+              width: 68,
+              height: 68,
               decoration: BoxDecoration(
                 color: _kBlue,
                 shape: BoxShape.circle,
                 boxShadow: [
-                  BoxShadow(color: _kBlue.withValues(alpha: 0.4),
-                      blurRadius: 16, spreadRadius: 2),
+                  BoxShadow(
+                      color: _kBlue.withValues(alpha: 0.4),
+                      blurRadius: 16,
+                      spreadRadius: 2),
                 ],
               ),
               child: const Icon(Icons.camera_alt_rounded,
@@ -436,7 +460,8 @@ class _ScannerScreenState extends State<ScannerScreen>
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 48, height: 48,
+        width: 48,
+        height: 48,
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.55),
           shape: BoxShape.circle,
@@ -452,7 +477,7 @@ class _ScannerScreenState extends State<ScannerScreen>
 // ════════════════════════════════════════════════════════════
 
 class _CornerPainter extends CustomPainter {
-  final bool  top, left;
+  final bool top, left;
   final double thickness, radius;
   final Color color;
 
@@ -541,7 +566,8 @@ class _ScanResultSheet extends StatelessWidget {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         // Poignée
         Container(
-          width: 40, height: 4,
+          width: 40,
+          height: 4,
           margin: const EdgeInsets.only(bottom: 20),
           decoration: BoxDecoration(
             color: Colors.grey.shade300,
@@ -551,7 +577,8 @@ class _ScanResultSheet extends StatelessWidget {
 
         // Icône résultat
         Container(
-          width: 72, height: 72,
+          width: 72,
+          height: 72,
           decoration: BoxDecoration(
             color: isValid
                 ? const Color(0xFF2ECC71).withValues(alpha: 0.12)
@@ -563,9 +590,7 @@ class _ScanResultSheet extends StatelessWidget {
                 ? Icons.check_circle_outline_rounded
                 : Icons.error_outline_rounded,
             size: 40,
-            color: isValid
-                ? const Color(0xFF2ECC71)
-                : const Color(0xFFE53935),
+            color: isValid ? const Color(0xFF2ECC71) : const Color(0xFFE53935),
           ),
         ),
         const SizedBox(height: 16),
@@ -573,17 +598,16 @@ class _ScanResultSheet extends StatelessWidget {
         Text(
           isValid ? 'Ticket validé !' : 'QR code invalide',
           style: const TextStyle(
-              fontSize: 20, fontWeight: FontWeight.w800,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
               color: Color(0xFF1A1A2E)),
         ),
         const SizedBox(height: 6),
         Text(
-          isValid
-            ? message
-            : '$message\nVeuillez réessayer.',
+          isValid ? message : '$message\nVeuillez réessayer.',
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 14,
-              color: Color(0xFF8A9BB5), height: 1.5),
+          style: const TextStyle(
+              fontSize: 14, color: Color(0xFF8A9BB5), height: 1.5),
         ),
 
         if (isValid) ...[
@@ -598,13 +622,12 @@ class _ScanResultSheet extends StatelessWidget {
               const Icon(Icons.confirmation_number_outlined,
                   color: Color(0xFF4A90E2), size: 20),
               const SizedBox(width: 10),
-              Column(crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 const Text('Référence ticket',
-                    style: TextStyle(fontSize: 11,
-                        color: Color(0xFF8A9BB5))),
+                    style: TextStyle(fontSize: 11, color: Color(0xFF8A9BB5))),
                 Text(ticketReference ?? code,
-                    style: const TextStyle(fontSize: 13,
+                    style: const TextStyle(
+                        fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF1A1A2E))),
               ]),
@@ -616,7 +639,8 @@ class _ScanResultSheet extends StatelessWidget {
 
         if (isValid)
           SizedBox(
-            width: double.infinity, height: 52,
+            width: double.infinity,
+            height: 52,
             child: ElevatedButton(
               onPressed: onClose,
               style: ElevatedButton.styleFrom(
@@ -626,8 +650,10 @@ class _ScanResultSheet extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16)),
               ),
               child: const Text('Continuer',
-                  style: TextStyle(color: Colors.white,
-                      fontWeight: FontWeight.w700, fontSize: 15)),
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15)),
             ),
           )
         else
@@ -657,8 +683,8 @@ class _ScanResultSheet extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: const Text('Réessayer',
-                    style: TextStyle(color: Colors.white,
-                        fontWeight: FontWeight.w600)),
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600)),
               ),
             ),
           ]),

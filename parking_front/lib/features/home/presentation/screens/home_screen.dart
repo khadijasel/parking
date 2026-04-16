@@ -477,10 +477,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   bool _isSmartGuidanceEnabledForParking(String parkingName) {
-    final String normalized = parkingName
-        .trim()
-        .toLowerCase()
-        .replaceAll(RegExp(r'\s+'), ' ');
+    final String normalized =
+        parkingName.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
     return normalized.contains('notre parking') ||
         normalized.contains('arduino');

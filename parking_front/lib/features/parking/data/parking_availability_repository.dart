@@ -22,7 +22,8 @@ class ParkingAvailabilityRepository {
       return _availabilityCache!;
     }
 
-    final List<Map<String, dynamic>> raw = await _apiService.fetchAvailability();
+    final List<Map<String, dynamic>> raw =
+        await _apiService.fetchAvailability();
 
     final List<ParkingAvailabilityApiModel> mapped = raw
         .map((Map<String, dynamic> item) =>

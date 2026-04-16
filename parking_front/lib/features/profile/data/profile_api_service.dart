@@ -49,7 +49,8 @@ class ProfileApiService {
 
       final Object? data = payload['data'];
       if (data is! Map<String, dynamic>) {
-        throw const ProfileApiException('Format de reponse inattendu du serveur.');
+        throw const ProfileApiException(
+            'Format de reponse inattendu du serveur.');
       }
 
       return data;
@@ -81,7 +82,8 @@ class ProfileApiService {
 
       final Object? data = body['data'];
       if (data is! Map<String, dynamic>) {
-        throw const ProfileApiException('Format de reponse inattendu du serveur.');
+        throw const ProfileApiException(
+            'Format de reponse inattendu du serveur.');
       }
 
       return data;
@@ -101,7 +103,8 @@ class ProfileApiService {
 
   ProfileApiException _mapDioException(DioException error) {
     final int? statusCode = error.response?.statusCode;
-    final Map<String, dynamic> payload = _normalizePayload(error.response?.data);
+    final Map<String, dynamic> payload =
+        _normalizePayload(error.response?.data);
 
     if (statusCode != null) {
       return ProfileApiException(

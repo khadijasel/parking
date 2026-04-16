@@ -66,8 +66,16 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
     _pathController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1350),
-    )..repeat();
+    );
 
+    if (widget.showMapComingSoon) {
+      _voiceEnabled = false;
+      _instruction =
+          'Guidage carte et voix indisponibles pour ce parking non equipe.';
+      return;
+    }
+
+    _pathController.repeat();
     _configureVoice();
     _refreshInstruction(forceSpeak: true);
 
@@ -125,6 +133,14 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
   }
 
   void _toggleVoice() {
+    if (widget.showMapComingSoon) {
+      AppFeedback.showInfo(
+        context,
+        'La voix est indisponible pour ce parking non equipe.',
+      );
+      return;
+    }
+
     setState(() => _voiceEnabled = !_voiceEnabled);
     if (_voiceEnabled) {
       _speak(_instruction);
@@ -167,7 +183,6 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
         setState(() => _isCompletingExit = false);
       }
     }
-
   }
 
   @override
@@ -273,47 +288,58 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Row(
-                    children: <Widget>[
-                      Text(
-                        'Distance: $_distanceMeters m',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: _kMid,
-                          fontWeight: FontWeight.w600,
-                        ),
+                  if (widget.showMapComingSoon)
+                    const Text(
+                      'Carte et guidage vocal indisponibles pour ce parking.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: _kMid,
+                        fontWeight: FontWeight.w600,
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Place: $_normalizedSpotLabel',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: _kMid,
-                          fontWeight: FontWeight.w600,
+                    )
+                  else ...<Widget>[
+                    Row(
+                      children: <Widget>[
+                        Text(
+                          'Distance: $_distanceMeters m',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: _kMid,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      const Spacer(),
-                      TextButton.icon(
-                        onPressed: _toggleVoice,
-                        icon: Icon(
-                          _voiceEnabled
-                              ? Icons.volume_up_rounded
-                              : Icons.volume_off_rounded,
-                          size: 18,
+                        const SizedBox(width: 8),
+                        Text(
+                          'Place: $_normalizedSpotLabel',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: _kMid,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                        label: Text(_voiceEnabled ? 'Voix ON' : 'Voix OFF'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    '🟢 Votre place · ⚫ Autres places',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _kMid,
-                      fontWeight: FontWeight.w600,
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: _toggleVoice,
+                          icon: Icon(
+                            _voiceEnabled
+                                ? Icons.volume_up_rounded
+                                : Icons.volume_off_rounded,
+                            size: 18,
+                          ),
+                          label: Text(_voiceEnabled ? 'Voix ON' : 'Voix OFF'),
+                        ),
+                      ],
                     ),
-                  ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      '🟢 Votre place · ⚫ Autres places',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _kMid,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
@@ -333,8 +359,8 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
                               height: 18,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white),
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(Colors.white),
                               ),
                             )
                           : const Icon(Icons.meeting_room_outlined,
@@ -443,12 +469,10 @@ class _ExitPathPainter extends CustomPainter {
       final Rect leftRect = Rect.fromLTWH(leftX, y, spotWidth, spotHeight);
       final Rect rightRect = Rect.fromLTWH(rightX, y, spotWidth, spotHeight);
 
-      final Color leftColor = (!targetOnRight && i == targetRowIndex)
-          ? _kGreen
-          : _kSpotGray;
-      final Color rightColor = (targetOnRight && i == targetRowIndex)
-          ? _kGreen
-          : _kSpotGray;
+      final Color leftColor =
+          (!targetOnRight && i == targetRowIndex) ? _kGreen : _kSpotGray;
+      final Color rightColor =
+          (targetOnRight && i == targetRowIndex) ? _kGreen : _kSpotGray;
 
       _drawSpot(canvas, leftRect, leftColor, leftLabels[i]);
       _drawSpot(canvas, rightRect, rightColor, rightLabels[i]);

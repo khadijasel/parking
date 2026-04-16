@@ -8,25 +8,25 @@ import 'package:parking_front/features/payment/presentation/screens/payment_scre
 //  Boutons : Payer | Retour à l'accueil
 // ════════════════════════════════════════════════════════════
 
-const _kBg    = Color(0xFFF0F4FA);
-const _kBlue  = Color(0xFF4A90E2);
-const _kDark  = Color(0xFF1A1A2E);
-const _kMid   = Color(0xFF8A9BB5);
-const _kCard  = Colors.white;
+const _kBg = Color(0xFFF0F4FA);
+const _kBlue = Color(0xFF4A90E2);
+const _kDark = Color(0xFF1A1A2E);
+const _kMid = Color(0xFF8A9BB5);
+const _kCard = Colors.white;
 
 class VehicleFoundScreen extends StatelessWidget {
   final String spotLabel;
   final String floor;
   final String reservationId;
   final String parkingName;
-  final int    dureeMinutes;
+  final int dureeMinutes;
 
   const VehicleFoundScreen({
     super.key,
-    this.spotLabel    = 'B2',
-    this.floor        = 'Niveau -1',
+    this.spotLabel = 'B2',
+    this.floor = 'Niveau -1',
     this.reservationId = '',
-    this.parkingName  = 'Notre parking',
+    this.parkingName = 'Notre parking',
     this.dureeMinutes = 90,
   });
 
@@ -46,13 +46,13 @@ class VehicleFoundScreen extends StatelessWidget {
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.arrow_back_rounded,
-                color: _kDark, size: 20),
+            child:
+                const Icon(Icons.arrow_back_rounded, color: _kDark, size: 20),
           ),
         ),
         title: const Text('Parking',
-            style: TextStyle(fontWeight: FontWeight.w700,
-                fontSize: 18, color: _kDark)),
+            style: TextStyle(
+                fontWeight: FontWeight.w700, fontSize: 18, color: _kDark)),
         centerTitle: true,
       ),
       body: Padding(
@@ -65,10 +65,10 @@ class VehicleFoundScreen extends StatelessWidget {
             tween: Tween(begin: 0.0, end: 1.0),
             duration: const Duration(milliseconds: 600),
             curve: Curves.elasticOut,
-            builder: (_, v, child) =>
-                Transform.scale(scale: v, child: child),
+            builder: (_, v, child) => Transform.scale(scale: v, child: child),
             child: Container(
-              width: 80, height: 80,
+              width: 80,
+              height: 80,
               decoration: BoxDecoration(
                 color: _kBlue.withValues(alpha: 0.10),
                 shape: BoxShape.circle,
@@ -79,12 +79,15 @@ class VehicleFoundScreen extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           const Text('SUCCES',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
-                  color: Color(0xFF4A90E2), letterSpacing: 2)),
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF4A90E2),
+                  letterSpacing: 2)),
           const SizedBox(height: 8),
           const Text('Véhicule retrouvé !',
-              style: TextStyle(fontSize: 24,
-                  fontWeight: FontWeight.w800, color: _kDark)),
+              style: TextStyle(
+                  fontSize: 24, fontWeight: FontWeight.w800, color: _kDark)),
           const SizedBox(height: 6),
           const Text('Session de stationnement terminée',
               style: TextStyle(fontSize: 13, color: _kMid)),
@@ -96,14 +99,18 @@ class VehicleFoundScreen extends StatelessWidget {
             decoration: BoxDecoration(
               color: _kCard,
               borderRadius: BorderRadius.circular(20),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06),
-                  blurRadius: 12, offset: const Offset(0, 4))],
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4))
+              ],
             ),
             child: Column(children: [
               // Photo parking (vue de dessus)
               ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(20)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(20)),
                 child: Container(
                   height: 170,
                   color: const Color(0xFF2D3748),
@@ -132,7 +139,8 @@ class VehicleFoundScreen extends StatelessWidget {
 
           // ── Bouton Payer ─────────────────────────────────
           SizedBox(
-            width: double.infinity, height: 56,
+            width: double.infinity,
+            height: 56,
             child: ElevatedButton.icon(
               onPressed: () {
                 HapticFeedback.mediumImpact();
@@ -141,13 +149,15 @@ class VehicleFoundScreen extends StatelessWidget {
                   return;
                 }
 
-                Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => PaymentScreen(
-                    reservationId: reservationId,
-                    parkingName:  parkingName,
-                    dureeMinutes: dureeMinutes,
-                  ),
-                ));
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PaymentScreen(
+                        reservationId: reservationId,
+                        parkingName: parkingName,
+                        dureeMinutes: dureeMinutes,
+                      ),
+                    ));
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: _kBlue,
@@ -158,26 +168,30 @@ class VehicleFoundScreen extends StatelessWidget {
               icon: const Icon(Icons.payment_rounded,
                   color: Colors.white, size: 22),
               label: const Text('Payer',
-                  style: TextStyle(color: Colors.white,
-                      fontWeight: FontWeight.w700, fontSize: 16)),
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16)),
             ),
           ),
           const SizedBox(height: 12),
 
           // ── Bouton Retour accueil ─────────────────────────
           SizedBox(
-            width: double.infinity, height: 52,
+            width: double.infinity,
+            height: 52,
             child: OutlinedButton(
-              onPressed: () =>
-                  Navigator.popUntil(context, (r) => r.isFirst),
+              onPressed: () => Navigator.popUntil(context, (r) => r.isFirst),
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: Color(0xFFE2ECF9)),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20)),
               ),
               child: const Text("Retour à l'accueil",
-                  style: TextStyle(fontWeight: FontWeight.w600,
-                      color: _kDark, fontSize: 15)),
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: _kDark,
+                      fontSize: 15)),
             ),
           ),
         ]),
@@ -194,12 +208,15 @@ class VehicleFoundScreen extends StatelessWidget {
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(label,
-            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
-                color: _kMid, letterSpacing: 0.8)),
+            style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: _kMid,
+                letterSpacing: 0.8)),
         const SizedBox(height: 4),
         Text(value,
-            style: const TextStyle(fontSize: 16,
-                fontWeight: FontWeight.w800, color: _kDark)),
+            style: const TextStyle(
+                fontSize: 16, fontWeight: FontWeight.w800, color: _kDark)),
       ]),
     );
   }
@@ -238,8 +255,8 @@ class _ParkingTopViewPainter extends CustomPainter {
       final y = size.height * 0.15 + i * (size.height * 0.28);
       canvas.drawRRect(
           RRect.fromRectAndRadius(
-              Rect.fromLTWH(size.width * 0.04, y,
-                  size.width * 0.35, size.height * 0.20),
+              Rect.fromLTWH(
+                  size.width * 0.04, y, size.width * 0.35, size.height * 0.20),
               const Radius.circular(4)),
           carPaint);
     }
@@ -256,8 +273,8 @@ class _ParkingTopViewPainter extends CustomPainter {
       final y = size.height * 0.15 + i * (size.height * 0.28);
       canvas.drawRRect(
           RRect.fromRectAndRadius(
-              Rect.fromLTWH(size.width * 0.62, y,
-                  size.width * 0.32, size.height * 0.20),
+              Rect.fromLTWH(
+                  size.width * 0.62, y, size.width * 0.32, size.height * 0.20),
               const Radius.circular(4)),
           carPaint);
     }

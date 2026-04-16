@@ -139,7 +139,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       return;
     }
 
-    if (_avatarDataUrl != null && _avatarDataUrl!.length > _maxAvatarDataUrlLength) {
+    if (_avatarDataUrl != null &&
+        _avatarDataUrl!.length > _maxAvatarDataUrlLength) {
       _showError('Photo trop lourde. Choisissez une image plus legere.');
       return;
     }
@@ -285,7 +286,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   ImageProvider<Object>? _avatarProvider() {
     final String? dataUrl = _avatarDataUrl;
-    if (dataUrl == null || dataUrl.isEmpty || dataUrl.length > _maxAvatarDataUrlLength) {
+    if (dataUrl == null ||
+        dataUrl.isEmpty ||
+        dataUrl.length > _maxAvatarDataUrlLength) {
       return null;
     }
 
@@ -369,7 +372,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             ),
                           ],
                           image: avatar != null
-                              ? DecorationImage(image: avatar, fit: BoxFit.cover)
+                              ? DecorationImage(
+                                  image: avatar, fit: BoxFit.cover)
                               : null,
                         ),
                         child: avatar == null
@@ -509,7 +513,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               height: 20,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(Colors.white),
                               ),
                             )
                           : const Text(
@@ -588,11 +593,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: Colors.redAccent, width: 1.4),
+                borderSide:
+                    const BorderSide(color: Colors.redAccent, width: 1.4),
               ),
               focusedErrorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: Colors.redAccent, width: 1.6),
+                borderSide:
+                    const BorderSide(color: Colors.redAccent, width: 1.6),
               ),
               filled: true,
               fillColor: Colors.white,

@@ -51,12 +51,12 @@ class ParkingSessionApiModel {
       reservationStatus: (json['reservation_status'] ?? '').toString(),
       reservationPaymentStatus:
           (json['reservation_payment_status'] ?? '').toString(),
-        reservationDurationType:
+      reservationDurationType:
           (json['reservation_duration_type'] ?? '').toString(),
-        reservationAmount: (json['reservation_amount'] is num)
+      reservationAmount: (json['reservation_amount'] is num)
           ? (json['reservation_amount'] as num).toDouble()
           : 0,
-        sessionPaymentStatus: (json['session_payment_status'] ?? '').toString(),
+      sessionPaymentStatus: (json['session_payment_status'] ?? '').toString(),
       durationSeconds: (json['duration_seconds'] is num)
           ? (json['duration_seconds'] as num).toInt()
           : null,

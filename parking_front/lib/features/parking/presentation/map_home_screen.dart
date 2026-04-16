@@ -41,6 +41,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
   final List<String> _activeFilters = [];
   String _selectedVehicleType = 'car';
   String _searchQuery = '';
+  double? _minPriceFilter;
+  double? _maxPriceFilter;
   LatLng? _userLocation;
   bool _isLoadingLocation = false;
   bool _showRouteToSelected = false;
@@ -297,15 +299,48 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     return true;
   }
 
-  String get _vehicleTypeLabel {
-    switch (_selectedVehicleType) {
+  IconData _vehicleTypeIconFor(String type) {
+    switch (type) {
       case 'moto':
-        return 'Moto';
+        return Icons.motorcycle_rounded;
       case 'truck':
-        return 'Camion';
+        return Icons.local_shipping_rounded;
       default:
-        return 'Voiture';
+        return Icons.directions_car_filled_rounded;
     }
+  }
+
+  Future<void> _showPriceFilterSheet() async {
+    final Map<String, double?>? result =
+        await showModalBottomSheet<Map<String, double?>>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      isScrollControlled: true,
+      builder: (_) => _PriceFilterBottomSheet(
+        initialMin: _minPriceFilter,
+        initialMax: _maxPriceFilter,
+      ),
+    );
+
+    if (!mounted || result == null) {
+      return;
+    }
+
+    setState(() {
+      _minPriceFilter = result['min'];
+      _maxPriceFilter = result['max'];
+
+      if (_selectedParking != null && !_isSelectedParkingVisible()) {
+        _selectedParking = null;
+        _showRouteToSelected = false;
+        _routePoints = const [];
+        _routeDistanceKm = 0;
+        _routeDurationMinutes = 0;
+      }
+    });
   }
 
   Future<void> _showVehicleFilterSheet() async {
@@ -347,7 +382,20 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                       ].map((Map<String, String> item) {
                         final bool active = tempType == item['value'];
                         return ChoiceChip(
-                          label: Text(item['label']!),
+                          label: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Icon(
+                                _vehicleTypeIconFor(item['value']!),
+                                size: 16,
+                                color: active
+                                    ? AppColors.blue
+                                    : AppColors.textDark,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(item['label']!),
+                            ],
+                          ),
                           selected: active,
                           onSelected: (_) {
                             setModalState(() => tempType = item['value']!);
@@ -414,6 +462,15 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
         if (!passesAllFilters) {
           return false;
         }
+      }
+
+      final double price = parking.pricePerHour;
+      if (_minPriceFilter != null && price < _minPriceFilter!) {
+        return false;
+      }
+
+      if (_maxPriceFilter != null && price > _maxPriceFilter!) {
+        return false;
       }
 
       if (query.isEmpty) {
@@ -666,11 +723,11 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
           markers: _visibleParkings.map((parking) {
             return Marker(
               point: parking.location,
-              width: 80,
-              height: 40,
+              width: 156,
+              height: 76,
               child: GestureDetector(
                 onTap: () => _selectParking(parking),
-                child: _buildPriceMarker(parking),
+                child: _buildParkingMarker(parking),
               ),
             );
           }).toList()
@@ -697,36 +754,84 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     );
   }
 
-  Widget _buildPriceMarker(Parking parking) {
-    final isSelected = _selectedParking?.id == parking.id;
-    final bool isArduinoParking = parking.id == 'arduino-sim';
+  Widget _buildParkingMarker(Parking parking) {
+    final bool isSelected = _selectedParking?.id == parking.id;
+    final bool isNotreParking = parking.id == 'arduino-sim' ||
+        _normalizeParkingName(parking.name).contains('notre parking');
     final Color markerColor = isSelected
         ? AppColors.blue
-        : (isArduinoParking
-            ? const Color(0xFFEF8D22)
-            : const Color(0xFF2ECC71));
+        : (isNotreParking ? const Color(0xFFEF8D22) : const Color(0xFF2ECC71));
+    final IconData vehicleIcon = _vehicleTypeIconFor(_selectedVehicleType);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: markerColor,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: markerColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: Colors.white,
+              width: 1.2,
+            ),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.16),
+                blurRadius: 7,
+                offset: const Offset(0, 3),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Text(
-        '${parking.pricePerHour.toInt()} DA',
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 13,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(
+                vehicleIcon,
+                size: 15,
+                color: Colors.white,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                '${parking.pricePerHour.toInt()} DA/h',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+        const SizedBox(height: 4),
+        Container(
+          constraints: const BoxConstraints(maxWidth: 148),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: markerColor.withValues(alpha: 0.94),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white, width: 1),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Text(
+            parking.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -784,8 +889,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                 ),
                 const SizedBox(width: 10),
                 Container(
-                  height: 48,
-                  width: 48,
+                  height: 46,
+                  width: 46,
                   decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
@@ -799,45 +904,36 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                   ),
                   child: GestureDetector(
                     onTap: _showVehicleFilterSheet,
-                    child: const Icon(Icons.tune, color: AppColors.textDark),
+                    child: Icon(
+                      _vehicleTypeIconFor(_selectedVehicleType),
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  height: 46,
+                  width: 46,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: GestureDetector(
+                    onTap: _showPriceFilterSheet,
+                    child: const Icon(Icons.payments_rounded,
+                        color: AppColors.textDark),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 10),
-            Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: <Widget>[
-                  const Icon(Icons.directions_car_filled_rounded,
-                      size: 16, color: AppColors.blue),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      _vehicleTypeLabel,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textDark,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
             if (_isLoadingLocation)
               const Padding(
                 padding: EdgeInsets.only(bottom: 8),
@@ -1324,6 +1420,221 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                       'Voir détails',
                       style:
                           TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PriceFilterBottomSheet extends StatefulWidget {
+  const _PriceFilterBottomSheet({
+    required this.initialMin,
+    required this.initialMax,
+  });
+
+  final double? initialMin;
+  final double? initialMax;
+
+  @override
+  State<_PriceFilterBottomSheet> createState() =>
+      _PriceFilterBottomSheetState();
+}
+
+class _PriceFilterBottomSheetState extends State<_PriceFilterBottomSheet> {
+  late final TextEditingController _minController;
+  late final TextEditingController _maxController;
+  String? _inputError;
+
+  @override
+  void initState() {
+    super.initState();
+    _minController = TextEditingController(
+      text: _formatPriceValue(widget.initialMin),
+    );
+    _maxController = TextEditingController(
+      text: _formatPriceValue(widget.initialMax),
+    );
+  }
+
+  @override
+  void dispose() {
+    _minController.dispose();
+    _maxController.dispose();
+    super.dispose();
+  }
+
+  String _formatPriceValue(double? value) {
+    if (value == null) {
+      return '';
+    }
+
+    final double rounded = value.roundToDouble();
+    if ((value - rounded).abs() < 0.01) {
+      return rounded.toInt().toString();
+    }
+
+    return value.toStringAsFixed(1);
+  }
+
+  double? _parsePriceInput(String rawValue) {
+    final String normalized = rawValue.trim().replaceAll(',', '.');
+    if (normalized.isEmpty) {
+      return null;
+    }
+
+    final double? parsed = double.tryParse(normalized);
+    if (parsed == null || parsed < 0) {
+      return null;
+    }
+
+    return parsed;
+  }
+
+  void _clearError() {
+    if (_inputError == null) {
+      return;
+    }
+
+    setState(() {
+      _inputError = null;
+    });
+  }
+
+  void _apply() {
+    final double? parsedMin = _parsePriceInput(_minController.text);
+    final double? parsedMax = _parsePriceInput(_maxController.text);
+
+    if (_minController.text.trim().isNotEmpty && parsedMin == null) {
+      setState(() {
+        _inputError = 'Le prix minimum est invalide.';
+      });
+      return;
+    }
+
+    if (_maxController.text.trim().isNotEmpty && parsedMax == null) {
+      setState(() {
+        _inputError = 'Le prix maximum est invalide.';
+      });
+      return;
+    }
+
+    if (parsedMin != null && parsedMax != null && parsedMin > parsedMax) {
+      setState(() {
+        _inputError = 'Le prix min doit etre inferieur au prix max.';
+      });
+      return;
+    }
+
+    Navigator.of(context).pop(<String, double?>{
+      'min': parsedMin,
+      'max': parsedMax,
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(18, 14, 18, 20 + keyboardInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text(
+              'Filtrer par prix',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textDark,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: TextField(
+                    controller: _minController,
+                    onChanged: (_) => _clearError(),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Prix min (DA)',
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _maxController,
+                    onChanged: (_) => _clearError(),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Prix max (DA)',
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (_inputError != null) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                _inputError!,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.red,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      Navigator.of(context).pop(<String, double?>{
+                        'min': null,
+                        'max': null,
+                      });
+                    },
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                    ),
+                    child: const Text('Reinitialiser'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _apply,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                    ),
+                    child: const Text(
+                      'Appliquer',
+                      style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),

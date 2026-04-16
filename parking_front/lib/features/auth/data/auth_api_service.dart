@@ -192,7 +192,9 @@ class AuthApiService {
     final Object? tokenObj = data['token'];
     final Object? userObj = data['user'];
 
-    if (tokenObj is! String || tokenObj.isEmpty || userObj is! Map<String, dynamic>) {
+    if (tokenObj is! String ||
+        tokenObj.isEmpty ||
+        userObj is! Map<String, dynamic>) {
       throw const AuthApiException('Session invalide reçue depuis le serveur.');
     }
 
@@ -222,7 +224,8 @@ class AuthApiService {
 
   AuthApiException _mapDioException(DioException error) {
     final int? statusCode = error.response?.statusCode;
-    final Map<String, dynamic> payload = _normalizePayload(error.response?.data);
+    final Map<String, dynamic> payload =
+        _normalizePayload(error.response?.data);
     final String serverHint = 'Serveur: ${ApiConstants.baseUrl}';
 
     if (statusCode != null) {
