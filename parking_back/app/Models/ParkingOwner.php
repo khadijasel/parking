@@ -20,6 +20,12 @@ class ParkingOwner extends Authenticatable
         'email',
         'phone',
         'password',
+        'account_status',
+        'subscription_status',
+        'subscription_ends_at',
+        'blocked_at',
+        'blocked_reason',
+        'last_login_at',
     ];
 
     protected $hidden = [
@@ -31,6 +37,9 @@ class ParkingOwner extends Authenticatable
     {
         return [
             'password' => 'hashed',
+            'subscription_ends_at' => 'datetime',
+            'blocked_at' => 'datetime',
+            'last_login_at' => 'datetime',
         ];
     }
 }

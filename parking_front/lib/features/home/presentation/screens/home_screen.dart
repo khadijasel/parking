@@ -976,7 +976,7 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
+            color: Colors.black.withOpacity(0.06),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -1247,8 +1247,8 @@ class _ActionCard extends StatelessWidget {
           boxShadow: [
             BoxShadow(
               color: isActive
-                  ? _kBlue.withValues(alpha: 0.30)
-                  : Colors.black.withValues(alpha: 0.05),
+                  ? _kBlue.withOpacity(0.30)
+                  : Colors.black.withOpacity(0.05),
               blurRadius: 14,
               offset: const Offset(0, 4),
             ),
@@ -1263,7 +1263,7 @@ class _ActionCard extends StatelessWidget {
               height: 44,
               decoration: BoxDecoration(
                 color: isActive
-                    ? Colors.white.withValues(alpha: 0.20)
+                    ? Colors.white.withOpacity(0.20)
                     : const Color(0xFFF0F2F5),
                 borderRadius: BorderRadius.circular(14),
               ),
@@ -1286,7 +1286,7 @@ class _ActionCard extends StatelessWidget {
                 Icon(Icons.lock_outline_rounded,
                     size: 11,
                     color: isActive
-                        ? Colors.white.withValues(alpha: 0.7)
+                        ? Colors.white.withOpacity(0.7)
                         : _kTextLight),
               if (locked) const SizedBox(width: 4),
               Flexible(
@@ -1296,7 +1296,7 @@ class _ActionCard extends StatelessWidget {
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
                     color: isActive
-                        ? Colors.white.withValues(alpha: 0.75)
+                        ? Colors.white.withOpacity(0.75)
                         : _kTextLight,
                     letterSpacing: 0.4,
                   ),

@@ -590,7 +590,7 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (bool didPop, Object? result) {
+      onPopInvoked: (bool didPop) {
         if (didPop) {
           return;
         }
@@ -723,7 +723,7 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
           padding: const EdgeInsets.symmetric(vertical: 80),
           child: Column(children: [
             Icon(Icons.bookmark_border_rounded,
-                size: 64, color: _kTextMid.withValues(alpha: 0.4)),
+                size: 64, color: _kTextMid.withOpacity(0.4)),
             const SizedBox(height: 16),
             const Text(
               'Aucune reservation',
@@ -770,7 +770,7 @@ class _ActiveCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
+              color: Colors.black.withOpacity(0.05),
               blurRadius: 12,
               offset: const Offset(0, 4)),
         ],

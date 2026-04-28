@@ -64,7 +64,7 @@ class PaymentConfirmationScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (bool didPop, Object? result) {
+      onPopInvoked: (bool didPop) {
         if (didPop) {
           return;
         }
@@ -88,14 +88,14 @@ class PaymentConfirmationScreen extends StatelessWidget {
                   width: 92,
                   height: 92,
                   decoration: BoxDecoration(
-                      color: _kGreen.withValues(alpha: 0.10),
+                      color: _kGreen.withOpacity(0.10),
                       shape: BoxShape.circle),
                   child: Center(
                     child: Container(
                       width: 68,
                       height: 68,
                       decoration: BoxDecoration(
-                          color: _kGreen.withValues(alpha: 0.18),
+                          color: _kGreen.withOpacity(0.18),
                           shape: BoxShape.circle),
                       child: const Icon(Icons.check_circle_outline_rounded,
                           color: _kGreen, size: 44),
@@ -256,7 +256,7 @@ class PaymentConfirmationScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: _kGreen.withValues(alpha: 0.12),
+              color: _kGreen.withOpacity(0.12),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(badge,

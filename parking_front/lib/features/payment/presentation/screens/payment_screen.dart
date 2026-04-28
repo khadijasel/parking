@@ -377,7 +377,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
 
     return PopScope(
       canPop: !state.isProcessing,
-      onPopInvokedWithResult: (bool didPop, Object? result) {
+      onPopInvoked: (bool didPop) {
         if (!didPop && state.isProcessing) {
           AppFeedback.showWarning(
             context,
@@ -462,7 +462,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-              color: _kBlue.withValues(alpha: 0.07),
+              color: _kBlue.withOpacity(0.07),
               blurRadius: 24,
               offset: const Offset(0, 8))
         ],
@@ -639,7 +639,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
                   boxShadow: filled
                       ? [
                           BoxShadow(
-                              color: _kBlue.withValues(alpha: 0.10),
+                              color: _kBlue.withOpacity(0.10),
                               blurRadius: 8,
                               offset: const Offset(0, 2))
                         ]
@@ -796,7 +796,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: _kRedBg,
-        border: Border.all(color: _kRed.withValues(alpha: 0.25)),
+        border: Border.all(color: _kRed.withOpacity(0.25)),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -845,7 +845,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
         decoration: BoxDecoration(
           color: _kOrangeBg,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _kOrange.withValues(alpha: 0.3)),
+          border: Border.all(color: _kOrange.withOpacity(0.3)),
         ),
         child: Column(children: [
           Row(children: [

@@ -40,7 +40,7 @@ class VehicleParkedConfirmationScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)
+                    color: Colors.black.withOpacity(0.06), blurRadius: 8)
               ],
             ),
             child:
@@ -67,7 +67,7 @@ class VehicleParkedConfirmationScreen extends StatelessWidget {
               width: 96,
               height: 96,
               decoration: BoxDecoration(
-                color: _kGreen.withValues(alpha: 0.12),
+                color: _kGreen.withOpacity(0.12),
                 shape: BoxShape.circle,
               ),
               child: Center(
@@ -105,7 +105,7 @@ class VehicleParkedConfirmationScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
+                    color: Colors.black.withOpacity(0.05),
                     blurRadius: 12,
                     offset: const Offset(0, 4))
               ],

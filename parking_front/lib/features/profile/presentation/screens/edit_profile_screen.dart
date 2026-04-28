@@ -366,7 +366,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           border: Border.all(color: Colors.white, width: 4),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
+                              color: Colors.black.withOpacity(0.05),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
                             ),
@@ -380,7 +380,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             ? Icon(
                                 Icons.person_rounded,
                                 size: 60,
-                                color: _kBlue.withValues(alpha: 0.5),
+                                color: _kBlue.withOpacity(0.5),
                               )
                             : null,
                       ),
@@ -560,7 +560,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
+                color: Colors.black.withOpacity(0.02),
                 blurRadius: 10,
                 offset: const Offset(0, 2),
               ),
@@ -574,7 +574,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               hintText: hint,
               errorText: errorText,
               hintStyle: TextStyle(
-                color: _kMid.withValues(alpha: 0.8),
+                color: _kMid.withOpacity(0.8),
                 fontSize: 15,
                 fontWeight: FontWeight.w500,
               ),

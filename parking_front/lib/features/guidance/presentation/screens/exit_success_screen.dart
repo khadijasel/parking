@@ -85,7 +85,7 @@ class _ExitSuccessScreenState extends State<ExitSuccessScreen>
                     width: 100,
                     height: 100,
                     decoration: BoxDecoration(
-                      color: _kBlue.withValues(alpha: 0.10),
+                      color: _kBlue.withOpacity(0.10),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(

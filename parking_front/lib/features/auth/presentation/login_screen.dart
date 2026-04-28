@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/widgets/app_logo.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -21,21 +23,27 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  static const String _googleServerClientId =
+      String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
+
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  final TextEditingController _matriculeController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final AuthRepository _authRepository = AuthRepository();
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: <String>['email', 'profile'],
+    serverClientId:
+        _googleServerClientId.isEmpty ? null : _googleServerClientId,
+  );
 
   bool _isPasswordVisible = false;
   bool _isLoading = false;
-  String? _matriculeLoginError;
+  bool _isGoogleLoading = false;
   String? _emailLoginError;
   String? _passwordLoginError;
 
   @override
   void dispose() {
-    _matriculeController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -48,18 +56,18 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
+    if (_isGoogleLoading) return;
+
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
       _isLoading = true;
-      _matriculeLoginError = null;
       _emailLoginError = null;
       _passwordLoginError = null;
     });
 
     try {
       await _authRepository.login(
-        matricule: _matriculeController.text.trim(),
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
@@ -90,6 +98,70 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  Future<void> _handleGoogleAuth() async {
+    if (_isLoading || _isGoogleLoading) return;
+
+    setState(() {
+      _isGoogleLoading = true;
+      _emailLoginError = null;
+      _passwordLoginError = null;
+    });
+
+    try {
+      final GoogleSignInAccount? account = await _signInWithAccountPicker();
+
+      if (account == null) {
+        return;
+      }
+
+      final GoogleSignInAuthentication auth = await account.authentication;
+      final String idToken = (auth.idToken ?? '').trim();
+      final String accessToken = (auth.accessToken ?? '').trim();
+
+      if (idToken.isEmpty && accessToken.isEmpty) {
+        _showError(
+          'Impossible de recuperer les jetons Google. Verifiez votre configuration Google Sign-In.',
+        );
+        return;
+      }
+
+      await _authRepository.loginWithGoogle(
+        idToken: idToken.isEmpty ? null : idToken,
+        accessToken: accessToken.isEmpty ? null : accessToken,
+      );
+
+      if (!mounted) return;
+      _goToMainScreen();
+    } on AuthException catch (error) {
+      _showError(error.message);
+    } on PlatformException catch (error) {
+      debugPrint('Erreur connexion Google [${error.code}]: ${error.message}');
+
+      if (_isGoogleSignInCanceled(error)) {
+        return;
+      }
+
+      _showError(_mapGooglePlatformError(error));
+    } catch (e) {
+      debugPrint('Erreur connexion Google: $e');
+      _showError('Connexion Google impossible pour le moment.');
+    } finally {
+      if (mounted) {
+        setState(() => _isGoogleLoading = false);
+      }
+    }
+  }
+
+  Future<GoogleSignInAccount?> _signInWithAccountPicker() async {
+    try {
+      await _googleSignIn.signOut();
+    } catch (error) {
+      debugPrint('Google signOut ignored: $error');
+    }
+
+    return _googleSignIn.signIn();
   }
 
   void _goToMainScreen() {
@@ -123,23 +195,46 @@ class _LoginScreenState extends State<LoginScreen> {
     AppFeedback.showError(context, message);
   }
 
+  bool _isGoogleSignInCanceled(PlatformException error) {
+    final String code = error.code.toLowerCase();
+    return code.contains('cancel');
+  }
+
+  String _mapGooglePlatformError(PlatformException error) {
+    final String code = error.code.toLowerCase();
+    final String message = (error.message ?? '').toLowerCase();
+
+    if (code.contains('network') || message.contains('network')) {
+      return 'Connexion internet requise pour continuer avec Google.';
+    }
+
+    final bool isConfigurationError =
+        code == '10' ||
+            code.contains('sign_in_failed') ||
+            message.contains('developer_error') ||
+            message.contains('12500');
+
+    if (isConfigurationError) {
+      return 'Configuration Google invalide (package Android, SHA-1 ou client OAuth).';
+    }
+
+    return 'Connexion Google impossible pour le moment.';
+  }
+
   bool _applyServerFieldErrors(Map<String, String> fieldErrors) {
     if (fieldErrors.isEmpty) {
       return false;
     }
 
     final String? emailError = _pickFieldError(fieldErrors, <String>['email']);
-    final String? matriculeError =
-        _pickFieldError(fieldErrors, <String>['matricule']);
     final String? passwordError =
         _pickFieldError(fieldErrors, <String>['password']);
 
-    if (emailError == null && passwordError == null && matriculeError == null) {
+    if (emailError == null && passwordError == null) {
       return false;
     }
 
     setState(() {
-      _matriculeLoginError = matriculeError;
       _emailLoginError = emailError;
       _passwordLoginError = passwordError;
     });
@@ -166,17 +261,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (normalized.contains('email')) {
       setState(() {
-        _matriculeLoginError = null;
         _emailLoginError = message;
-        _passwordLoginError = null;
-      });
-      return true;
-    }
-
-    if (normalized.contains('matricule')) {
-      setState(() {
-        _matriculeLoginError = message;
-        _emailLoginError = null;
         _passwordLoginError = null;
       });
       return true;
@@ -185,7 +270,6 @@ class _LoginScreenState extends State<LoginScreen> {
     if (normalized.contains('mot de passe') ||
         normalized.contains('password')) {
       setState(() {
-        _matriculeLoginError = null;
         _emailLoginError = null;
         _passwordLoginError = message;
       });
@@ -208,7 +292,6 @@ class _LoginScreenState extends State<LoginScreen> {
     return normalized.contains('invalid credentials') ||
         normalized.contains('provided credentials') ||
         normalized.contains('incorrect') ||
-        normalized.contains('matricule') ||
         normalized.contains('password') ||
         normalized.contains('mot de passe') ||
         normalized.contains('email') ||
@@ -292,6 +375,8 @@ class _LoginScreenState extends State<LoginScreen> {
             _buildForgotPasswordLink(),
             const SizedBox(height: AppConstants.paddingLarge),
             _buildLoginButton(),
+            const SizedBox(height: AppConstants.paddingMedium),
+            _buildGoogleButton(),
             const SizedBox(height: AppConstants.paddingLarge),
             _buildDivider(),
             const SizedBox(height: AppConstants.paddingLarge),
@@ -306,27 +391,6 @@ class _LoginScreenState extends State<LoginScreen> {
     return Column(
       children: [
         CustomTextField(
-          label: 'Matricule véhicule',
-          hint: AppConstants.matriculeHint,
-          prefixIcon: Icons.directions_car_outlined,
-          controller: _matriculeController,
-          validator: _validateMatricule,
-          errorText: _matriculeLoginError,
-          textInputAction: TextInputAction.next,
-          onChanged: (_) {
-            if (_matriculeLoginError != null ||
-                _emailLoginError != null ||
-                _passwordLoginError != null) {
-              setState(() {
-                _matriculeLoginError = null;
-                _emailLoginError = null;
-                _passwordLoginError = null;
-              });
-            }
-          },
-        ),
-        const SizedBox(height: AppConstants.paddingMedium),
-        CustomTextField(
           label: 'Email',
           hint: AppConstants.emailHint,
           prefixIcon: Icons.email_outlined,
@@ -336,11 +400,8 @@ class _LoginScreenState extends State<LoginScreen> {
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
           onChanged: (_) {
-            if (_matriculeLoginError != null ||
-                _emailLoginError != null ||
-                _passwordLoginError != null) {
+            if (_emailLoginError != null || _passwordLoginError != null) {
               setState(() {
-                _matriculeLoginError = null;
                 _emailLoginError = null;
                 _passwordLoginError = null;
               });
@@ -358,11 +419,8 @@ class _LoginScreenState extends State<LoginScreen> {
           errorText: _passwordLoginError,
           textInputAction: TextInputAction.done,
           onChanged: (_) {
-            if (_matriculeLoginError != null ||
-                _emailLoginError != null ||
-                _passwordLoginError != null) {
+            if (_emailLoginError != null || _passwordLoginError != null) {
               setState(() {
-                _matriculeLoginError = null;
                 _emailLoginError = null;
                 _passwordLoginError = null;
               });
@@ -400,8 +458,42 @@ class _LoginScreenState extends State<LoginScreen> {
     return GradientButton(
       text: AppConstants.loginButton,
       icon: Icons.login,
-      isLoading: _isLoading,
+      isLoading: _isLoading || _isGoogleLoading,
       onPressed: _handleLogin,
+    );
+  }
+
+  Widget _buildGoogleButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: OutlinedButton.icon(
+        onPressed: (_isLoading || _isGoogleLoading) ? null : _handleGoogleAuth,
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: Colors.grey.shade300),
+          shape: RoundedRectangleBorder(
+            borderRadius:
+                BorderRadius.circular(AppConstants.borderRadiusXLarge),
+          ),
+          backgroundColor: Colors.white,
+        ),
+        icon: _isGoogleLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.g_mobiledata, size: 28, color: Colors.black87),
+        label: Text(
+          _isGoogleLoading
+              ? 'Connexion Google...'
+              : 'Continuer avec Google',
+          style: const TextStyle(
+            color: Colors.black87,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
     );
   }
 
@@ -433,13 +525,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // Validators
-  String? _validateMatricule(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'Veuillez entrer votre matricule';
-    }
-    return null;
-  }
-
   String? _validateEmail(String? value) {
     if (value == null || value.isEmpty) {
       return 'Veuillez entrer votre email';

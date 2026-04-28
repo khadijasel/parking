@@ -3,6 +3,9 @@
 use App\Http\Controllers\Api\Auth\AdminAuthController;
 use App\Http\Controllers\Api\Auth\OwnerAuthController;
 use App\Http\Controllers\Api\Auth\UserAuthController;
+use App\Http\Controllers\Api\Admin\ParkingController;
+use App\Http\Controllers\Api\Admin\UserManagementController;
+use App\Http\Controllers\Api\Owner\OwnerParkingSettingsController;
 use App\Http\Controllers\Api\ParkingAvailabilityController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ReservationController;
@@ -14,6 +17,7 @@ Route::post('parkings/arduino/availability', [ParkingAvailabilityController::cla
 Route::prefix('user/auth')->group(function (): void {
 	Route::post('register', [UserAuthController::class, 'register']);
 	Route::post('login', [UserAuthController::class, 'login']);
+	Route::post('google', [UserAuthController::class, 'google']);
 
 	Route::middleware('auth:user')->group(function (): void {
 		Route::post('logout', [UserAuthController::class, 'logout']);
@@ -39,6 +43,21 @@ Route::prefix('admin/auth')->group(function (): void {
 		Route::get('me', [AdminAuthController::class, 'me']);
 		Route::post('owners', [AdminAuthController::class, 'createOwner']);
 	});
+});
+
+Route::prefix('admin')->middleware(['auth:admin', 'admin'])->group(function (): void {
+	Route::get('parkings', [ParkingController::class, 'index']);
+	Route::get('parkings/{parkingId}', [ParkingController::class, 'show']);
+	Route::post('parkings/layout', [ParkingController::class, 'upsertLayout']);
+	Route::delete('parkings/{parkingId}', [ParkingController::class, 'destroy']);
+	Route::get('users', [UserManagementController::class, 'index']);
+	Route::patch('owners/{ownerId}/status', [UserManagementController::class, 'updateOwnerStatus']);
+	Route::get('history', [UserManagementController::class, 'history']);
+});
+
+Route::prefix('owner')->middleware(['auth:owner', 'owner'])->group(function (): void {
+	Route::get('parkings', [OwnerParkingSettingsController::class, 'index']);
+	Route::patch('parkings/{parkingId}/business-settings', [OwnerParkingSettingsController::class, 'updateBusinessSettings']);
 });
 
 Route::prefix('user')->middleware('auth:user')->group(function (): void {

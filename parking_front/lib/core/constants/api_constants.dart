@@ -52,6 +52,7 @@ class ApiConstants {
   }
 
   static const String userLoginPath = '/user/auth/login';
+  static const String userGoogleAuthPath = '/user/auth/google';
   static const String userRegisterPath = '/user/auth/register';
   static const String userLogoutPath = '/user/auth/logout';
   static const String userMePath = '/user/auth/me';

@@ -16,6 +16,10 @@ class AuthService
             return null;
         }
 
+        $actor->forceFill([
+            'last_login_at' => now(),
+        ])->save();
+
         $token = $actor->createToken($tokenName)->plainTextToken;
 
         return [

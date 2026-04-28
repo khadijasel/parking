@@ -224,7 +224,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                 // Fond semi-transparent dans le cadre
                 Container(
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
+                    color: Colors.white.withOpacity(0.05),
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
@@ -245,7 +245,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                           borderRadius: BorderRadius.circular(1),
                           boxShadow: [
                             BoxShadow(
-                                color: _kBlue.withValues(alpha: 0.6),
+                                color: _kBlue.withOpacity(0.6),
                                 blurRadius: 8,
                                 spreadRadius: 2),
                           ],
@@ -318,28 +318,28 @@ class _ScannerScreenState extends State<ScannerScreen>
           left: 0,
           right: 0,
           height: cy,
-          child: Container(color: Colors.black.withValues(alpha: 0.6))),
+          child: Container(color: Colors.black.withOpacity(0.6))),
       // Bas
       Positioned(
           top: cy + frameH,
           left: 0,
           right: 0,
           bottom: 0,
-          child: Container(color: Colors.black.withValues(alpha: 0.6))),
+          child: Container(color: Colors.black.withOpacity(0.6))),
       // Gauche
       Positioned(
           top: cy,
           left: 0,
           width: cx,
           height: frameH,
-          child: Container(color: Colors.black.withValues(alpha: 0.6))),
+          child: Container(color: Colors.black.withOpacity(0.6))),
       // Droite
       Positioned(
           top: cy,
           left: cx + frameW,
           right: 0,
           height: frameH,
-          child: Container(color: Colors.black.withValues(alpha: 0.6))),
+          child: Container(color: Colors.black.withOpacity(0.6))),
     ]);
   }
 
@@ -388,7 +388,7 @@ class _ScannerScreenState extends State<ScannerScreen>
         width: 46,
         height: 46,
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.55),
+          color: Colors.black.withOpacity(0.55),
           shape: BoxShape.circle,
         ),
         child: Icon(icon, color: Colors.white, size: 22),
@@ -407,7 +407,7 @@ class _ScannerScreenState extends State<ScannerScreen>
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.7)],
+          colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
         ),
       ),
       child: Row(
@@ -434,7 +434,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                      color: _kBlue.withValues(alpha: 0.4),
+                      color: _kBlue.withOpacity(0.4),
                       blurRadius: 16,
                       spreadRadius: 2),
                 ],
@@ -463,7 +463,7 @@ class _ScannerScreenState extends State<ScannerScreen>
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.55),
+          color: Colors.black.withOpacity(0.55),
           shape: BoxShape.circle,
         ),
         child: Icon(icon, color: Colors.white, size: 22),
@@ -581,8 +581,8 @@ class _ScanResultSheet extends StatelessWidget {
           height: 72,
           decoration: BoxDecoration(
             color: isValid
-                ? const Color(0xFF2ECC71).withValues(alpha: 0.12)
-                : const Color(0xFFE53935).withValues(alpha: 0.12),
+                ? const Color(0xFF2ECC71).withOpacity(0.12)
+                : const Color(0xFFE53935).withOpacity(0.12),
             shape: BoxShape.circle,
           ),
           child: Icon(

@@ -308,7 +308,7 @@ class _ReservationScreenState extends State<ReservationScreen> {
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.25),
+                      color: Colors.white.withOpacity(0.25),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: const Column(
@@ -359,7 +359,7 @@ class _ReservationScreenState extends State<ReservationScreen> {
                 decoration: BoxDecoration(
                   color: _kOrangeBg,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: _kOrange.withValues(alpha: 0.25)),
+                  border: Border.all(color: _kOrange.withOpacity(0.25)),
                 ),
                 child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -417,9 +417,9 @@ class _ReservationScreenState extends State<ReservationScreen> {
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: _kBlue.withValues(alpha: 0.06),
+                    color: _kBlue.withOpacity(0.06),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: _kBlue.withValues(alpha: 0.2)),
+                    border: Border.all(color: _kBlue.withOpacity(0.2)),
                   ),
                   child: Row(children: [
                     const Icon(Icons.info_outline_rounded,
@@ -456,7 +456,7 @@ class _ReservationScreenState extends State<ReservationScreen> {
             color: Colors.white,
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.06),
+                  color: Colors.black.withOpacity(0.06),
                   blurRadius: 12,
                   offset: const Offset(0, -4)),
             ],
@@ -552,8 +552,8 @@ class _DurationCard extends StatelessWidget {
           boxShadow: [
             BoxShadow(
               color: selected
-                  ? _kBlue.withValues(alpha: 0.10)
-                  : Colors.black.withValues(alpha: 0.03),
+                  ? _kBlue.withOpacity(0.10)
+                  : Colors.black.withOpacity(0.03),
               blurRadius: selected ? 12 : 6,
             ),
           ],

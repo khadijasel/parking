@@ -17,7 +17,6 @@ class RegisterUserRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:mongodb.users,email'],
             'phone' => ['required', 'string', 'max:20'],
-            'matricule' => ['required', 'string', 'max:30'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
         ];
     }

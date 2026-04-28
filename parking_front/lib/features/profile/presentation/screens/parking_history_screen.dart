@@ -460,10 +460,10 @@ class _ActiveSessionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _kBlue.withValues(alpha: 0.3), width: 1.5),
+        border: Border.all(color: _kBlue.withOpacity(0.3), width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: _kBlue.withValues(alpha: 0.08),
+            color: _kBlue.withOpacity(0.08),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -582,7 +582,7 @@ class _CompletedSessionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),

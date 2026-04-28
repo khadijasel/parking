@@ -48,7 +48,6 @@ class AuthApiService {
             );
 
   Future<AuthApiResult> login({
-    required String matricule,
     required String email,
     required String password,
   }) async {
@@ -56,7 +55,6 @@ class AuthApiService {
       final Response<dynamic> response = await _dio.post<dynamic>(
         ApiConstants.userLoginPath,
         data: <String, dynamic>{
-          'matricule': matricule,
           'email': email,
           'password': password,
         },
@@ -81,11 +79,52 @@ class AuthApiService {
     }
   }
 
+  Future<AuthApiResult> loginWithGoogle({
+    String? idToken,
+    String? accessToken,
+  }) async {
+    final String normalizedIdToken = (idToken ?? '').trim();
+    final String normalizedAccessToken = (accessToken ?? '').trim();
+
+    if (normalizedIdToken.isEmpty && normalizedAccessToken.isEmpty) {
+      throw const AuthApiException(
+        'Impossible de recuperer un jeton Google valide.',
+      );
+    }
+
+    try {
+      final Response<dynamic> response = await _dio.post<dynamic>(
+        ApiConstants.userGoogleAuthPath,
+        data: <String, dynamic>{
+          if (normalizedIdToken.isNotEmpty) 'id_token': normalizedIdToken,
+          if (normalizedAccessToken.isNotEmpty)
+            'access_token': normalizedAccessToken,
+        },
+      );
+
+      final int statusCode = response.statusCode ?? 0;
+      final Map<String, dynamic> payload = _normalizePayload(response.data);
+
+      if (statusCode != 200 && statusCode != 201) {
+        final Map<String, String> fieldErrors = _extractFieldErrors(payload);
+        throw AuthApiException(
+          _extractMessage(payload, fieldErrors: fieldErrors),
+          statusCode: statusCode,
+          fieldErrors: fieldErrors,
+          isRetryable: statusCode >= 500,
+        );
+      }
+
+      return _parseAuthPayload(payload);
+    } on DioException catch (error) {
+      throw _mapDioException(error);
+    }
+  }
+
   Future<AuthApiResult> register({
     required String name,
     required String email,
     required String phone,
-    required String matricule,
     required String password,
     required String passwordConfirmation,
   }) async {
@@ -96,7 +135,6 @@ class AuthApiService {
           'name': name,
           'email': email,
           'phone': phone,
-          'matricule': matricule,
           'password': password,
           'password_confirmation': passwordConfirmation,
         },
@@ -269,24 +307,44 @@ class AuthApiService {
     Map<String, String>? fieldErrors,
   }) {
     if (fieldErrors != null && fieldErrors.isNotEmpty) {
-      return fieldErrors.values.first;
+      return _normalizeServerMessage(fieldErrors.values.first);
     }
 
     final Object? message = payload['message'];
     if (message is String && message.trim().isNotEmpty) {
-      return message;
+      return _normalizeServerMessage(message.trim());
     }
 
     final Object? errors = payload['errors'];
     if (errors is Map<String, dynamic>) {
       for (final Object value in errors.values) {
         if (value is List && value.isNotEmpty && value.first is String) {
-          return value.first as String;
+          return _normalizeServerMessage((value.first as String).trim());
         }
       }
     }
 
     return 'Une erreur est survenue, veuillez réessayer.';
+  }
+
+  String _normalizeServerMessage(String message) {
+    final String normalized = message.toLowerCase();
+
+    if (normalized.contains('google authentication is temporarily unavailable')) {
+      return 'Connexion Google indisponible temporairement. Verifiez la connexion internet du serveur puis reessayez.';
+    }
+
+    if (normalized.contains('google token is invalid or expired') ||
+        normalized.contains('google token audience is invalid')) {
+      return 'Session Google invalide ou expiree. Recommencez la connexion Google.';
+    }
+
+    if (normalized.contains('google account email is not verified') ||
+        normalized.contains('google account email is invalid')) {
+      return 'Le compte Google utilise n a pas d email valide/verifie.';
+    }
+
+    return message;
   }
 
   Map<String, String> _extractFieldErrors(Map<String, dynamic> payload) {

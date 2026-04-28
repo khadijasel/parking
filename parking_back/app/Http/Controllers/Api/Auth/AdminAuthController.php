@@ -3,13 +3,14 @@
 namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\ActorLoginRequest;
 use App\Http\Requests\Auth\CreateParkingOwnerRequest;
-use App\Http\Requests\Auth\LoginRequest;
 use App\Models\Admin;
 use App\Models\ParkingOwner;
 use App\Services\Auth\AuthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Throwable;
 
 class AdminAuthController extends Controller
 {
@@ -17,14 +18,20 @@ class AdminAuthController extends Controller
     {
     }
 
-    public function login(LoginRequest $request): JsonResponse
+    public function login(ActorLoginRequest $request): JsonResponse
     {
-        $result = $this->authService->login(
-            Admin::class,
-            (string) $request->validated('email'),
-            (string) $request->validated('password'),
-            'admin-auth-token'
-        );
+        try {
+            $result = $this->authService->login(
+                Admin::class,
+                (string) $request->validated('email'),
+                (string) $request->validated('password'),
+                'admin-auth-token'
+            );
+        } catch (Throwable) {
+            return response()->json([
+                'message' => 'Service temporairement indisponible. Veuillez reessayer.',
+            ], 503);
+        }
 
         if (! $result) {
             return response()->json([
@@ -66,7 +73,14 @@ class AdminAuthController extends Controller
 
     public function createOwner(CreateParkingOwnerRequest $request): JsonResponse
     {
-        $owner = $this->authService->register(ParkingOwner::class, $request->validated());
+        $owner = $this->authService->register(ParkingOwner::class, [
+            ...$request->validated(),
+            'account_status' => 'active',
+            'subscription_status' => 'active',
+            'subscription_ends_at' => null,
+            'blocked_at' => null,
+            'blocked_reason' => null,
+        ]);
 
         return response()->json([
             'message' => 'Parking owner account created successfully.',

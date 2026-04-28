@@ -254,7 +254,7 @@ class _GuidanceToSpotScreenState extends State<GuidanceToSpotScreen>
                   borderRadius: BorderRadius.circular(22),
                   boxShadow: <BoxShadow>[
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.06),
+                      color: Colors.black.withOpacity(0.06),
                       blurRadius: 14,
                       offset: const Offset(0, 3),
                     ),
@@ -336,7 +336,7 @@ class _GuidanceToSpotScreenState extends State<GuidanceToSpotScreen>
                 borderRadius: BorderRadius.circular(18),
                 boxShadow: <BoxShadow>[
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
+                    color: Colors.black.withOpacity(0.05),
                     blurRadius: 10,
                     offset: const Offset(0, 3),
                   ),
@@ -351,7 +351,7 @@ class _GuidanceToSpotScreenState extends State<GuidanceToSpotScreen>
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: _kGreen.withValues(alpha: 0.14),
+                          color: _kGreen.withOpacity(0.14),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(Icons.navigation_rounded,
@@ -624,7 +624,7 @@ class _MapCircleButton extends StatelessWidget {
           shape: BoxShape.circle,
           boxShadow: <BoxShadow>[
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
+              color: Colors.black.withOpacity(0.1),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),

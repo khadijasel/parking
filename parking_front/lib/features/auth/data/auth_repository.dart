@@ -28,15 +28,36 @@ class AuthRepository {
         _localStorage = localStorage ?? AuthLocalStorage();
 
   Future<void> login({
-    required String matricule,
     required String email,
     required String password,
   }) async {
     try {
       final AuthApiResult result = await _apiService.login(
-        matricule: matricule,
         email: email,
         password: password,
+      );
+
+      await _localStorage.saveSession(
+        token: result.token,
+        user: result.user,
+      );
+    } on AuthApiException catch (error) {
+      throw AuthException(
+        error.message,
+        fieldErrors: error.fieldErrors,
+        isRetryable: error.isRetryable,
+      );
+    }
+  }
+
+  Future<void> loginWithGoogle({
+    String? idToken,
+    String? accessToken,
+  }) async {
+    try {
+      final AuthApiResult result = await _apiService.loginWithGoogle(
+        idToken: idToken,
+        accessToken: accessToken,
       );
 
       await _localStorage.saveSession(
@@ -56,7 +77,6 @@ class AuthRepository {
     required String name,
     required String email,
     required String phone,
-    required String matricule,
     required String password,
     required String passwordConfirmation,
   }) async {
@@ -65,7 +85,6 @@ class AuthRepository {
         name: name,
         email: email,
         phone: phone,
-        matricule: matricule,
         password: password,
         passwordConfirmation: passwordConfirmation,
       );
@@ -112,4 +131,6 @@ class AuthRepository {
   }
 
   Future<void> clearSession() => _localStorage.clearSession();
+
+  Future<Map<String, dynamic>?> readUser() => _localStorage.readUser();
 }

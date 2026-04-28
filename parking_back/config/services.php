@@ -39,4 +39,10 @@ return [
         'key' => env('ARDUINO_API_KEY'),
     ],
 
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID', ''),
+        'ca_bundle' => env('GOOGLE_CA_BUNDLE', ''),
+        'verify_ssl' => env('GOOGLE_VERIFY_SSL', env('APP_ENV') === 'local' ? false : true),
+    ],
+
 ];

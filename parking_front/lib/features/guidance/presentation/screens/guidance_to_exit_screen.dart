@@ -220,7 +220,7 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
                         borderRadius: BorderRadius.circular(22),
                         boxShadow: <BoxShadow>[
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.06),
+                            color: Colors.black.withOpacity(0.06),
                             blurRadius: 12,
                             offset: const Offset(0, 3),
                           ),
@@ -252,7 +252,7 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
                 borderRadius: BorderRadius.circular(18),
                 boxShadow: <BoxShadow>[
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
+                    color: Colors.black.withOpacity(0.05),
                     blurRadius: 9,
                     offset: const Offset(0, 2),
                   ),
@@ -267,7 +267,7 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
                         width: 42,
                         height: 42,
                         decoration: BoxDecoration(
-                          color: _kBlue.withValues(alpha: 0.12),
+                          color: _kBlue.withOpacity(0.12),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(Icons.exit_to_app_rounded,
@@ -391,7 +391,7 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
         borderRadius: BorderRadius.circular(22),
         boxShadow: <BoxShadow>[
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
+            color: Colors.black.withOpacity(0.06),
             blurRadius: 12,
             offset: const Offset(0, 3),
           ),

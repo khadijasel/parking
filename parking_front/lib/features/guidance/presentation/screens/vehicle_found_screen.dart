@@ -70,7 +70,7 @@ class VehicleFoundScreen extends StatelessWidget {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: _kBlue.withValues(alpha: 0.10),
+                color: _kBlue.withOpacity(0.10),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.check_circle_outline_rounded,
@@ -101,7 +101,7 @@ class VehicleFoundScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
+                    color: Colors.black.withOpacity(0.06),
                     blurRadius: 12,
                     offset: const Offset(0, 4))
               ],
@@ -230,7 +230,7 @@ class _ParkingTopViewPainter extends CustomPainter {
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bg);
 
     final linePaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.15)
+      ..color = Colors.white.withOpacity(0.15)
       ..strokeWidth = 1;
 
     // Lignes de délimitation des places

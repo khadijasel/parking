@@ -31,7 +31,7 @@ class GradientButton extends StatelessWidget {
           backgroundColor: AppColors.blue,
           foregroundColor: Colors.white,
           elevation: 2,
-          shadowColor: AppColors.blue.withValues(alpha: 0.3),
+          shadowColor: AppColors.blue.withOpacity(0.3),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(
               AppConstants.borderRadiusXLarge,

@@ -16,6 +16,15 @@ class OwnerMiddleware
             ], 403);
         }
 
+        $owner = $request->user('owner');
+        $status = strtolower((string) ($owner?->account_status ?? 'active'));
+
+        if ($status === 'blocked') {
+            return response()->json([
+                'message' => 'Owner account is suspended. Please contact admin to renew subscription.',
+            ], 403);
+        }
+
         return $next($request);
     }
 }

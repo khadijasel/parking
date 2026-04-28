@@ -191,11 +191,11 @@ class _SplashScreenState extends State<SplashScreen>
               boxShadow: [
                 BoxShadow(
                     color: const Color(0xFF2563EB)
-                        .withValues(alpha: 0.12 * _logoShadow.value),
+                        .withOpacity(0.12 * _logoShadow.value),
                     blurRadius: 50,
                     offset: const Offset(0, 20)),
                 BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04 * _logoShadow.value),
+                    color: Colors.black.withOpacity(0.04 * _logoShadow.value),
                     blurRadius: 20,
                     offset: const Offset(0, 4)),
               ],

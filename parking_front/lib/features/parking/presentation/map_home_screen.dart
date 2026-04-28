@@ -400,7 +400,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                           onSelected: (_) {
                             setModalState(() => tempType = item['value']!);
                           },
-                          selectedColor: AppColors.blue.withValues(alpha: 0.14),
+                          selectedColor: AppColors.blue.withOpacity(0.14),
                           labelStyle: TextStyle(
                             color: active ? AppColors.blue : AppColors.textDark,
                             fontWeight: FontWeight.w600,
@@ -777,7 +777,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
             ),
             boxShadow: <BoxShadow>[
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.16),
+                color: Colors.black.withOpacity(0.16),
                 blurRadius: 7,
                 offset: const Offset(0, 3),
               ),
@@ -808,12 +808,12 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
           constraints: const BoxConstraints(maxWidth: 148),
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
-            color: markerColor.withValues(alpha: 0.94),
+            color: markerColor.withOpacity(0.94),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: Colors.white, width: 1),
             boxShadow: <BoxShadow>[
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.12),
+                color: Colors.black.withOpacity(0.12),
                 blurRadius: 6,
                 offset: const Offset(0, 2),
               ),
@@ -853,7 +853,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                       borderRadius: BorderRadius.circular(30),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.1),
+                          color: Colors.black.withOpacity(0.1),
                           blurRadius: 10,
                           offset: const Offset(0, 2),
                         ),
@@ -896,7 +896,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
+                        color: Colors.black.withOpacity(0.1),
                         blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
@@ -919,7 +919,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
+                        color: Colors.black.withOpacity(0.1),
                         blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
@@ -950,7 +950,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.06),
+                        color: Colors.black.withOpacity(0.06),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -1010,7 +1010,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.08),
+                            color: Colors.black.withOpacity(0.08),
                             blurRadius: 6,
                             offset: const Offset(0, 2),
                           ),
@@ -1056,7 +1056,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
+                      color: Colors.black.withOpacity(0.05),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -1237,7 +1237,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
+              color: Colors.black.withOpacity(0.1),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -1267,7 +1267,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.12),
+              color: Colors.black.withOpacity(0.12),
               blurRadius: 16,
               offset: const Offset(0, -2),
             ),

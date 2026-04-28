@@ -233,7 +233,7 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
         boxShadow: isTarget
             ? <BoxShadow>[
                 BoxShadow(
-                  color: _kGreen.withValues(alpha: 0.30),
+                  color: _kGreen.withOpacity(0.30),
                   blurRadius: 12,
                   spreadRadius: 1,
                 ),
@@ -295,7 +295,7 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
                   borderRadius: BorderRadius.circular(22),
                   boxShadow: <BoxShadow>[
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.06),
+                      color: Colors.black.withOpacity(0.06),
                       blurRadius: 12,
                       offset: const Offset(0, 3),
                     ),
@@ -424,7 +424,7 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
                 borderRadius: BorderRadius.circular(18),
                 boxShadow: <BoxShadow>[
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
+                    color: Colors.black.withOpacity(0.05),
                     blurRadius: 9,
                     offset: const Offset(0, 2),
                   ),
@@ -441,7 +441,7 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: _kBlue.withValues(alpha: 0.12),
+                          color: _kBlue.withOpacity(0.12),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(Icons.directions_walk_rounded,
@@ -629,7 +629,7 @@ class _MapBtn extends StatelessWidget {
           shape: BoxShape.circle,
           boxShadow: <BoxShadow>[
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
+              color: Colors.black.withOpacity(0.1),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
