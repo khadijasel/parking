@@ -11,6 +11,7 @@ import '../../../guidance/presentation/screens/guidance_to_vehicle_screen.dart';
 import '../../../guidance/presentation/screens/vehicle_found_screen.dart';
 import '../../../guidance/presentation/screens/vehicle_parked_confirmation_screen.dart';
 import '../../../parking/data/parking_data.dart';
+import '../../../parking/data/parking_repository.dart';
 import '../../../parking/models/parking.dart';
 import '../../../reservation/data/models/parking_session_api_model.dart';
 import '../../../reservation/data/reservation_repository.dart';
@@ -447,7 +448,12 @@ class _HomeScreenState extends State<HomeScreen> {
   double _resolveParkingRate(String parkingName) {
     final String needle = parkingName.trim().toLowerCase();
 
-    for (final Parking parking in ParkingData.parkings) {
+    final List<Parking> cached = ParkingRepository.cachedParkings;
+    final Iterable<Parking> sources = cached.isNotEmpty
+        ? cached
+        : ParkingData.parkings;
+
+    for (final Parking parking in sources) {
       final String candidate = parking.name.trim().toLowerCase();
       if (candidate == needle ||
           candidate.contains(needle) ||

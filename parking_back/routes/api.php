@@ -6,11 +6,13 @@ use App\Http\Controllers\Api\Auth\UserAuthController;
 use App\Http\Controllers\Api\Admin\ParkingController;
 use App\Http\Controllers\Api\Admin\UserManagementController;
 use App\Http\Controllers\Api\Owner\OwnerParkingSettingsController;
+use App\Http\Controllers\Api\ParkingCatalogController;
 use App\Http\Controllers\Api\ParkingAvailabilityController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ReservationController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('parkings', [ParkingCatalogController::class, 'index']);
 Route::get('parkings/availability', [ParkingAvailabilityController::class, 'index']);
 Route::post('parkings/arduino/availability', [ParkingAvailabilityController::class, 'updateArduino']);
 

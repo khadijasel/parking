@@ -2,6 +2,7 @@
 
 namespace App\Services\Parking;
 
+use App\Models\Parking;
 use App\Models\ParkingAvailability;
 use Carbon\CarbonImmutable;
 
@@ -27,9 +28,21 @@ class ParkingAvailabilityService
 
     public function list(): array
     {
-        $this->ensureDefaults();
+        $seed = $this->ensureDefaults();
 
-        return ParkingAvailability::query()
+        $ids = collect($seed)
+            ->map(fn (array $item): string => trim((string) ($item['id'] ?? '')))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $query = ParkingAvailability::query();
+        if (count($ids)) {
+            $query->whereIn('parking_id', $ids);
+        }
+
+        return $query
             ->orderBy('parking_name')
             ->get()
             ->map(fn (ParkingAvailability $item): array => $this->toPayload($item))
@@ -100,6 +113,7 @@ class ParkingAvailabilityService
             ]);
         } else {
             $record->parking_id = (string) ($record->parking_id ?: 'arduino-sim');
+            $record->parking_name = self::ARDUINO_PARKING_NAME;
             $record->is_arduino = true;
             $record->total_spots = $resolvedTotal;
             $record->available_spots = $resolvedAvailable;
@@ -110,26 +124,30 @@ class ParkingAvailabilityService
         return $this->toPayload($record->fresh() ?? $record);
     }
 
-    public function ensureDefaults(): void
+    public function ensureDefaults(): array
     {
-        foreach (self::DEFAULT_PARKINGS as $parking) {
-            $existing = ParkingAvailability::query()
-                ->where('parking_name', $parking['name'])
-                ->first();
+        $seed = $this->resolveSeedParkings();
 
-            if ($existing) {
+        foreach ($seed as $parking) {
+            $id = trim((string) ($parking['id'] ?? ''));
+            $name = trim((string) ($parking['name'] ?? ''));
+
+            if ($name === '') {
                 continue;
             }
 
-            ParkingAvailability::query()->create([
-                'parking_id' => $parking['id'],
-                'parking_name' => $parking['name'],
-                'total_spots' => (int) $parking['total'],
-                'available_spots' => (int) $parking['total'],
-                'is_arduino' => (bool) $parking['arduino'],
-                'last_sensor_at' => null,
-            ]);
+            $total = max(1, (int) ($parking['total'] ?? self::DEFAULT_TOTAL_SPOTS));
+            $isArduino = (bool) ($parking['arduino'] ?? false);
+
+            $this->upsertAvailabilityRecord(
+                $id,
+                $name,
+                $total,
+                $isArduino,
+            );
         }
+
+        return $seed;
     }
 
     private function findOrCreate(
@@ -140,52 +158,196 @@ class ParkingAvailabilityService
     {
         $name = trim($parkingName);
         $id = trim((string) ($parkingId ?? ''));
-        if ($name === '') {
+
+        if ($name === '' && $id === '') {
             return null;
         }
 
         $this->ensureDefaults();
 
-        if ($id !== '') {
-            $byId = ParkingAvailability::query()
-                ->where('parking_id', $id)
-                ->first();
+        if ($forceArduino) {
+            $resolvedId = $id !== '' ? $id : 'arduino-sim';
+            $resolvedName = $name !== '' ? $name : self::ARDUINO_PARKING_NAME;
 
-            if ($byId) {
-                if ($name !== '' && (string) ($byId->parking_name ?? '') !== $name) {
-                    $byId->parking_name = $name;
-                    $byId->save();
-                }
+            return $this->upsertAvailabilityRecord(
+                $resolvedId,
+                $resolvedName,
+                6,
+                true,
+            );
+        }
 
-                return $byId;
+        $parking = $this->resolveParkingRecord($id, $name);
+        if (! $parking) {
+            return null;
+        }
+
+        $resolvedId = $this->resolveParkingId($parking);
+        $resolvedName = trim((string) ($parking->name ?? $name));
+        $total = max(1, $this->resolveTotalSpotsFromParking($parking));
+        $isArduino = $this->isArduinoParking($resolvedId, $resolvedName);
+
+        return $this->upsertAvailabilityRecord(
+            $resolvedId,
+            $resolvedName,
+            $total,
+            $isArduino,
+        );
+    }
+
+    /**
+     * @return array<int, array{id: string, name: string, total: int, arduino: bool}>
+     */
+    private function resolveSeedParkings(): array
+    {
+        $parkings = Parking::query()->get();
+
+        if ($parkings->isEmpty()) {
+            return self::DEFAULT_PARKINGS;
+        }
+
+        return $parkings
+            ->map(function (Parking $parking): array {
+                $id = $this->resolveParkingId($parking);
+                $name = trim((string) ($parking->name ?? ''));
+                $total = max(1, $this->resolveTotalSpotsFromParking($parking));
+
+                return [
+                    'id' => $id,
+                    'name' => $name,
+                    'total' => $total,
+                    'arduino' => $this->isArduinoParking($id, $name),
+                ];
+            })
+            ->filter(fn (array $item): bool => $item['name'] !== '')
+            ->values()
+            ->all();
+    }
+
+    private function resolveParkingRecord(string $parkingId, string $parkingName): ?Parking
+    {
+        $parking = null;
+        $normalizedId = trim($parkingId);
+        $normalizedName = trim($parkingName);
+
+        if ($normalizedId !== '') {
+            /** @var Parking|null $parking */
+            $parking = Parking::query()->where('parking_id', $normalizedId)->first();
+
+            if (! $parking) {
+                /** @var Parking|null $parking */
+                $parking = Parking::query()->find($normalizedId);
             }
         }
 
-        $record = ParkingAvailability::query()
-            ->where('parking_name', $name)
-            ->first();
+        if (! $parking && $normalizedName !== '') {
+            /** @var Parking|null $parking */
+            $parking = Parking::query()->where('name', $normalizedName)->first();
+        }
+
+        return $parking;
+    }
+
+    private function resolveParkingId(Parking $parking): string
+    {
+        $parkingId = trim((string) ($parking->parking_id ?? ''));
+
+        if ($parkingId !== '') {
+            return $parkingId;
+        }
+
+        return (string) $parking->getKey();
+    }
+
+    private function resolveTotalSpotsFromParking(Parking $parking): int
+    {
+        $capacity = max(0, (int) ($parking->capacity ?? 0));
+        if ($capacity > 0) {
+            return $capacity;
+        }
+
+        $indoorMap = (array) ($parking->indoor_map ?? []);
+        $spots = $indoorMap['spots'] ?? [];
+        if (is_array($spots) && count($spots) > 0) {
+            return count($spots);
+        }
+
+        $available = max(0, (int) ($parking->available_spots ?? 0));
+        if ($available > 0) {
+            return $available;
+        }
+
+        return self::DEFAULT_TOTAL_SPOTS;
+    }
+
+    private function isArduinoParking(string $parkingId, string $parkingName): bool
+    {
+        $normalizedName = strtolower($parkingName);
+
+        if ($parkingId === 'arduino-sim') {
+            return true;
+        }
+
+        if (str_contains($normalizedName, 'arduino')) {
+            return true;
+        }
+
+        return str_contains($normalizedName, strtolower(self::ARDUINO_PARKING_NAME));
+    }
+
+    private function upsertAvailabilityRecord(
+        string $parkingId,
+        string $parkingName,
+        int $totalSpots,
+        bool $isArduino,
+        ?int $availableOverride = null,
+    ): ParkingAvailability {
+        $id = trim($parkingId);
+        $name = trim($parkingName);
+        $total = max(1, $totalSpots);
+
+        $record = null;
+
+        if ($id !== '') {
+            $record = ParkingAvailability::query()
+                ->where('parking_id', $id)
+                ->first();
+        }
+
+        if (! $record && $name !== '') {
+            $record = ParkingAvailability::query()
+                ->where('parking_name', $name)
+                ->first();
+        }
+
+        $available = $availableOverride;
 
         if ($record) {
+            $record->parking_id = $id !== '' ? $id : (string) ($record->parking_id ?? '');
+            $record->parking_name = $name;
+            $record->is_arduino = $isArduino;
+            $record->total_spots = $total;
+
+            if ($available === null) {
+                $available = $record->available_spots;
+            }
+
+            $available = max(0, (int) ($available ?? $total));
+            $record->available_spots = min($total, $available);
+            $record->save();
+
             return $record;
         }
 
-        if ($forceArduino || $name === self::ARDUINO_PARKING_NAME) {
-            return ParkingAvailability::query()->create([
-                'parking_id' => 'arduino-sim',
-                'parking_name' => self::ARDUINO_PARKING_NAME,
-                'total_spots' => 6,
-                'available_spots' => 6,
-                'is_arduino' => true,
-                'last_sensor_at' => null,
-            ]);
-        }
+        $available = max(0, (int) ($available ?? $total));
+        $available = min($total, $available);
 
         return ParkingAvailability::query()->create([
             'parking_id' => $id === '' ? null : $id,
             'parking_name' => $name,
-            'total_spots' => self::DEFAULT_TOTAL_SPOTS,
-            'available_spots' => self::DEFAULT_TOTAL_SPOTS,
-            'is_arduino' => false,
+            'total_spots' => $total,
+            'available_spots' => $available,
+            'is_arduino' => $isArduino,
             'last_sensor_at' => null,
         ]);
     }

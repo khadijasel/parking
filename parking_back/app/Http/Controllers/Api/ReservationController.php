@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
 use App\Http\Requests\Reservation\CreateReservationRequest;
-use App\Models\ParkingAvailability;
+use App\Models\Parking;
 use App\Models\ParkingSession;
 use App\Models\Reservation;
 use App\Services\Parking\ParkingAvailabilityService;
@@ -43,15 +43,17 @@ class ReservationController extends Controller
         $parkingName = (string) ($payload['parking_name'] ?? '');
         $parkingId = trim((string) ($payload['parking_id'] ?? ''));
 
-        if ($parkingId === '' && $parkingName !== '') {
-            $availability = ParkingAvailability::query()
-                ->where('parking_name', $parkingName)
-                ->first();
+        $parking = $this->resolveParkingRecord($parkingId, $parkingName);
 
-            if ($availability instanceof ParkingAvailability) {
-                $parkingId = trim((string) ($availability->parking_id ?? ''));
-            }
+        if (! $parking) {
+            return response()->json([
+                'message' => 'Parking introuvable.',
+            ], 404);
         }
+
+        $parkingId = (string) ($parking->parking_id ?? $parking->getKey());
+        $parkingName = (string) ($parking->name ?? $parkingName);
+        $parkingAddress = (string) ($parking->address ?? ($payload['parking_address'] ?? ''));
 
         $activeStatuses = [
             self::STATUS_PENDING_PAYMENT,
@@ -96,7 +98,7 @@ class ReservationController extends Controller
                 'user_id' => (string) $user->getAuthIdentifier(),
                 'parking_id' => $parkingId,
                 'parking_name' => $parkingName,
-                'parking_address' => (string) ($payload['parking_address'] ?? ''),
+                'parking_address' => $parkingAddress,
                 'equipments' => $payload['equipments'] ?? [],
                 'duration_type' => $durationType,
                 'duration_minutes' => (int) ($payload['duration_minutes'] ?? 0),
@@ -393,6 +395,30 @@ class ReservationController extends Controller
             'message' => 'Parking session history retrieved successfully.',
             'data' => $history,
         ]);
+    }
+
+    private function resolveParkingRecord(string $parkingId, string $parkingName): ?Parking
+    {
+        $normalizedId = trim($parkingId);
+        $normalizedName = trim($parkingName);
+        $parking = null;
+
+        if ($normalizedId !== '') {
+            /** @var Parking|null $parking */
+            $parking = Parking::query()->where('parking_id', $normalizedId)->first();
+
+            if (! $parking) {
+                /** @var Parking|null $parking */
+                $parking = Parking::query()->find($normalizedId);
+            }
+        }
+
+        if (! $parking && $normalizedName !== '') {
+            /** @var Parking|null $parking */
+            $parking = Parking::query()->where('name', $normalizedName)->first();
+        }
+
+        return $parking;
     }
 
     private function findOwnedReservation(Request $request, string $reservationId): ?Reservation

@@ -6,8 +6,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:parking_front/core/widgets/app_feedback.dart';
 import '../../../core/services/location_service.dart';
 import '../data/parking_availability_repository.dart';
+import '../data/parking_repository.dart';
 import '../../../theme/app_colors.dart';
-import '../data/parking_data.dart';
 import '../models/parking.dart';
 import 'parking_detail_screen.dart';
 
@@ -37,6 +37,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
   final MapController _mapController = MapController();
   final ParkingAvailabilityRepository _availabilityRepository =
       ParkingAvailabilityRepository();
+  final ParkingRepository _parkingRepository = ParkingRepository();
+  List<Parking> _parkings = const <Parking>[];
   Parking? _selectedParking;
   final List<String> _activeFilters = [];
   String _selectedVehicleType = 'car';
@@ -51,6 +53,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
   double _routeDistanceKm = 0;
   int _routeDurationMinutes = 0;
   bool _isMapReady = false;
+  bool _isLoadingParkings = false;
+  String _parkingLoadError = '';
   LatLng? _pendingMapCenter;
   double? _pendingMapZoom;
   Map<String, int> _dynamicSpotsById = const <String, int>{};
@@ -81,6 +85,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     _selectedParking = widget.autoNavigateParking;
     _userLocation = widget.initialUserLocation;
     _showRouteToSelected = widget.showRouteToSelected;
+    _loadParkings();
     _loadUserLocation();
     _loadDynamicAvailability();
     if (widget.showRouteToSelected && widget.autoNavigateParking != null) {
@@ -101,6 +106,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     if (oldWidget.isActive != widget.isActive) {
       _setAvailabilityAutoRefreshEnabled(widget.isActive);
       if (widget.isActive) {
+        _loadParkings(forceRefresh: true);
         _loadDynamicAvailability();
       }
     }
@@ -198,6 +204,62 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     }
   }
 
+  Future<void> _loadParkings({bool forceRefresh = false}) async {
+    if (_isLoadingParkings) {
+      return;
+    }
+
+    setState(() {
+      _isLoadingParkings = true;
+      _parkingLoadError = '';
+    });
+
+    try {
+      final List<Parking> parkings =
+          await _parkingRepository.fetchParkings(forceRefresh: forceRefresh);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _parkings = parkings;
+        _isLoadingParkings = false;
+
+        if (_selectedParking != null &&
+            !_parkings.any((Parking item) => item.id == _selectedParking!.id)) {
+          _selectedParking = null;
+          _showRouteToSelected = false;
+          _isLoadingRoute = false;
+          _routePoints = const [];
+          _routeDistanceKm = 0;
+          _routeDurationMinutes = 0;
+        }
+      });
+
+      if (parkings.isEmpty && mounted) {
+        AppFeedback.showInfo(
+          context,
+          'Aucun parking disponible pour le moment.',
+        );
+      }
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isLoadingParkings = false;
+        _parkingLoadError = error.toString();
+      });
+
+      AppFeedback.showWarning(
+        context,
+        'Impossible de charger les parkings.',
+      );
+    }
+  }
+
   int _resolveAvailableSpots(Parking parking) {
     final int? byId = _dynamicSpotsById[parking.id];
     if (byId != null) {
@@ -244,7 +306,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
   ];
 
   List<Parking> get _parkingsByDistance {
-    final all = ParkingData.parkings
+    final all = _parkings
         .map(_withDynamicAvailability)
         .toList(growable: false);
     if (_userLocation == null) return all;
@@ -938,6 +1000,23 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
               const Padding(
                 padding: EdgeInsets.only(bottom: 8),
                 child: LinearProgressIndicator(minHeight: 2),
+              ),
+            if (_isLoadingParkings)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
+            if (!_isLoadingParkings && _parkingLoadError.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Parkings indisponibles pour le moment.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.redAccent.shade200,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             if (_userLocation != null && _visibleParkings.isNotEmpty)
               Padding(

@@ -16,7 +16,12 @@ class CreateReservationRequest extends FormRequest
     {
         return [
             'parking_id' => ['nullable', 'string', 'max:80'],
-            'parking_name' => ['required', 'string', 'max:120'],
+            'parking_name' => [
+                'nullable',
+                'string',
+                'max:120',
+                Rule::requiredIf(fn () => ! $this->filled('parking_id')),
+            ],
             'parking_address' => ['nullable', 'string', 'max:255'],
             'equipments' => ['nullable', 'array'],
             'equipments.*' => ['string', 'max:40'],
