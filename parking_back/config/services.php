@@ -39,6 +39,14 @@ return [
         'key' => env('ARDUINO_API_KEY'),
     ],
 
+    'infrared' => [
+        'key' => env('INFRARED_SENSOR_API_KEY', env('ARDUINO_API_KEY', '')),
+    ],
+
+    'osrm' => [
+        'base_url' => env('OSRM_BASE_URL', 'https://router.project-osrm.org'),
+    ],
+
     'google' => [
         'client_id' => env('GOOGLE_CLIENT_ID', ''),
         'ca_bundle' => env('GOOGLE_CA_BUNDLE', ''),

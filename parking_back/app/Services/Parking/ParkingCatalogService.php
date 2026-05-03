@@ -18,6 +18,7 @@ class ParkingCatalogService
     {
         $location = (array) ($parking->location ?? []);
         $indoorMap = (array) ($parking->indoor_map ?? []);
+        $grid = (array) ($indoorMap['grid'] ?? []);
         $spots = collect($indoorMap['spots'] ?? [])
             ->map(fn ($spot): array => (array) $spot)
             ->values()
@@ -48,6 +49,17 @@ class ParkingCatalogService
             'location' => [
                 'lat' => (float) ($location['lat'] ?? 0),
                 'lng' => (float) ($location['lng'] ?? 0),
+            ],
+            'indoorMap' => [
+                'floor' => (string) ($indoorMap['floor'] ?? 'B1'),
+                'zone' => (string) ($indoorMap['zone'] ?? 'Zone A'),
+                'grid' => [
+                    'rows' => (int) ($grid['rows'] ?? 0),
+                    'cols' => (int) ($grid['cols'] ?? 0),
+                    'laneRows' => collect($grid['laneRows'] ?? [])->map(fn ($row): int => (int) $row)->values()->all(),
+                    'laneCols' => collect($grid['laneCols'] ?? [])->map(fn ($col): int => (int) $col)->values()->all(),
+                ],
+                'spots' => $spots,
             ],
         ];
     }

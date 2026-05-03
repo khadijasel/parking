@@ -79,11 +79,18 @@ function Resolve-AndroidDeviceId {
     $devices = $rawJson | ConvertFrom-Json
 
     if ($RequestedDeviceId -and $RequestedDeviceId.Trim()) {
-        $exists = $devices | Where-Object { $_.id -eq $RequestedDeviceId } | Select-Object -First 1
+        $needle = $RequestedDeviceId.Trim()
+
+        # Accept either machine id (--machine output) or visible device name from `flutter devices`.
+        $exists = $devices | Where-Object {
+            $_.id -eq $needle -or $_.name -eq $needle
+        } | Select-Object -First 1
+
         if (-not $exists) {
-            throw "Device ID '$RequestedDeviceId' was not found. Run 'flutter devices' to list valid IDs."
+            throw "Device '$RequestedDeviceId' was not found. Run 'flutter devices' to list valid IDs."
         }
-        return $RequestedDeviceId
+
+        return $exists.id
     }
 
     $physicalAndroid = $devices | Where-Object {

@@ -101,6 +101,7 @@ const parkingForm = reactive({
   floor: 'B1',
   zone: 'Zone A',
   laneRows: '2',
+  laneCols: '',
   walkingTime: '5 mins de marche',
   rating: 4.2,
   pricePerHour: 100,
@@ -122,6 +123,7 @@ const gridConfigForm = reactive({
   floor: 'B1',
   zone: 'Zone A',
   laneRows: '2',
+  laneCols: '',
 })
 
 const spotForm = reactive({
@@ -168,7 +170,7 @@ const clamp = (value, min, max) => {
   return value
 }
 
-const parseLaneRowsInput = (value, rowsCount) => {
+const parseLaneInput = (value, maxCount) => {
   const tokens = String(value ?? '')
     .split(/[\s,;]+/)
     .map((item) => item.trim())
@@ -178,7 +180,7 @@ const parseLaneRowsInput = (value, rowsCount) => {
 
   tokens.forEach((token) => {
     const parsed = Math.round(toNumber(token, -1))
-    if (parsed >= 0 && parsed < rowsCount) {
+    if (parsed >= 0 && parsed < maxCount) {
       uniq.add(parsed)
     }
   })
@@ -316,6 +318,9 @@ const fillParkingFormFromSelected = (parking) => {
   parkingForm.laneRows = Array.isArray(parking.indoorGrid?.laneRows)
     ? parking.indoorGrid.laneRows.join(',')
     : '2'
+  parkingForm.laneCols = Array.isArray(parking.indoorGrid?.laneCols)
+    ? parking.indoorGrid.laneCols.join(',')
+    : ''
   parkingForm.walkingTime = parking.walkingTime ?? ''
   parkingForm.rating = Number(parking.rating ?? 0)
   parkingForm.pricePerHour = Number(parking.pricePerHour ?? 0)
@@ -597,6 +602,10 @@ const laneRowSet = computed(() => {
   return new Set(selectedGrid.value?.laneRows ?? [])
 })
 
+const laneColSet = computed(() => {
+  return new Set(selectedGrid.value?.laneCols ?? [])
+})
+
 const spotMapByCell = computed(() => {
   const map = new Map()
   selectedSpots.value.forEach((spot) => {
@@ -643,6 +652,7 @@ const syncGridConfigFromParking = () => {
     gridConfigForm.floor = 'B1'
     gridConfigForm.zone = 'Zone A'
     gridConfigForm.laneRows = '2'
+    gridConfigForm.laneCols = ''
     return
   }
 
@@ -651,6 +661,7 @@ const syncGridConfigFromParking = () => {
   gridConfigForm.floor = selectedGrid.value.floor
   gridConfigForm.zone = selectedGrid.value.zone
   gridConfigForm.laneRows = (selectedGrid.value.laneRows ?? []).join(',')
+  gridConfigForm.laneCols = (selectedGrid.value.laneCols ?? []).join(',')
 }
 
 const generateSpotLabel = () => {
@@ -845,7 +856,8 @@ const saveParking = async () => {
     const capacity = Math.max(1, Math.round(toNumber(parkingForm.capacity, 1)))
     const rows = Math.max(2, Math.round(toNumber(parkingForm.rows, 6)))
     const cols = Math.max(2, Math.round(toNumber(parkingForm.cols, 8)))
-    const laneRows = parseLaneRowsInput(parkingForm.laneRows, rows)
+    const laneRows = parseLaneInput(parkingForm.laneRows, rows)
+    const laneCols = parseLaneInput(parkingForm.laneCols, cols)
     const availableSpots = clamp(Math.round(toNumber(parkingForm.availableSpots, capacity)), 0, capacity)
     const rating = clamp(toNumber(parkingForm.rating, 0), 0, 5)
     const pricePerHour = Math.max(0, toNumber(parkingForm.pricePerHour, 0))
@@ -877,6 +889,7 @@ const saveParking = async () => {
       floor: parkingForm.floor,
       zone: parkingForm.zone,
       laneRows,
+      laneCols,
       walkingTime,
       rating,
       pricePerHour,
@@ -1011,7 +1024,8 @@ const applyGridConfig = async () => {
 
   const rows = Math.max(2, Math.round(toNumber(gridConfigForm.rows, 6)))
   const cols = Math.max(2, Math.round(toNumber(gridConfigForm.cols, 8)))
-  const laneRows = parseLaneRowsInput(gridConfigForm.laneRows, rows)
+  const laneRows = parseLaneInput(gridConfigForm.laneRows, rows)
+  const laneCols = parseLaneInput(gridConfigForm.laneCols, cols)
 
   const updated = parkingsStore.setIndoorGridConfig(selectedParking.value.id, {
     floor: gridConfigForm.floor,
@@ -1019,6 +1033,7 @@ const applyGridConfig = async () => {
     rows,
     cols,
     laneRows,
+    laneCols,
   })
 
   if (!updated) {
@@ -1045,12 +1060,39 @@ const spotAt = (row, col) => {
   return spotMapByCell.value.get(cellKey(row, col)) ?? null
 }
 
-const isLaneCell = (row) => {
+const isHorizontalLane = (row) => {
   return laneRowSet.value.has(row)
 }
 
+const isVerticalLane = (col) => {
+  return laneColSet.value.has(col)
+}
+
+const isLaneCell = (row, col) => {
+  return isHorizontalLane(row) || isVerticalLane(col)
+}
+
+const getLaneType = (row, col) => {
+  const hasHorizontal = isHorizontalLane(row)
+  const hasVertical = isVerticalLane(col)
+  if (hasHorizontal && hasVertical) {
+    return 'intersection'
+  }
+  if (hasHorizontal) {
+    return 'horizontal'
+  }
+  if (hasVertical) {
+    return 'vertical'
+  }
+  return null
+}
+
 const cellClass = (row, col) => {
-  if (isLaneCell(row)) {
+  if (isLaneCell(row, col)) {
+    const laneType = getLaneType(row, col)
+    if (laneType === 'intersection') {
+      return 'cursor-not-allowed border-solid border-primary bg-primary/10 text-primary font-bold'
+    }
     return 'cursor-not-allowed border-dashed border-outline-variant bg-surface-container text-outline'
   }
 
@@ -1174,7 +1216,7 @@ const onGridCellRightClick = async (row, col) => {
     return
   }
 
-  if (isLaneCell(row)) {
+  if (isLaneCell(row, col)) {
     return
   }
 
@@ -1821,7 +1863,7 @@ onBeforeUnmount(() => {
               </button>
             </div>
 
-            <div class="grid grid-cols-5 gap-3">
+            <div class="grid grid-cols-6 gap-3">
               <input
                 v-model.number="gridConfigForm.rows"
                 type="number"
@@ -1854,6 +1896,12 @@ onBeforeUnmount(() => {
                 placeholder="Lignes voie"
                 class="w-full rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
+              <input
+                v-model.trim="gridConfigForm.laneCols"
+                type="text"
+                placeholder="Colonnes voie"
+                class="w-full rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
             </div>
 
             <button
@@ -1866,11 +1914,13 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <div class="mt-4 grid grid-cols-4 gap-2 text-xs font-semibold">
+          <div class="mt-4 grid grid-cols-6 gap-2 text-xs font-semibold">
             <span class="rounded-lg bg-emerald-100 px-2 py-1 text-emerald-700">Libres: {{ selectedParkingStats.available }}</span>
             <span class="rounded-lg bg-red-100 px-2 py-1 text-red-700">Occupees: {{ selectedParkingStats.occupied }}</span>
             <span class="rounded-lg bg-amber-100 px-2 py-1 text-amber-700">Reservees: {{ selectedParkingStats.reserved }}</span>
             <span class="rounded-lg bg-slate-200 px-2 py-1 text-slate-700">Offline: {{ selectedParkingStats.offline }}</span>
+            <span class="rounded-lg bg-surface-container px-2 py-1 text-outline">— Voie horiz</span>
+            <span class="rounded-lg bg-primary/10 px-2 py-1 text-primary font-bold">✕ Croisement</span>
           </div>
 
           <div class="mt-4 overflow-x-auto">
@@ -1888,8 +1938,16 @@ onBeforeUnmount(() => {
                   @click="onGridCellClick(row, col)"
                   @contextmenu.prevent="onGridCellRightClick(row, col)"
                 >
-                  <template v-if="isLaneCell(row)">
-                    VOIE
+                  <template v-if="isLaneCell(row, col)">
+                    <template v-if="getLaneType(row, col) === 'intersection'">
+                      ✕
+                    </template>
+                    <template v-else-if="getLaneType(row, col) === 'horizontal'">
+                      —
+                    </template>
+                    <template v-else-if="getLaneType(row, col) === 'vertical'">
+                      &#124;
+                    </template>
                   </template>
                   <template v-else-if="spotAt(row, col)">
                     <span>{{ spotAt(row, col).label }}</span>

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Owner;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Owner\UpdateBusinessSettingsRequest;
+use App\Http\Requests\Owner\UpsertOwnerParkingLayoutRequest;
 use App\Models\ParkingOwner;
 use App\Services\Owner\OwnerParkingSettingsService;
 use Illuminate\Http\JsonResponse;
@@ -29,6 +30,24 @@ class OwnerParkingSettingsController extends Controller
             'message' => 'Owner parkings retrieved successfully.',
             'data' => $items,
         ]);
+    }
+
+    public function upsertLayout(UpsertOwnerParkingLayoutRequest $request): JsonResponse
+    {
+        /** @var ParkingOwner $owner */
+        $owner = $request->user('owner');
+
+        $result = $this->ownerParkingSettingsService->upsertLayoutForOwner(
+            $owner,
+            $request->validated()
+        );
+
+        return response()->json([
+            'message' => $result['created']
+                ? 'Parking created successfully for this owner.'
+                : 'Parking updated successfully for this owner.',
+            'data' => $this->ownerParkingSettingsService->toOwnerPayload($result['parking']),
+        ], $result['created'] ? 201 : 200);
     }
 
     public function updateBusinessSettings(

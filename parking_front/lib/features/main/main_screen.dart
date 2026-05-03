@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../../theme/app_colors.dart';
 import '../home/presentation/screens/home_screen.dart';
 import '../home/presentation/screens/home_no_session_screen.dart';
+import '../parking/data/parking_repository.dart';
 import '../parking/models/parking.dart';
 import '../parking/presentation/map_home_screen.dart';
 import '../profile/presentation/screens/profile_screen.dart';
@@ -138,13 +139,28 @@ class _HomeTabGate extends StatefulWidget {
 
 class _HomeTabGateState extends State<_HomeTabGate> {
   final ReservationRepository _reservationRepository = ReservationRepository();
+  final ParkingRepository _parkingRepository = ParkingRepository();
   ParkingSessionApiModel? _session;
   bool _isBootstrapping = true;
 
   @override
   void initState() {
     super.initState();
-    _loadSession(showLoader: true);
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    // Fetch parkings to populate cache for HomeScreen to use
+    try {
+      await _parkingRepository.fetchParkings();
+    } catch (_) {
+      // Silently fail if parkings can't be loaded - mock data will be used as fallback
+    }
+
+    // Then load the current session
+    if (mounted) {
+      _loadSession(showLoader: true);
+    }
   }
 
   @override

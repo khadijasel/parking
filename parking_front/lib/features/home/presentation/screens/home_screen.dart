@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:parking_front/core/widgets/app_feedback.dart';
 import 'package:parking_front/features/payment/data/mock_payment_service.dart';
 import 'package:parking_front/features/payment/data/payment_repository.dart';
 import 'package:parking_front/features/payment/presentation/screens/payment_confirmation_screen.dart';
 import 'package:parking_front/features/payment/presentation/screens/payment_screen.dart';
+import 'package:parking_front/core/state/selected_spot_provider.dart';
 import '../../../guidance/presentation/screens/guidance_to_exit_screen.dart';
 import '../../../guidance/presentation/screens/guidance_to_spot_screen.dart';
 import '../../../guidance/presentation/screens/guidance_to_vehicle_screen.dart';
@@ -28,6 +30,7 @@ const _kTextLight = Color(0xFFB0B8CC);
 // ─── Modèle session (simplifié) ────────────────────────────────────────────────
 class _Session {
   final String reservationId;
+  final Parking? parking;
   final String parkingName;
   final String parkingAddress;
   final String spotLabel;
@@ -46,6 +49,7 @@ class _Session {
 
   const _Session({
     required this.reservationId,
+    required this.parking,
     required this.parkingName,
     required this.parkingAddress,
     required this.spotLabel,
@@ -170,10 +174,13 @@ class _HomeScreenState extends State<HomeScreen> {
           _vehicleFoundReservationIds.contains(apiSession.reservationId);
       final String normalizedSpotLabel =
           _resolveSpotLabel(apiSession.ticketCode);
+      final Parking? matchedParking =
+          _resolveParkingByName(apiSession.parkingName);
 
       setState(() {
         _session = _Session(
           reservationId: apiSession.reservationId,
+          parking: matchedParking,
           parkingName: apiSession.parkingName.isEmpty
               ? 'Session parking'
               : apiSession.parkingName,
@@ -379,6 +386,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _session = _Session(
         reservationId: currentSession.reservationId,
+        parking: currentSession.parking,
         parkingName: currentSession.parkingName,
         parkingAddress: currentSession.parkingAddress,
         spotLabel: currentSession.spotLabel,
@@ -449,9 +457,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final String needle = parkingName.trim().toLowerCase();
 
     final List<Parking> cached = ParkingRepository.cachedParkings;
-    final Iterable<Parking> sources = cached.isNotEmpty
-        ? cached
-        : ParkingData.parkings;
+    final Iterable<Parking> sources =
+        cached.isNotEmpty ? cached : ParkingData.parkings;
 
     for (final Parking parking in sources) {
       final String candidate = parking.name.trim().toLowerCase();
@@ -463,6 +470,28 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return 100;
+  }
+
+  Parking? _resolveParkingByName(String parkingName) {
+    final String needle = parkingName.trim().toLowerCase();
+    if (needle.isEmpty) {
+      return null;
+    }
+
+    final List<Parking> cached = ParkingRepository.cachedParkings;
+    final Iterable<Parking> sources =
+        cached.isNotEmpty ? cached : ParkingData.parkings;
+
+    for (final Parking parking in sources) {
+      final String candidate = parking.name.trim().toLowerCase();
+      if (candidate == needle ||
+          candidate.contains(needle) ||
+          needle.contains(candidate)) {
+        return parking;
+      }
+    }
+
+    return null;
   }
 
   bool _isShortDurationType(String durationType) {
@@ -620,12 +649,17 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    ProviderScope.containerOf(context, listen: false)
+        .read(selectedSpotProvider.notifier)
+        .state = session.spotLabel;
+
     final bool parkedConfirmed = await Navigator.push<bool>(
           context,
           MaterialPageRoute(
             builder: (_) => GuidanceToSpotScreen(
               spotLabel: session.spotLabel,
               isGuideToFree: false,
+              indoorMap: session.parking?.indoorMap,
             ),
           ),
         ) ??
@@ -684,6 +718,10 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    ProviderScope.containerOf(context, listen: false)
+        .read(selectedSpotProvider.notifier)
+        .state = session.spotLabel;
+
     final bool vehicleFoundConfirmed = await Navigator.push<bool>(
           context,
           MaterialPageRoute(
@@ -692,6 +730,7 @@ class _HomeScreenState extends State<HomeScreen> {
               parkingName: session.parkingName,
               reservationId: session.reservationId,
               durationMinutes: (_elapsedSec / 60).ceil(),
+              indoorMap: session.parking?.indoorMap,
             ),
           ),
         ) ??
@@ -717,12 +756,17 @@ class _HomeScreenState extends State<HomeScreen> {
     final bool guidanceEnabled =
         _isSmartGuidanceEnabledForParking(session.parkingName);
 
+    ProviderScope.containerOf(context, listen: false)
+      .read(selectedSpotProvider.notifier)
+      .state = session.spotLabel;
+
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
         builder: (_) => GuidanceToExitScreen(
           spotLabel: session.spotLabel,
           showMapComingSoon: !guidanceEnabled,
+          indoorMap: session.parking?.indoorMap,
         ),
       ),
     );
@@ -1291,9 +1335,8 @@ class _ActionCard extends StatelessWidget {
               if (locked)
                 Icon(Icons.lock_outline_rounded,
                     size: 11,
-                    color: isActive
-                        ? Colors.white.withOpacity(0.7)
-                        : _kTextLight),
+                    color:
+                        isActive ? Colors.white.withOpacity(0.7) : _kTextLight),
               if (locked) const SizedBox(width: 4),
               Flexible(
                 child: Text(
@@ -1301,9 +1344,8 @@ class _ActionCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
-                    color: isActive
-                        ? Colors.white.withOpacity(0.75)
-                        : _kTextLight,
+                    color:
+                        isActive ? Colors.white.withOpacity(0.75) : _kTextLight,
                     letterSpacing: 0.4,
                   ),
                 ),

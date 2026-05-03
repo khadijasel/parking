@@ -162,6 +162,11 @@ const toGridRecord = (input = {}) => {
           .map((value) => Math.max(0, Math.round(parseNumber(value, -1))))
           .filter((value) => value >= 0)
       : [],
+    laneCols: Array.isArray(source.laneCols)
+      ? source.laneCols
+          .map((value) => Math.max(0, Math.round(parseNumber(value, -1))))
+          .filter((value) => value >= 0)
+      : [],
     spots: spotsInput.map((spot, index) => {
       const spotId = String(spot.id ?? `SP-${String(index + 1).padStart(3, '0')}`)
       return toSpotRecord(spot, spotId)
@@ -237,6 +242,7 @@ const initialParkings = [
       rows: 6,
       cols: 8,
       laneRows: [2],
+      laneCols: [],
       spots: demoSpots,
     },
   },
@@ -257,6 +263,7 @@ const initialParkings = [
       rows: 6,
       cols: 8,
       laneRows: [2],
+      laneCols: [],
       spots: [],
     },
   },
@@ -277,6 +284,7 @@ const initialParkings = [
       rows: 6,
       cols: 8,
       laneRows: [2],
+      laneCols: [],
       spots: [],
     },
   },
@@ -292,6 +300,7 @@ const toParkingRecord = (input, id) => {
     rows: input.rows,
     cols: input.cols,
     laneRows: input.laneRows,
+    laneCols: input.laneCols,
     spots: input.indoorGrid?.spots ?? [],
     indoorGrid: input.indoorGrid,
   })
@@ -357,6 +366,7 @@ const toApiPayload = (parking) => {
         rows: parking.indoorGrid.rows,
         cols: parking.indoorGrid.cols,
         laneRows: parking.indoorGrid.laneRows,
+        laneCols: parking.indoorGrid.laneCols,
       },
       spots: parking.indoorGrid.spots.map((spot) => {
         return {
@@ -431,6 +441,9 @@ const toParkingInputFromApiPayload = (payload = {}) => {
       laneRows: Array.isArray(payload?.indoorMap?.grid?.laneRows)
         ? payload.indoorMap.grid.laneRows
         : [],
+      laneCols: Array.isArray(payload?.indoorMap?.grid?.laneCols)
+        ? payload.indoorMap.grid.laneCols
+        : [],
       spots,
     },
   }
@@ -498,6 +511,11 @@ export const useParkingsStore = defineStore('parkings', () => {
             .map((value) => Math.max(0, Math.round(parseNumber(value, -1))))
             .filter((value) => value >= 0)
         : currentGrid.laneRows,
+      laneCols: Array.isArray(input.laneCols)
+        ? input.laneCols
+            .map((value) => Math.max(0, Math.round(parseNumber(value, -1))))
+            .filter((value) => value >= 0)
+        : currentGrid.laneCols,
     }
 
     const filteredSpots = currentGrid.spots.filter((spot) => {

@@ -614,7 +614,22 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     final userLocation = await _ensureUserLocation();
     if (!mounted) return;
 
-    final LatLng start = userLocation ?? const LatLng(36.7650, 3.0570);
+    if (userLocation == null) {
+      setState(() {
+        _isLoadingRoute = false;
+        _routePoints = const [];
+        _routeDistanceKm = 0;
+        _routeDurationMinutes = 0;
+      });
+
+      AppFeedback.showWarning(
+        context,
+        'Activez la localisation GPS pour calculer le trajet vers le parking.',
+      );
+      return;
+    }
+
+    final LatLng start = userLocation;
     final route = await LocationService.getDrivingRoute(
       from: start,
       to: parking.location,
@@ -623,22 +638,16 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     if (!mounted) return;
 
     if (route == null || route.points.length < 2) {
-      final double fallbackDistance =
-          LocationService.distanceKm(start, parking.location);
-      final int fallbackDuration =
-          ((fallbackDistance / 28.0) * 60).round().clamp(1, 9999);
-
       setState(() {
-        _routePoints = <LatLng>[start, parking.location];
-        _routeDistanceKm = fallbackDistance;
-        _routeDurationMinutes = fallbackDuration;
+        _routePoints = const [];
+        _routeDistanceKm = 0;
+        _routeDurationMinutes = 0;
         _isLoadingRoute = false;
       });
 
-      _fitRouteInView();
-      AppFeedback.showInfo(
+      AppFeedback.showWarning(
         context,
-        'Itineraire simplifie active (mode hors ligne).',
+        'Impossible de calculer le trajet vers ce parking pour le moment.',
       );
       return;
     }

@@ -113,3 +113,34 @@ export const updateOwnerBusinessSettings = async ({ parkingId, payload, authHead
     }
   }
 }
+
+export const upsertOwnerParkingLayout = async ({ payload, authHeaders }) => {
+  try {
+    const response = await fetch('/api/owner/parkings/layout', {
+      method: 'POST',
+      headers: authHeaders({
+        'Content-Type': 'application/json',
+      }),
+      body: JSON.stringify(payload ?? {}),
+    })
+
+    const body = await parseResponseBody(response)
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        message: extractApiErrorMessage(body, `HTTP ${response.status}`),
+      }
+    }
+
+    return {
+      ok: true,
+      data: body?.data ?? null,
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      message: `Enregistrement de la carte echoue: ${String(error?.message ?? error)}`,
+    }
+  }
+}

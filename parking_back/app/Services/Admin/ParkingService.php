@@ -133,6 +133,7 @@ class ParkingService
                     'rows' => (int) ($grid['rows'] ?? 0),
                     'cols' => (int) ($grid['cols'] ?? 0),
                     'laneRows' => collect($grid['laneRows'] ?? [])->map(fn ($row): int => (int) $row)->values()->all(),
+                    'laneCols' => collect($grid['laneCols'] ?? [])->map(fn ($col): int => (int) $col)->values()->all(),
                 ],
                 'spots' => $spots,
             ],
@@ -207,6 +208,7 @@ class ParkingService
                     'rows' => (int) ($payload['indoorMap']['grid']['rows'] ?? 0),
                     'cols' => (int) ($payload['indoorMap']['grid']['cols'] ?? 0),
                     'laneRows' => collect($payload['indoorMap']['grid']['laneRows'] ?? [])->map(fn ($row): int => (int) $row)->values()->all(),
+                    'laneCols' => collect($payload['indoorMap']['grid']['laneCols'] ?? [])->map(fn ($col): int => (int) $col)->values()->all(),
                 ],
                 'spots' => collect($payload['indoorMap']['spots'] ?? [])->map(function ($spot): array {
                     return [

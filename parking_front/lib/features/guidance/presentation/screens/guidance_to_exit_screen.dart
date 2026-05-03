@@ -1,37 +1,43 @@
 import 'dart:async';
-import 'dart:ui' show Tangent;
+import 'dart:ui' show Tangent, PathMetric;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:parking_front/core/widgets/app_feedback.dart';
+import 'package:parking_front/features/parking/models/parking.dart';
 import 'package:parking_front/features/reservation/data/reservation_repository.dart';
+import 'package:parking_front/core/state/selected_spot_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:parking_front/core/theme/app_colors.dart';
+import 'package:parking_front/features/guidance/presentation/utils/parking_pathfinder.dart';
 
 import 'exit_success_screen.dart';
 
 const _kBg = Color(0xFFF0F4FA);
 const _kBlue = Color(0xFF4A90E2);
 const _kGreen = Color(0xFF2ECC71);
-const _kSpotGray = Color(0xFF98A7BB);
 const _kDark = Color(0xFF1A1A2E);
 const _kMid = Color(0xFF8A9BB5);
 
-class GuidanceToExitScreen extends StatefulWidget {
+class GuidanceToExitScreen extends ConsumerStatefulWidget {
   final String spotLabel;
   final bool showMapComingSoon;
+  final ParkingIndoorMap? indoorMap;
 
   const GuidanceToExitScreen({
     super.key,
     this.spotLabel = 'B2',
     this.showMapComingSoon = false,
+    this.indoorMap,
   });
 
   @override
-  State<GuidanceToExitScreen> createState() => _GuidanceToExitScreenState();
+  ConsumerState<GuidanceToExitScreen> createState() => _GuidanceToExitScreenState();
 }
 
-class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
-    with SingleTickerProviderStateMixin {
+class _GuidanceToExitScreenState extends ConsumerState<GuidanceToExitScreen>
+  with SingleTickerProviderStateMixin {
   final FlutterTts _tts = FlutterTts();
   final ReservationRepository _reservationRepository = ReservationRepository();
 
@@ -42,9 +48,10 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
   bool _isCompletingExit = false;
   int _distanceMeters = 70;
   String _instruction = '';
+  late String _effectiveSpotLabel;
 
   String get _normalizedSpotLabel {
-    final String source = widget.spotLabel.trim().toUpperCase();
+    final String source = _effectiveSpotLabel.trim().toUpperCase();
     final Iterable<Match> matches =
         RegExp(r'([AB])\s*-?\s*(\d+)').allMatches(source);
     if (matches.isEmpty) {
@@ -67,6 +74,12 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1350),
     );
+
+    final String? global = ref.read(selectedSpotProvider);
+    _effectiveSpotLabel = (global != null && global.trim().isNotEmpty)
+        ? global.trim()
+        : widget.spotLabel;
+    ref.read(selectedSpotProvider.notifier).state = _effectiveSpotLabel;
 
     if (widget.showMapComingSoon) {
       _voiceEnabled = false;
@@ -100,9 +113,9 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
 
   Future<void> _configureVoice() async {
     await _tts.setLanguage('fr-FR');
-    await _tts.setSpeechRate(0.47);
+    await _tts.setSpeechRate(0.44);
     await _tts.setVolume(1.0);
-    await _tts.setPitch(1.0);
+    await _tts.setPitch(0.98);
   }
 
   double get _progress => (70 - _distanceMeters) / 70;
@@ -112,11 +125,11 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
     final String next;
 
     if (p < 0.4) {
-      next = 'Marchez tout droit vers l\'allee de sortie.';
+      next = 'Suivez la voie de circulation en direction de la sortie.';
     } else if (p < 0.75) {
-      next = 'Continuez puis tournez legerement a droite.';
+      next = 'Continuez sur la voie puis prenez la bifurcation vers la sortie.';
     } else {
-      next = 'La sortie est en face. Continuez quelques pas.';
+      next = 'La sortie se trouve juste devant vous. Avancez prudemment.';
     }
 
     if (forceSpeak || next != _instruction) {
@@ -231,11 +244,12 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
                           animation: _pathController,
                           builder: (_, __) {
                             return CustomPaint(
-                              size: const Size(280, 360),
+                              size: const Size(320, 360),
                               painter: _ExitPathPainter(
                                 dashProgress: _pathController.value,
                                 travelProgress: _progress.clamp(0.0, 1.0),
                                 spotLabel: _normalizedSpotLabel,
+                                indoorMap: widget.indoorMap,
                               ),
                             );
                           },
@@ -332,7 +346,7 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      '🟢 Votre place · ⚫ Autres places',
+                      '🟢 Libre · 🟠 Réservé · 🔴 Occupé · 🔵 Destination · ⚫ Hors service',
                       style: TextStyle(
                         fontSize: 12,
                         color: _kMid,
@@ -431,173 +445,376 @@ class _ExitPathPainter extends CustomPainter {
   final double dashProgress;
   final double travelProgress;
   final String spotLabel;
+  final ParkingIndoorMap? indoorMap;
 
   _ExitPathPainter({
     required this.dashProgress,
     required this.travelProgress,
     required this.spotLabel,
+    required this.indoorMap,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final Paint lane = Paint()..color = const Color(0xFFEBF0FA);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(size.width * 0.4, 0, size.width * 0.2, size.height),
-        const Radius.circular(8),
-      ),
-      lane,
-    );
+    const double spotSize = kSpotSize;
+    const double spacing = 10;
+    const double topPadding = 18;
 
-    const double top = 18;
-    const double rowStep = 108;
-    const double spotHeight = 82;
-    final double leftX = size.width * 0.04;
-    final double rightX = size.width * 0.66;
-    final double spotWidth = size.width * 0.3;
+    // Draw entry/exit at bottom
+    _drawEntryExit(canvas, size);
 
+    // Calculate grid positions
+    final double totalWidth = (spotSize * 3) + (spacing * 2);
+    final double startX = (size.width - totalWidth) / 2;
+    final double startY = topPadding;
+    final double rowHeight = (spotSize + spacing + 10);
+
+    // Get labels from indoor map or use defaults
+    final ({List<String> left, List<String> right}) labels =
+        _resolveColumnsFromIndoorMap();
+    final Map<String, String> statesByLabel = _resolveStatesFromIndoorMap();
+    final List<String> leftLabels = labels.left;
+    final List<String> rightLabels = labels.right;
+
+    // Determine target position
     final bool targetOnRight = spotLabel.toUpperCase().startsWith('A');
     final Match? match = RegExp(r'(\d+)').firstMatch(spotLabel);
     final int rawSpotNumber = int.tryParse(match?.group(1) ?? '1') ?? 1;
     final int targetRowIndex = ((rawSpotNumber - 1) % 3);
 
-    final List<String> leftLabels = <String>['B1', 'B2', 'B3'];
-    final List<String> rightLabels = <String>['A1', 'A2', 'A3'];
+    // Draw spots in 3x2 grid
+    for (int row = 0; row < 2; row++) {
+      for (int col = 0; col < 3; col++) {
+        final double x = startX + (col * (spotSize + spacing));
+        final double y = startY + (row * rowHeight);
 
-    for (int i = 0; i < 3; i++) {
-      final double y = top + (i * rowStep);
-      final Rect leftRect = Rect.fromLTWH(leftX, y, spotWidth, spotHeight);
-      final Rect rightRect = Rect.fromLTWH(rightX, y, spotWidth, spotHeight);
+        String label = '';
+        bool isTarget = false;
 
-      final Color leftColor =
-          (!targetOnRight && i == targetRowIndex) ? _kGreen : _kSpotGray;
-      final Color rightColor =
-          (targetOnRight && i == targetRowIndex) ? _kGreen : _kSpotGray;
+        if (row == 0 && col < leftLabels.length) {
+          label = leftLabels[col];
+          isTarget = !targetOnRight && col == targetRowIndex;
+        } else if (row == 1 && col < rightLabels.length) {
+          label = rightLabels[col];
+          isTarget = targetOnRight && col == targetRowIndex;
+        }
 
-      _drawSpot(canvas, leftRect, leftColor, leftLabels[i]);
-      _drawSpot(canvas, rightRect, rightColor, rightLabels[i]);
+        if (label.isNotEmpty) {
+          _drawSpot(
+            canvas,
+            rect: Rect.fromLTWH(x, y, spotSize, spotSize),
+            label: label,
+            isTarget: isTarget,
+            state: statesByLabel[label],
+          );
+        }
+      }
     }
 
-    final Paint exitPaint = Paint()..color = const Color(0xFFD0DCF0);
-    final Rect exitRect = Rect.fromLTWH(
-      size.width * 0.38,
-      size.height * 0.88,
-      size.width * 0.24,
-      38,
+    // Draw path to exit through lanes only (A* around spot obstacles).
+    _drawPathToExit(
+      canvas,
+      size,
+      startX,
+      startY,
+      spotSize,
+      spacing,
+      targetRowIndex,
+      targetOnRight,
+    );
+  }
+
+  void _drawEntryExit(Canvas canvas, Size size) {
+    const double bottomMargin = 14;
+    const double height = 32;
+    const double width = 90;
+
+    // Entrance (left)
+    final Rect entranceRect = Rect.fromLTWH(
+      size.width * 0.12,
+      size.height - height - bottomMargin,
+      width,
+      height,
     );
     canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        exitRect,
-        const Radius.circular(8),
-      ),
-      exitPaint,
+      RRect.fromRectAndRadius(entranceRect, const Radius.circular(6)),
+      Paint()..color = const Color(0xFFE8EEF7),
     );
-
-    final TextPainter exitLabelPainter = TextPainter(
-      text: const TextSpan(
-        text: 'SORTIE',
-        style: TextStyle(
-          color: Color(0xFF52627A),
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.1,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-
-    exitLabelPainter.paint(
+    _drawTextCentered(
       canvas,
-      Offset(
-        exitRect.center.dx - (exitLabelPainter.width / 2),
-        exitRect.center.dy - (exitLabelPainter.height / 2),
-      ),
+      'ENTRÉE',
+      entranceRect.center,
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      color: const Color(0xFF5A6B7A),
     );
 
-    final double targetY = top + (targetRowIndex * rowStep) + (spotHeight / 2);
-    final double pathStartX = targetOnRight ? rightX : (leftX + spotWidth);
-    final double pathStartY = targetY;
+    // Exit (right)
+    final Rect exitRect = Rect.fromLTWH(
+      size.width * 0.88 - width,
+      size.height - height - bottomMargin,
+      width,
+      height,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(exitRect, const Radius.circular(6)),
+      Paint()..color = const Color(0xFFD4E8F0),
+    );
+    _drawTextCentered(
+      canvas,
+      'SORTIE',
+      exitRect.center,
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      color: _kBlue,
+    );
+  }
 
-    final Path path = Path()
-      ..moveTo(pathStartX, pathStartY)
-      ..lineTo(size.width * 0.5, pathStartY)
-      ..lineTo(size.width * 0.5, size.height * 0.88);
+  void _drawPathToExit(
+    Canvas canvas,
+    Size size,
+    double startX,
+    double startY,
+    double spotSize,
+    double spacing,
+    int targetRowIndex,
+    bool targetOnRight,
+  ) {
+    final double targetY = startY + (targetOnRight ? (spotSize + spacing + 10) : 0) + (spotSize / 2);
+    final double targetX = startX + (targetRowIndex * (spotSize + spacing)) + (spotSize / 2);
+    final double exitCenterX = size.width / 2;
+    final double exitCenterY = size.height - 30;
+
+    final List<Rect> obstacles = <Rect>[];
+    final double rowHeight = (spotSize + spacing + 10);
+    for (int row = 0; row < 2; row++) {
+      for (int col = 0; col < 3; col++) {
+        final Rect rect = Rect.fromLTWH(
+          startX + (col * (spotSize + spacing)),
+          startY + (row * rowHeight),
+          spotSize,
+          spotSize,
+        );
+        obstacles.add(rect);
+      }
+    }
+
+    final Offset start = Offset(targetX, targetY);
+    final Offset end = Offset(exitCenterX, exitCenterY);
+    final List<Offset> pathPoints = ParkingPathfinder.findPath(
+      canvasSize: size,
+      start: start,
+      end: end,
+      obstacles: obstacles,
+      cellSize: 8,
+      obstaclePadding: 2,
+    );
+
+    final Path fallbackPath = Path()
+      ..moveTo(start.dx, start.dy)
+      ..lineTo(start.dx, startY - 10)
+      ..lineTo(size.width - 12, startY - 10)
+      ..lineTo(size.width - 12, end.dy)
+      ..lineTo(end.dx, end.dy);
 
     final Paint pathPaint = Paint()
-      ..color = _kBlue
-      ..strokeWidth = 3.2
+      ..color = guideRed
+      ..strokeWidth = 2.5
       ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
 
-    final metric = path.computeMetrics().first;
-    const double dash = 10;
-    const double gap = 7;
-    double distance = dashProgress * (dash + gap);
+    final Path path = pathPoints.length >= 2
+        ? ParkingPathfinder.pathFromPoints(pathPoints)
+        : fallbackPath;
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = guideRed.withOpacity(0.50)
+        ..strokeWidth = 3.4
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+
+    final Iterable<PathMetric> metrics = path.computeMetrics();
+    if (metrics.isEmpty) {
+      return;
+    }
+    final PathMetric metric = metrics.first;
+    const double dashLen = 8;
+    const double gapLen = 5;
+    double distance = dashProgress * (dashLen + gapLen);
 
     while (distance < metric.length) {
-      final double end = (distance + dash).clamp(0.0, metric.length);
+      final double end = (distance + dashLen).clamp(0.0, metric.length);
       canvas.drawPath(metric.extractPath(distance, end), pathPaint);
-      distance += dash + gap;
+      distance += dashLen + gapLen;
     }
 
     final Tangent? movingTangent = metric.getTangentForOffset(
       metric.length * travelProgress.clamp(0.0, 1.0),
     );
-
     if (movingTangent != null) {
       canvas.drawCircle(
         movingTangent.position,
-        8,
-        Paint()..color = _kBlue,
+        6,
+        Paint()..color = guideRed,
       );
       canvas.drawCircle(
         movingTangent.position,
-        3,
+        2.5,
         Paint()..color = Colors.white,
       );
     }
 
-    final Tangent? destination = metric.getTangentForOffset(metric.length);
-    if (destination != null) {
-      canvas.drawCircle(
-        destination.position,
-        6,
-        Paint()..color = _kGreen,
-      );
-    }
-
     canvas.drawCircle(
-      Offset(pathStartX, pathStartY),
-      5,
+      Offset(exitCenterX, exitCenterY),
+      5.5,
       Paint()..color = _kGreen,
     );
   }
 
-  void _drawSpot(Canvas canvas, Rect rect, Color color, String label) {
+  void _drawSpot(
+    Canvas canvas, {
+    required Rect rect,
+    required String label,
+    required bool isTarget,
+    String? state,
+  }) {
+    final Color fillColor = isTarget
+        ? appBlue
+        : switch (state?.trim().toUpperCase()) {
+            'AVAILABLE' => appGreen,
+            'RESERVED' => appOrange,
+            'OCCUPIED' => appRed,
+            'OFFLINE' => appSpotGray,
+            _ => appSpotGray,
+          };
+
+    // subtle outer contour/shadow
+    final RRect outer = RRect.fromRectAndRadius(
+      rect.inflate(3),
+      const Radius.circular(kSpotCornerRadius + 3),
+    );
+    canvas.drawRRect(outer, Paint()..color = Colors.black.withOpacity(0.04));
+
+    // background fill
+    final RRect rrect = RRect.fromRectAndRadius(rect, const Radius.circular(kSpotCornerRadius));
+    canvas.drawRRect(rrect, Paint()..color = fillColor);
+
+    // light border contour
     canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(10)),
-      Paint()..color = color,
+      rrect,
+      Paint()
+        ..color = Colors.white.withOpacity(0.08)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0,
     );
 
-    final TextPainter labelPainter = TextPainter(
+    // label color: darker text for gray spots
+    final Color labelColor = (fillColor == appSpotGray) ? _kDark : Colors.white;
+    _drawTextCentered(
+      canvas,
+      label,
+      rect.center,
+      fontSize: 12,
+      fontWeight: FontWeight.w900,
+      color: labelColor,
+    );
+  }
+
+  void _drawTextCentered(
+    Canvas canvas,
+    String text,
+    Offset center, {
+    double fontSize = 12,
+    FontWeight fontWeight = FontWeight.w700,
+    Color color = Colors.white,
+  }) {
+    final TextPainter painter = TextPainter(
       text: TextSpan(
-        text: label,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 14,
-          fontWeight: FontWeight.w800,
+        text: text,
+        style: TextStyle(
+          color: color,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
+          letterSpacing: 0.2,
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
 
-    labelPainter.paint(
+    painter.paint(
       canvas,
-      Offset(
-        rect.center.dx - (labelPainter.width / 2),
-        rect.center.dy - (labelPainter.height / 2),
-      ),
+      center - Offset(painter.width / 2, painter.height / 2),
     );
+  }
+
+  ({List<String> left, List<String> right}) _resolveColumnsFromIndoorMap() {
+    final ParkingIndoorMap? map = indoorMap;
+    if (map == null || map.spots.isEmpty) {
+      return (
+        left: <String>['B1', 'B2', 'B3'],
+        right: <String>['A1', 'A2', 'A3'],
+      );
+    }
+
+    final List<ParkingIndoorSpot> sorted =
+        List<ParkingIndoorSpot>.from(map.spots)
+          ..sort((ParkingIndoorSpot a, ParkingIndoorSpot b) {
+            final int byRow = a.row.compareTo(b.row);
+            if (byRow != 0) {
+              return byRow;
+            }
+            return a.col.compareTo(b.col);
+          });
+
+    final List<int> cols =
+        sorted.map((ParkingIndoorSpot s) => s.col).toSet().toList()..sort();
+    if (cols.isEmpty) {
+      return (
+        left: <String>['B1', 'B2', 'B3'],
+        right: <String>['A1', 'A2', 'A3'],
+      );
+    }
+
+    final int leftCol = cols.first;
+    final int rightCol = cols.length > 1 ? cols.last : cols.first;
+
+    List<String> labelsForCol(int col, String prefix) {
+      final List<String> labels = sorted
+          .where((ParkingIndoorSpot s) => s.col == col)
+          .take(3)
+          .map((ParkingIndoorSpot s) => s.label)
+          .toList(growable: true);
+      if (labels.isNotEmpty) {
+        while (labels.length < 3) {
+          labels.add('$prefix${labels.length + 1}');
+        }
+        return labels;
+      }
+      return <String>['${prefix}1', '${prefix}2', '${prefix}3'];
+    }
+
+    return (
+      left: labelsForCol(leftCol, 'B'),
+      right: labelsForCol(rightCol, 'A'),
+    );
+  }
+
+  Map<String, String> _resolveStatesFromIndoorMap() {
+    final ParkingIndoorMap? map = indoorMap;
+    if (map == null || map.spots.isEmpty) {
+      return <String, String>{};
+    }
+
+    final Map<String, String> result = <String, String>{};
+    for (final ParkingIndoorSpot spot in map.spots) {
+      result[spot.label] = spot.state;
+    }
+    return result;
   }
 
   @override

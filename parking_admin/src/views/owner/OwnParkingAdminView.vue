@@ -2,7 +2,11 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { listOwnerParkings, updateOwnerBusinessSettings } from '@/services/owner/parkingSettingsApi'
+import {
+  listOwnerParkings,
+  updateOwnerBusinessSettings,
+  upsertOwnerParkingLayout,
+} from '@/services/owner/parkingSettingsApi'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -56,7 +60,26 @@ const settingsForm = reactive({
   monthlyRateDzd: '',
 })
 
+const parkingForm = reactive({
+  parkingId: '',
+  name: '',
+  address: '',
+  latitude: 0,
+  longitude: 0,
+  capacity: 1,
+  floor: 'B1',
+  zone: 'Zone A',
+  rows: 3,
+  cols: 3,
+  laneRows: '',
+  laneCols: '',
+  walkingTime: '',
+  pricePerHour: 0,
+  imageUrl: '',
+})
+
 const normalizeParking = (payload = {}) => {
+  const location = payload?.location ?? {}
   const indoorMap = payload?.indoorMap ?? {}
   const grid = indoorMap?.grid ?? {}
   const spots = Array.isArray(indoorMap?.spots) ? indoorMap.spots : []
@@ -67,7 +90,12 @@ const normalizeParking = (payload = {}) => {
     id: String(payload?.parkingId ?? '').trim(),
     name: String(payload?.name ?? '').trim(),
     address: String(payload?.address ?? '').trim(),
+    location: {
+      lat: Number(location?.lat ?? 0),
+      lng: Number(location?.lng ?? 0),
+    },
     capacity: Number(payload?.capacity ?? 0),
+    imageUrl: String(payload?.imageUrl ?? '').trim(),
     indoorMap: {
       floor: String(indoorMap?.floor ?? 'B1'),
       zone: String(indoorMap?.zone ?? 'Zone A'),
@@ -75,6 +103,7 @@ const normalizeParking = (payload = {}) => {
         rows: Number(grid?.rows ?? 0),
         cols: Number(grid?.cols ?? 0),
         laneRows: Array.isArray(grid?.laneRows) ? grid.laneRows.map((row) => Number(row)) : [],
+        laneCols: Array.isArray(grid?.laneCols) ? grid.laneCols.map((col) => Number(col)) : [],
       },
       spots,
     },
@@ -92,6 +121,15 @@ const normalizeParking = (payload = {}) => {
       },
     },
   }
+}
+
+const parseLaneInput = (value, maxCount) => {
+  return String(value ?? '')
+    .split(/[\s,;]+/)
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item >= 0 && item < maxCount)
+    .filter((item, index, array) => array.indexOf(item) === index)
+    .sort((a, b) => a - b)
 }
 
 const selectedParking = computed(() => {
@@ -130,12 +168,16 @@ const selectedStats = computed(() => {
 
 const laneRowsLabel = computed(() => {
   const laneRows = selectedParking.value?.indoorMap?.grid?.laneRows ?? []
+  const laneCols = selectedParking.value?.indoorMap?.grid?.laneCols ?? []
 
-  if (!laneRows.length) {
+  const rowsList = laneRows.length > 0 ? laneRows.map((row) => `L${Number(row) + 1}`).join(', ') : ''
+  const colsList = laneCols.length > 0 ? laneCols.map((col) => `C${Number(col) + 1}`).join(', ') : ''
+
+  if (!rowsList && !colsList) {
     return 'Aucune voie definie'
   }
 
-  return laneRows.map((row) => `L${Number(row) + 1}`).join(', ')
+  return [rowsList, colsList].filter(Boolean).join(' | ')
 })
 
 const spotCountDelta = computed(() => {
@@ -295,6 +337,21 @@ const syncFormFromSelectedParking = () => {
   const parking = selectedParking.value
 
   if (!parking) {
+    parkingForm.parkingId = ''
+    parkingForm.name = ''
+    parkingForm.address = ''
+    parkingForm.latitude = 0
+    parkingForm.longitude = 0
+    parkingForm.capacity = 1
+    parkingForm.floor = 'B1'
+    parkingForm.zone = 'Zone A'
+    parkingForm.rows = 3
+    parkingForm.cols = 3
+    parkingForm.laneRows = ''
+    parkingForm.laneCols = ''
+    parkingForm.walkingTime = ''
+    parkingForm.pricePerHour = 0
+    parkingForm.imageUrl = ''
     settingsForm.workingDays = []
     settingsForm.openingTime = '08:00'
     settingsForm.closingTime = '20:00'
@@ -305,12 +362,103 @@ const syncFormFromSelectedParking = () => {
   }
 
   const settings = parking.businessSettings
+  parkingForm.parkingId = parking.id
+  parkingForm.name = parking.name
+  parkingForm.address = parking.address
+  parkingForm.latitude = Number(parking.location?.lat ?? 0)
+  parkingForm.longitude = Number(parking.location?.lng ?? 0)
+  parkingForm.capacity = Number(parking.capacity ?? 1)
+  parkingForm.floor = String(parking.indoorMap?.floor ?? 'B1')
+  parkingForm.zone = String(parking.indoorMap?.zone ?? 'Zone A')
+  parkingForm.rows = Number(parking.indoorMap?.grid?.rows ?? 3)
+  parkingForm.cols = Number(parking.indoorMap?.grid?.cols ?? 3)
+  parkingForm.laneRows = Array.isArray(parking.indoorMap?.grid?.laneRows)
+    ? parking.indoorMap.grid.laneRows.join(', ')
+    : ''
+  parkingForm.laneCols = Array.isArray(parking.indoorMap?.grid?.laneCols)
+    ? parking.indoorMap.grid.laneCols.join(', ')
+    : ''
+  parkingForm.walkingTime = String(parking.walkingTime ?? '')
+  parkingForm.pricePerHour = Number(settings.pricing?.hourlyRateDzd ?? 0)
+  parkingForm.imageUrl = String(parking.imageUrl ?? '')
   settingsForm.workingDays = Array.isArray(settings.workingDays) ? [...settings.workingDays] : []
   settingsForm.openingTime = String(settings.openingTime ?? '08:00')
   settingsForm.closingTime = String(settings.closingTime ?? '20:00')
   settingsForm.hourlyRateDzd = Number(settings.pricing?.hourlyRateDzd ?? 0)
   settingsForm.dailyRateDzd = Number(settings.pricing?.dailyRateDzd ?? 0)
   settingsForm.monthlyRateDzd = settings.pricing?.monthlyRateDzd == null ? '' : Number(settings.pricing.monthlyRateDzd)
+}
+
+const saveParkingLayout = async () => {
+  saveError.value = ''
+  saveSuccess.value = ''
+
+  if (!String(parkingForm.parkingId).trim()) {
+    saveError.value = 'Renseignez l identifiant du parking.'
+    return
+  }
+
+  if (!String(parkingForm.name).trim() || !String(parkingForm.address).trim()) {
+    saveError.value = 'Renseignez le nom et l adresse du parking.'
+    return
+  }
+
+  const rows = Math.max(1, Math.round(Number(parkingForm.rows) || 1))
+  const cols = Math.max(1, Math.round(Number(parkingForm.cols) || 1))
+
+  const payload = {
+    parkingId: String(parkingForm.parkingId).trim(),
+    name: String(parkingForm.name).trim(),
+    address: String(parkingForm.address).trim(),
+    location: {
+      lat: Number(parkingForm.latitude) || 0,
+      lng: Number(parkingForm.longitude) || 0,
+    },
+    capacity: Math.max(1, Math.round(Number(parkingForm.capacity) || 1)),
+    walkingTime: String(parkingForm.walkingTime ?? '').trim(),
+    pricePerHour: Math.max(0, Number(parkingForm.pricePerHour) || 0),
+    imageUrl: String(parkingForm.imageUrl ?? '').trim(),
+    indoorMap: {
+      floor: String(parkingForm.floor ?? 'B1').trim() || 'B1',
+      zone: String(parkingForm.zone ?? 'Zone A').trim() || 'Zone A',
+      grid: {
+        rows,
+        cols,
+        laneRows: parseLaneInput(parkingForm.laneRows, rows),
+        laneCols: parseLaneInput(parkingForm.laneCols, cols),
+      },
+    },
+  }
+
+  saving.value = true
+
+  try {
+    const result = await upsertOwnerParkingLayout({
+      payload,
+      authHeaders: authStore.authHeaders,
+    })
+
+    if (!result.ok) {
+      saveError.value = result.message
+      return
+    }
+
+    const updatedParking = normalizeParking(result.data)
+    const existingIndex = ownerParkings.value.findIndex((parking) => parking.id === updatedParking.id)
+
+    if (existingIndex >= 0) {
+      ownerParkings.value = ownerParkings.value.map((parking) => {
+        return parking.id === updatedParking.id ? updatedParking : parking
+      })
+    } else {
+      ownerParkings.value = [updatedParking, ...ownerParkings.value]
+    }
+
+    selectedParkingId.value = updatedParking.id
+    saveSuccess.value = result.message || 'Carte du parking enregistree.'
+  } finally {
+    saving.value = false
+  }
 }
 
 const loadOwnerParkings = async () => {
@@ -492,6 +640,178 @@ onMounted(async () => {
         >
           Actualiser
         </button>
+      </div>
+
+      <div class="mt-5 rounded-xl bg-surface-container-low p-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 class="font-headline text-lg font-bold text-on-surface">
+              {{ selectedParking ? 'Modifier la carte de votre parking' : 'Creer votre parking' }}
+            </h3>
+            <p class="mt-1 text-xs text-on-surface-variant">
+              Remplissez les informations de base et la grille intérieure. Les places seront generees automatiquement si elles sont absentes.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="saving"
+            @click="saveParkingLayout"
+          >
+            {{ saving ? 'Enregistrement...' : selectedParking ? 'Mettre a jour la carte' : 'Creer mon parking' }}
+          </button>
+        </div>
+
+        <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+            Parking ID
+            <input
+              v-model.trim="parkingForm.parkingId"
+              type="text"
+              :readonly="Boolean(selectedParking)"
+              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 readonly:cursor-not-allowed readonly:opacity-70"
+            />
+          </label>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+            Nom
+            <input
+              v-model.trim="parkingForm.name"
+              type="text"
+              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline md:col-span-2 xl:col-span-1">
+            Adresse
+            <input
+              v-model.trim="parkingForm.address"
+              type="text"
+              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+        </div>
+
+        <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+            Latitude
+            <input
+              v-model.number="parkingForm.latitude"
+              type="number"
+              step="0.000001"
+              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+            Longitude
+            <input
+              v-model.number="parkingForm.longitude"
+              type="number"
+              step="0.000001"
+              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+            Capacite
+            <input
+              v-model.number="parkingForm.capacity"
+              type="number"
+              min="1"
+              step="1"
+              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+            Tarif horaire (DZD)
+            <input
+              v-model.number="parkingForm.pricePerHour"
+              type="number"
+              min="0"
+              step="1"
+              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+        </div>
+
+        <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+            Etage
+            <input
+              v-model.trim="parkingForm.floor"
+              type="text"
+              placeholder="B1"
+              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+            Zone
+            <input
+              v-model.trim="parkingForm.zone"
+              type="text"
+              placeholder="Zone A"
+              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+            Lignes
+            <input
+              v-model.number="parkingForm.rows"
+              type="number"
+              min="1"
+              step="1"
+              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+            Colonnes
+            <input
+              v-model.number="parkingForm.cols"
+              type="number"
+              min="1"
+              step="1"
+              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+        </div>
+
+        <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+            Voies par lignes
+            <input
+              v-model.trim="parkingForm.laneRows"
+              type="text"
+              placeholder="2, 4"
+              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+            Voies par colonnes
+            <input
+              v-model.trim="parkingForm.laneCols"
+              type="text"
+              placeholder="3"
+              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+            URL image
+            <input
+              v-model.trim="parkingForm.imageUrl"
+              type="text"
+              placeholder="https://..."
+              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+        </div>
+
+        <label class="mt-4 block text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+          Temps de marche
+          <input
+            v-model.trim="parkingForm.walkingTime"
+            type="text"
+            placeholder="5 mins de marche"
+            class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        </label>
       </div>
 
       <p v-if="loading" class="mt-4 rounded-lg bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface-variant">
@@ -703,7 +1023,7 @@ onMounted(async () => {
       </div>
 
       <p v-else-if="!loading" class="mt-4 rounded-lg bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface-variant">
-        Aucun parking disponible pour ce compte owner.
+        Aucun parking disponible pour ce compte owner. Creez-en un via le formulaire ci-dessus.
       </p>
     </article>
   </section>

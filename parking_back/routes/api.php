@@ -11,11 +11,58 @@ use App\Http\Controllers\Api\ParkingAvailabilityController;
 use App\Http\Controllers\Api\ParkingTicketController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ReservationController;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 
 Route::get('parkings', [ParkingCatalogController::class, 'index']);
 Route::get('parkings/availability', [ParkingAvailabilityController::class, 'index']);
 Route::post('parkings/arduino/availability', [ParkingAvailabilityController::class, 'updateArduino']);
+Route::post('parkings/infrared/readings', [ParkingAvailabilityController::class, 'updateInfraredReadings']);
+Route::get('routing/driving', function (Request $request) {
+	$payload = $request->validate([
+		'from_lat' => ['required', 'numeric', 'between:-90,90'],
+		'from_lng' => ['required', 'numeric', 'between:-180,180'],
+		'to_lat' => ['required', 'numeric', 'between:-90,90'],
+		'to_lng' => ['required', 'numeric', 'between:-180,180'],
+	]);
+
+	$baseUrl = rtrim((string) config('services.osrm.base_url', 'https://router.project-osrm.org'), '/');
+	$uri = sprintf(
+		'%s/route/v1/driving/%s,%s;%s,%s?overview=full&geometries=geojson&alternatives=false&steps=false',
+		$baseUrl,
+		$payload['from_lng'],
+		$payload['from_lat'],
+		$payload['to_lng'],
+		$payload['to_lat'],
+	);
+
+	try {
+		$response = Http::acceptJson()
+			->timeout(15)
+			->retry(2, 300)
+			->get($uri);
+	} catch (Throwable) {
+		return response()->json([
+			'message' => 'Route service unavailable.',
+		], 502);
+	}
+
+	if (! $response->successful()) {
+		return response()->json([
+			'message' => 'Route service unavailable.',
+		], 502);
+	}
+
+	$data = $response->json();
+	if (! is_array($data)) {
+		return response()->json([
+			'message' => 'Route service returned an invalid response.',
+		], 502);
+	}
+
+	return response()->json($data);
+});
 
 Route::prefix('iot')->group(function (): void {
 	Route::get('tickets', [ParkingTicketController::class, 'index']);

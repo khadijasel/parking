@@ -1,11 +1,11 @@
 <?php
 
-namespace App\Http\Requests\Admin;
+namespace App\Http\Requests\Owner;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class UpsertParkingLayoutRequest extends FormRequest
+class UpsertOwnerParkingLayoutRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -18,10 +18,6 @@ class UpsertParkingLayoutRequest extends FormRequest
             'parkingId' => ['required', 'string', 'max:60'],
             'name' => ['required', 'string', 'max:150'],
             'address' => ['required', 'string', 'max:255'],
-            'ownerAccount' => ['required', 'array'],
-            'ownerAccount.name' => ['required', 'string', 'max:255'],
-            'ownerAccount.email' => ['required', 'email', 'max:255'],
-            'ownerAccount.phone' => ['nullable', 'string', 'max:40'],
             'location' => ['required', 'array'],
             'location.lat' => ['required', 'numeric', 'between:-90,90'],
             'location.lng' => ['required', 'numeric', 'between:-180,180'],

@@ -120,6 +120,70 @@ class ParkingAvailabilityService
         return $this->toPayload($record->fresh() ?? $record);
     }
 
+    public function updateInfraredReadings(
+        string $parkingId,
+        array $readings,
+        ?string $deviceId = null,
+        ?CarbonImmutable $sentAt = null,
+    ): ?array {
+        $identifier = trim($parkingId);
+        if ($identifier === '') {
+            return null;
+        }
+
+        $parking = $this->resolveParkingRecord($identifier, $identifier);
+        if (! $parking) {
+            return null;
+        }
+
+        $indoorMap = (array) ($parking->indoor_map ?? []);
+        $spots = collect($indoorMap['spots'] ?? [])
+            ->map(fn ($spot): array => (array) $spot)
+            ->values()
+            ->all();
+
+        if (! count($spots)) {
+            throw new \RuntimeException('Parking layout has no spots configured.');
+        }
+
+        $receivedAt = $sentAt ?? CarbonImmutable::now();
+        $processed = $this->applyInfraredReadingsToSpots($spots, $readings, $deviceId, $receivedAt);
+
+        if ((int) $processed['matched'] <= 0) {
+            throw new \RuntimeException('No sensor reading matched a configured parking spot.');
+        }
+
+        $updatedSpots = $processed['spots'];
+        $totalSpots = max(1, count($updatedSpots));
+        $availableSpots = $this->countAvailableSpotsFromLayout($updatedSpots);
+
+        $parking->indoor_map = [
+            ...$indoorMap,
+            'spots' => $updatedSpots,
+        ];
+        $parking->available_spots = min($totalSpots, max(0, $availableSpots));
+        $parking->last_update = sprintf('Infrared sync %s', $receivedAt->toIso8601String());
+        $parking->save();
+
+        $availability = $this->syncAvailabilityRecord(
+            $parking,
+            $totalSpots,
+            (int) $parking->available_spots,
+            $receivedAt,
+        );
+
+        return [
+            'parking_id' => $this->resolveParkingId($parking),
+            'parking_name' => (string) ($parking->name ?? ''),
+            'total_spots' => $totalSpots,
+            'available_spots' => (int) $parking->available_spots,
+            'matched_readings' => (int) $processed['matched'],
+            'unmatched_readings' => $processed['unmatched'],
+            'last_sensor_at' => $receivedAt->toIso8601String(),
+            'availability' => $availability,
+        ];
+    }
+
     public function ensureDefaults(): array
     {
         $seed = $this->resolveSeedParkings();
@@ -289,6 +353,220 @@ class ParkingAvailabilityService
         }
 
         return str_contains($normalizedName, strtolower(self::ARDUINO_PARKING_NAME));
+    }
+
+    private function applyInfraredReadingsToSpots(
+        array $spots,
+        array $readings,
+        ?string $defaultDeviceId,
+        CarbonImmutable $receivedAt,
+    ): array {
+        $indexes = $this->buildSpotIndexes($spots);
+        $matched = 0;
+        $unmatched = [];
+
+        foreach ($readings as $index => $readingItem) {
+            $reading = is_array($readingItem) ? $readingItem : [];
+            $spotIndex = $this->resolveSpotIndexForReading($reading, $indexes, $defaultDeviceId);
+
+            if ($spotIndex === null || ! array_key_exists($spotIndex, $spots)) {
+                $unmatched[] = [
+                    'index' => (int) $index,
+                    'spot_id' => trim((string) ($reading['spot_id'] ?? $reading['spotId'] ?? '')),
+                    'spot_label' => trim((string) ($reading['spot_label'] ?? $reading['spotLabel'] ?? '')),
+                    'channel' => trim((string) ($reading['channel'] ?? '')),
+                    'topic' => trim((string) ($reading['topic'] ?? '')),
+                ];
+
+                continue;
+            }
+
+            $spot = (array) ($spots[$spotIndex] ?? []);
+            $currentState = strtoupper(trim((string) ($spot['state'] ?? 'AVAILABLE')));
+            $spot['state'] = $this->resolveSpotStateFromReading($reading, $currentState);
+            $spot['updatedAt'] = $this->resolveSpotTimestamp($reading, $receivedAt);
+
+            $spots[$spotIndex] = $spot;
+            $matched++;
+        }
+
+        return [
+            'spots' => array_values($spots),
+            'matched' => $matched,
+            'unmatched' => array_values($unmatched),
+        ];
+    }
+
+    private function buildSpotIndexes(array $spots): array
+    {
+        $bySpotId = [];
+        $byLabel = [];
+        $byTopic = [];
+        $byDeviceChannel = [];
+        $channelCandidates = [];
+
+        foreach ($spots as $index => $spotItem) {
+            $spot = is_array($spotItem) ? $spotItem : [];
+            $sensor = (array) ($spot['sensor'] ?? []);
+
+            $spotId = $this->normalizeKey($spot['spotId'] ?? '');
+            if ($spotId !== '' && ! array_key_exists($spotId, $bySpotId)) {
+                $bySpotId[$spotId] = (int) $index;
+            }
+
+            $label = $this->normalizeKey($spot['label'] ?? '');
+            if ($label !== '' && ! array_key_exists($label, $byLabel)) {
+                $byLabel[$label] = (int) $index;
+            }
+
+            $topic = $this->normalizeKey($sensor['topic'] ?? '');
+            if ($topic !== '' && ! array_key_exists($topic, $byTopic)) {
+                $byTopic[$topic] = (int) $index;
+            }
+
+            $channel = $this->normalizeKey($sensor['channel'] ?? '');
+            if ($channel !== '') {
+                $channelCandidates[$channel] ??= [];
+                $channelCandidates[$channel][] = (int) $index;
+            }
+
+            $arduinoId = $this->normalizeKey($sensor['arduinoId'] ?? '');
+            if ($arduinoId !== '' && $channel !== '') {
+                $byDeviceChannel[sprintf('%s|%s', $arduinoId, $channel)] = (int) $index;
+            }
+        }
+
+        $byUniqueChannel = [];
+        foreach ($channelCandidates as $channel => $indexes) {
+            $uniqueIndexes = array_values(array_unique($indexes));
+            if (count($uniqueIndexes) === 1) {
+                $byUniqueChannel[$channel] = (int) $uniqueIndexes[0];
+            }
+        }
+
+        return [
+            'spot_id' => $bySpotId,
+            'label' => $byLabel,
+            'topic' => $byTopic,
+            'device_channel' => $byDeviceChannel,
+            'channel' => $byUniqueChannel,
+        ];
+    }
+
+    private function resolveSpotIndexForReading(array $reading, array $indexes, ?string $defaultDeviceId): ?int
+    {
+        $spotId = $this->normalizeKey($reading['spot_id'] ?? $reading['spotId'] ?? '');
+        if ($spotId !== '' && isset($indexes['spot_id'][$spotId])) {
+            return (int) $indexes['spot_id'][$spotId];
+        }
+
+        $spotLabel = $this->normalizeKey($reading['spot_label'] ?? $reading['spotLabel'] ?? '');
+        if ($spotLabel !== '' && isset($indexes['label'][$spotLabel])) {
+            return (int) $indexes['label'][$spotLabel];
+        }
+
+        $topic = $this->normalizeKey($reading['topic'] ?? '');
+        if ($topic !== '' && isset($indexes['topic'][$topic])) {
+            return (int) $indexes['topic'][$topic];
+        }
+
+        $channel = $this->normalizeKey($reading['channel'] ?? '');
+        $readingDevice = $this->normalizeKey(
+            $reading['arduino_id'] ?? $reading['arduinoId'] ?? $defaultDeviceId ?? '',
+        );
+
+        if ($channel !== '' && $readingDevice !== '') {
+            $deviceChannelKey = sprintf('%s|%s', $readingDevice, $channel);
+            if (isset($indexes['device_channel'][$deviceChannelKey])) {
+                return (int) $indexes['device_channel'][$deviceChannelKey];
+            }
+        }
+
+        if ($channel !== '' && isset($indexes['channel'][$channel])) {
+            return (int) $indexes['channel'][$channel];
+        }
+
+        return null;
+    }
+
+    private function resolveSpotStateFromReading(array $reading, string $currentState): string
+    {
+        $explicitState = strtoupper(trim((string) ($reading['state'] ?? '')));
+        if (in_array($explicitState, ['AVAILABLE', 'OCCUPIED', 'RESERVED', 'OFFLINE'], true)) {
+            return $explicitState;
+        }
+
+        $occupied = filter_var(
+            $reading['occupied'] ?? null,
+            FILTER_VALIDATE_BOOLEAN,
+            FILTER_NULL_ON_FAILURE,
+        );
+
+        if ($occupied === true) {
+            return 'OCCUPIED';
+        }
+
+        if ($occupied === false) {
+            return $currentState === 'RESERVED' ? 'RESERVED' : 'AVAILABLE';
+        }
+
+        return $currentState;
+    }
+
+    private function resolveSpotTimestamp(array $reading, CarbonImmutable $fallback): string
+    {
+        $timestamp = trim((string) ($reading['detected_at'] ?? ''));
+        if ($timestamp === '') {
+            return $fallback->toIso8601String();
+        }
+
+        try {
+            return CarbonImmutable::parse($timestamp)->toIso8601String();
+        } catch (\Throwable) {
+            return $fallback->toIso8601String();
+        }
+    }
+
+    private function countAvailableSpotsFromLayout(array $spots): int
+    {
+        return max(0, collect($spots)
+            ->filter(function ($spot): bool {
+                $spotArray = is_array($spot) ? $spot : [];
+                return strtoupper(trim((string) ($spotArray['state'] ?? ''))) === 'AVAILABLE';
+            })
+            ->count());
+    }
+
+    private function normalizeKey(mixed $value): string
+    {
+        return strtolower(trim((string) $value));
+    }
+
+    private function syncAvailabilityRecord(
+        Parking $parking,
+        int $totalSpots,
+        int $availableSpots,
+        ?CarbonImmutable $sensorAt = null,
+    ): array {
+        $parkingId = $this->resolveParkingId($parking);
+        $parkingName = trim((string) ($parking->name ?? ''));
+        $resolvedTotal = max(1, $totalSpots);
+        $resolvedAvailable = min($resolvedTotal, max(0, $availableSpots));
+
+        $record = $this->upsertAvailabilityRecord(
+            $parkingId,
+            $parkingName,
+            $resolvedTotal,
+            $this->isArduinoParking($parkingId, $parkingName),
+            $resolvedAvailable,
+        );
+
+        if ($sensorAt) {
+            $record->last_sensor_at = $sensorAt;
+            $record->save();
+        }
+
+        return $this->toPayload($record->fresh() ?? $record);
     }
 
     private function upsertAvailabilityRecord(

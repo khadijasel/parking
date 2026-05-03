@@ -1,15 +1,19 @@
 import 'dart:async';
-import 'dart:ui' show Tangent;
+import 'dart:ui' show Tangent, PathMetric;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:parking_front/features/parking/models/parking.dart';
+import 'package:parking_front/core/state/selected_spot_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:parking_front/core/theme/app_colors.dart';
+import 'package:parking_front/features/guidance/presentation/utils/parking_pathfinder.dart';
 
 import 'vehicle_found_screen.dart';
 
 const _kBg = Color(0xFFF0F4FA);
 const _kBlue = Color(0xFF4A90E2);
-const _kGreen = Color(0xFF2ECC71);
 const _kSpotGray = Color(0xFF98A7BB);
 const _kDark = Color(0xFF1A1A2E);
 const _kMid = Color(0xFF8A9BB5);
@@ -17,7 +21,9 @@ const _kCard = Colors.white;
 
 enum _SlotState {
   libre,
+  reserve,
   occupe,
+  offline,
 }
 
 class _ParkingSlot {
@@ -27,11 +33,12 @@ class _ParkingSlot {
   const _ParkingSlot(this.label, this.state);
 }
 
-class GuidanceToVehicleScreen extends StatefulWidget {
+class GuidanceToVehicleScreen extends ConsumerStatefulWidget {
   final String spotLabel;
   final String parkingName;
   final String reservationId;
   final int durationMinutes;
+  final ParkingIndoorMap? indoorMap;
 
   const GuidanceToVehicleScreen({
     super.key,
@@ -39,26 +46,19 @@ class GuidanceToVehicleScreen extends StatefulWidget {
     this.parkingName = 'Notre parking',
     this.reservationId = '',
     this.durationMinutes = 0,
+    this.indoorMap,
   });
 
   @override
-  State<GuidanceToVehicleScreen> createState() =>
+    ConsumerState<GuidanceToVehicleScreen> createState() =>
       _GuidanceToVehicleScreenState();
 }
 
-class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
-    with SingleTickerProviderStateMixin {
+class _GuidanceToVehicleScreenState extends ConsumerState<GuidanceToVehicleScreen>
+  with SingleTickerProviderStateMixin {
   final FlutterTts _tts = FlutterTts();
-  final List<_ParkingSlot> _leftColumn = const <_ParkingSlot>[
-    _ParkingSlot('B1', _SlotState.occupe),
-    _ParkingSlot('B2', _SlotState.libre),
-    _ParkingSlot('B3', _SlotState.libre),
-  ];
-  final List<_ParkingSlot> _rightColumn = const <_ParkingSlot>[
-    _ParkingSlot('A1', _SlotState.occupe),
-    _ParkingSlot('A2', _SlotState.occupe),
-    _ParkingSlot('A3', _SlotState.occupe),
-  ];
+  late List<_ParkingSlot> _leftColumn;
+  late List<_ParkingSlot> _rightColumn;
 
   late final AnimationController _pathController;
   Timer? _timer;
@@ -70,10 +70,14 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
   Offset _lastFocalPoint = Offset.zero;
   int _distanceMeters = 90;
   String _instruction = '';
+  late String _resolvedTargetLabel;
+  late bool _resolvedTargetOnRight;
+  late int _resolvedTargetRowIndex;
+  late String _requestedSpotLabel;
 
   Match? get _spotMatch {
     final Iterable<Match> matches =
-        RegExp(r'([A-Z])(\d+)').allMatches(widget.spotLabel.toUpperCase());
+        RegExp(r'([A-Z])(\d+)').allMatches(_requestedSpotLabel.toUpperCase());
     if (matches.isEmpty) {
       return null;
     }
@@ -96,12 +100,23 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
     return normalized - 1;
   }
 
-  String get _mappedTargetLabel =>
-      '${_targetOnRight ? 'A' : 'B'}${_targetRowIndex + 1}';
+  String get _mappedTargetLabel => _resolvedTargetLabel;
+
+  bool get _computedTargetOnRight => _resolvedTargetOnRight;
+
+  int get _computedTargetRowIndex => _resolvedTargetRowIndex;
 
   @override
   void initState() {
     super.initState();
+
+    final String? global = ref.read(selectedSpotProvider);
+    _requestedSpotLabel = (global != null && global.trim().isNotEmpty)
+        ? global.trim()
+        : widget.spotLabel;
+
+    _initializeMapFromIndoorData();
+    ref.read(selectedSpotProvider.notifier).state = _resolvedTargetLabel;
 
     _pathController = AnimationController(
       vsync: this,
@@ -133,9 +148,9 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
 
   Future<void> _configureVoice() async {
     await _tts.setLanguage('fr-FR');
-    await _tts.setSpeechRate(0.47);
+    await _tts.setSpeechRate(0.44);
     await _tts.setVolume(1.0);
-    await _tts.setPitch(1.0);
+    await _tts.setPitch(0.98);
   }
 
   double get _progress => (90 - _distanceMeters) / 90;
@@ -145,13 +160,15 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
     final String next;
 
     if (p < 0.35) {
-      next = 'Marchez tout droit sur l\'allee principale.';
+      next =
+          'Suivez l\'allee principale en restant sur la voie de circulation.';
     } else if (p < 0.72) {
-      next = _targetOnRight
-          ? 'Tournez a droite, puis avancez quelques pas.'
-          : 'Tournez a gauche, puis avancez quelques pas.';
+      next = _computedTargetOnRight
+          ? 'A l\'intersection suivante, tournez a droite puis continuez sur la voie.'
+          : 'A l\'intersection suivante, tournez a gauche puis continuez sur la voie.';
     } else {
-      next = 'Votre voiture est proche de la place $_mappedTargetLabel.';
+      next =
+          'Votre vehicule se trouve a proximite immediate de la place $_mappedTargetLabel.';
     }
 
     if (forceSpeak || next != _instruction) {
@@ -183,7 +200,7 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
       context,
       MaterialPageRoute(
         builder: (_) => VehicleFoundScreen(
-          spotLabel: widget.spotLabel,
+          spotLabel: _mappedTargetLabel,
           reservationId: widget.reservationId,
           parkingName: widget.parkingName,
           dureeMinutes:
@@ -204,41 +221,166 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
     });
   }
 
+  void _initializeMapFromIndoorData() {
+    const List<_ParkingSlot> fallbackTop = <_ParkingSlot>[
+      _ParkingSlot('P01', _SlotState.occupe),
+      _ParkingSlot('P03', _SlotState.libre),
+      _ParkingSlot('P04', _SlotState.libre),
+    ];
+    const List<_ParkingSlot> fallbackBottom = <_ParkingSlot>[
+      _ParkingSlot('P06', _SlotState.occupe),
+      _ParkingSlot('B3', _SlotState.libre),
+      _ParkingSlot('A3', _SlotState.libre),
+    ];
+
+    final ParkingIndoorMap? map = widget.indoorMap;
+    if (map == null || map.spots.isEmpty) {
+      _leftColumn = fallbackTop;
+      _rightColumn = fallbackBottom;
+      _resolvedTargetOnRight = _targetOnRight;
+      _resolvedTargetRowIndex = _targetRowIndex > 1 ? 1 : 0;
+      _resolvedTargetLabel = _requestedSpotLabel;
+      return;
+    }
+
+    final List<ParkingIndoorSpot> sorted =
+        List<ParkingIndoorSpot>.from(map.spots)
+          ..sort((ParkingIndoorSpot a, ParkingIndoorSpot b) {
+            final int byRow = a.row.compareTo(b.row);
+            if (byRow != 0) {
+              return byRow;
+            }
+            return a.col.compareTo(b.col);
+          });
+
+    final List<int> rows =
+        sorted.map((ParkingIndoorSpot s) => s.row).toSet().toList()..sort();
+    if (rows.isEmpty) {
+      _leftColumn = fallbackTop;
+      _rightColumn = fallbackBottom;
+      _resolvedTargetOnRight = _targetOnRight;
+      _resolvedTargetRowIndex = _targetRowIndex > 1 ? 1 : 0;
+      _resolvedTargetLabel = _requestedSpotLabel;
+      return;
+    }
+
+    final int topRowValue = rows.first;
+    final int bottomRowValue = rows.length > 1 ? rows.last : rows.first;
+
+    List<_ParkingSlot> toSlotsForRow(int row) {
+      final List<ParkingIndoorSpot> spots = sorted
+          .where((ParkingIndoorSpot spot) => spot.row == row)
+          .take(3)
+          .toList(growable: false);
+      return spots
+          .map((ParkingIndoorSpot spot) =>
+              _ParkingSlot(spot.label, _slotStateFromApi(spot.state)))
+          .toList(growable: false);
+    }
+
+    _leftColumn = toSlotsForRow(topRowValue);
+    _rightColumn = toSlotsForRow(bottomRowValue);
+
+    if (_leftColumn.isEmpty && _rightColumn.isEmpty) {
+      _leftColumn = fallbackTop;
+      _rightColumn = fallbackBottom;
+    } else {
+      if (_leftColumn.isEmpty) {
+        _leftColumn = fallbackTop;
+      }
+      if (_rightColumn.isEmpty) {
+        _rightColumn = fallbackBottom;
+      }
+    }
+
+    final String normalizedTarget = _normalizeLabel(_requestedSpotLabel);
+    _ParkingSlot? exact;
+    for (final _ParkingSlot slot in <_ParkingSlot>[..._leftColumn, ..._rightColumn]) {
+      if (_normalizeLabel(slot.label) == normalizedTarget) {
+        exact = slot;
+        break;
+      }
+    }
+
+    _resolvedTargetLabel = exact?.label ?? _requestedSpotLabel;
+
+    final int rightIndex =
+        _rightColumn.indexWhere((_) => _.label == _resolvedTargetLabel);
+    if (rightIndex >= 0) {
+      _resolvedTargetOnRight = true;
+      _resolvedTargetRowIndex = rightIndex.clamp(0, 2);
+      return;
+    }
+
+    final int leftIndex =
+        _leftColumn.indexWhere((_) => _.label == _resolvedTargetLabel);
+    _resolvedTargetOnRight = false;
+    _resolvedTargetRowIndex =
+        (leftIndex >= 0 ? leftIndex : (_targetRowIndex > 1 ? 1 : 0)).clamp(0, 2);
+  }
+
+  _SlotState _slotStateFromApi(String rawState) {
+    switch (rawState.trim().toUpperCase()) {
+      case 'AVAILABLE':
+        return _SlotState.libre;
+      case 'RESERVED':
+        return _SlotState.reserve;
+      case 'OFFLINE':
+        return _SlotState.offline;
+      default:
+        return _SlotState.occupe;
+    }
+  }
+
+  String _normalizeLabel(String raw) {
+    return raw.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+  }
+
   Widget _slotCard(_ParkingSlot slot) {
     final bool isTarget = slot.label == _mappedTargetLabel;
     final Color fillColor;
     final bool isFreeSlot = !isTarget && slot.state == _SlotState.libre;
 
     if (isTarget) {
-      fillColor = _kGreen;
+      fillColor = appBlue;
     } else {
       switch (slot.state) {
         case _SlotState.libre:
-          fillColor = Colors.white;
+          fillColor = appGreen;
+        case _SlotState.reserve:
+          fillColor = appOrange;
         case _SlotState.occupe:
-          fillColor = _kSpotGray;
+          fillColor = appRed;
+        case _SlotState.offline:
+          fillColor = appSpotGray;
       }
     }
 
     return Container(
-      width: 96,
-      height: 96,
+      width: kSpotSize,
+      height: kSpotSize,
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: fillColor,
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(kSpotCornerRadius),
         border: (!isTarget && slot.state == _SlotState.libre)
-            ? Border.all(color: const Color(0xFFD0DCF0), width: 1.2)
+            ? Border.all(color: Colors.white.withOpacity(0.08), width: 1.2)
             : null,
         boxShadow: isTarget
             ? <BoxShadow>[
                 BoxShadow(
-                  color: _kGreen.withOpacity(0.30),
+                  color: appBlue.withOpacity(0.30),
                   blurRadius: 12,
                   spreadRadius: 1,
                 ),
               ]
-            : null,
+            : <BoxShadow>[
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -246,7 +388,7 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
           Icon(
             Icons.directions_car_rounded,
             size: 28,
-            color: isFreeSlot ? _kMid : Colors.white,
+            color: (fillColor == appSpotGray) ? _kMid : Colors.white,
           ),
           const SizedBox(height: 6),
           Text(
@@ -254,7 +396,7 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w800,
-              color: isFreeSlot ? _kMid : Colors.white,
+              color: (fillColor == appSpotGray) ? _kMid : Colors.white,
             ),
           ),
         ],
@@ -324,58 +466,54 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
                             offset: _panOffset,
                             child: Transform.scale(
                               scale: _scale,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 22,
-                                  vertical: 20,
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                              child: SizedBox(
+                                width: 352,
+                                height: 316,
+                                child: Stack(
                                   children: <Widget>[
-                                    Column(
-                                      children: _leftColumn
-                                          .map<Widget>(_slotCard)
-                                          .toList(growable: false),
-                                    ),
-                                    SizedBox(
-                                      width: 74,
-                                      child: Stack(
-                                        alignment: Alignment.center,
-                                        children: <Widget>[
-                                          Container(
-                                            width: 52,
-                                            height: 340,
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFEBF0FA),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
+                                    Positioned.fill(
+                                      child: AnimatedBuilder(
+                                        animation: _pathController,
+                                        builder: (_, __) {
+                                          return CustomPaint(
+                                            size: const Size(352, 316),
+                                            painter: _VehicleLanePainter(
+                                              dashProgress:
+                                                  _pathController.value,
+                                              travelProgress:
+                                                  _progress.clamp(0.0, 1.0),
+                                              targetOnRight:
+                                                  _computedTargetOnRight,
+                                              targetRowIndex:
+                                                  _computedTargetRowIndex,
                                             ),
-                                          ),
-                                          AnimatedBuilder(
-                                            animation: _pathController,
-                                            builder: (_, __) {
-                                              return CustomPaint(
-                                                size: const Size(74, 340),
-                                                painter: _VehicleLanePainter(
-                                                  dashProgress:
-                                                      _pathController.value,
-                                                  travelProgress:
-                                                      _progress.clamp(0.0, 1.0),
-                                                  targetOnRight: _targetOnRight,
-                                                  targetRowIndex:
-                                                      _targetRowIndex,
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        ],
+                                          );
+                                        },
                                       ),
                                     ),
-                                    Column(
-                                      children: _rightColumn
-                                          .map<Widget>(_slotCard)
-                                          .toList(growable: false),
+                                    Positioned(
+                                      left: 14,
+                                      right: 14,
+                                      top: 18,
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: _leftColumn
+                                            .map<Widget>(_slotCard)
+                                            .toList(growable: false),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      left: 14,
+                                      right: 14,
+                                      top: 144,
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: _rightColumn
+                                            .map<Widget>(_slotCard)
+                                            .toList(growable: false),
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -473,7 +611,7 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    '🟢 Votre voiture · ⚪ Libre · ⚫ Occupé',
+                    '🟢 Libre · 🟠 Réservé · 🔴 Occupé · 🔵 Destination · ⚫ Hors service',
                     style: TextStyle(
                       fontSize: 12,
                       color: _kMid,
@@ -544,61 +682,208 @@ class _VehicleLanePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final Paint lane = Paint()..color = const Color(0xFFEBF0FA);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(size.width * 0.15, 0, size.width * 0.70, size.height),
-        const Radius.circular(8),
-      ),
-      lane,
-    );
+    _drawEntryExit(canvas, size);
 
-    final double startX = size.width / 2;
-    final double startY = size.height * 0.90;
-    final double targetY = 49 + (targetRowIndex * 110);
-    final double endX = targetOnRight ? size.width * 0.95 : size.width * 0.05;
+    const double spotSize = kSpotSize;
+    const double rowGap = 38;
+    const double topY = 18;
+    final double bottomY = topY + spotSize + rowGap;
+    const double horizontalPadding = 14;
+    final double rowWidth = size.width - (horizontalPadding * 2);
+    final double spacing = (rowWidth - (spotSize * 3)) / 2;
 
-    final Path path = Path()
-      ..moveTo(startX, startY)
-      ..lineTo(startX, targetY)
-      ..lineTo(endX, targetY);
+    final List<Rect> obstacles = <Rect>[];
+    final List<List<Rect>> gridRects = <List<Rect>>[<Rect>[], <Rect>[]];
 
-    final Paint pathPaint = Paint()
-      ..color = _kBlue
-      ..strokeWidth = 3.3
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    final metric = path.computeMetrics().first;
-    const double dash = 10;
-    const double gap = 7;
-    double distance = dashProgress * (dash + gap);
-
-    while (distance < metric.length) {
-      final double end = (distance + dash).clamp(0.0, metric.length);
-      canvas.drawPath(metric.extractPath(distance, end), pathPaint);
-      distance += dash + gap;
+    for (int col = 0; col < 3; col++) {
+      final double x = horizontalPadding + (col * (spotSize + spacing));
+      final Rect topRect = Rect.fromLTWH(x, topY, spotSize, spotSize);
+      final Rect bottomRect = Rect.fromLTWH(x, bottomY, spotSize, spotSize);
+      gridRects[0].add(topRect);
+      gridRects[1].add(bottomRect);
+      obstacles.add(topRect);
+      obstacles.add(bottomRect);
     }
 
+    final int row = targetOnRight ? 1 : 0;
+    final int col = targetRowIndex.clamp(0, 2);
+    final Rect targetRect = gridRects[row][col];
+    final Offset start = Offset(size.width / 2, size.height - 18);
+    final Offset end = Offset(
+      targetOnRight ? targetRect.right + 4 : targetRect.left - 4,
+      targetRect.center.dy,
+    );
+
+    final List<Offset> pathPoints = ParkingPathfinder.findPath(
+      canvasSize: size,
+      start: start,
+      end: end,
+      obstacles: obstacles,
+      cellSize: 8,
+      obstaclePadding: 2,
+    );
+
+    final Path fallbackPath = Path()
+      ..moveTo(start.dx, start.dy)
+      ..lineTo(start.dx, topY - 10)
+      ..lineTo(targetOnRight ? size.width - 12 : 12, topY - 10)
+      ..lineTo(targetOnRight ? size.width - 12 : 12, end.dy)
+      ..lineTo(end.dx, end.dy);
+
+    final Path path = pathPoints.length >= 2
+        ? ParkingPathfinder.pathFromPoints(pathPoints)
+        : fallbackPath;
+
+    _drawDashedPath(canvas, path);
+    _drawMovingIndicator(canvas, path);
+    _drawDestinationMarker(
+      canvas,
+      end,
+    );
+  }
+
+  void _drawEntryExit(Canvas canvas, Size size) {
+    const double bottomMargin = 14;
+    const double height = 32;
+    const double width = 90;
+
+    final Rect entranceRect = Rect.fromLTWH(
+      size.width * 0.12,
+      size.height - height - bottomMargin,
+      width,
+      height,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(entranceRect, const Radius.circular(6)),
+      Paint()..color = const Color(0xFFE8EEF7),
+    );
+    _drawTextCentered(
+      canvas,
+      'ENTRÉE',
+      entranceRect.center,
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      color: const Color(0xFF5A6B7A),
+    );
+
+    final Rect exitRect = Rect.fromLTWH(
+      size.width * 0.88 - width,
+      size.height - height - bottomMargin,
+      width,
+      height,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(exitRect, const Radius.circular(6)),
+      Paint()..color = const Color(0xFFD4E8F0),
+    );
+    _drawTextCentered(
+      canvas,
+      'SORTIE',
+      exitRect.center,
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      color: _kBlue,
+    );
+  }
+
+  void _drawDashedPath(Canvas canvas, Path path) {
+    final Paint pathPaint = Paint()
+      ..color = guideRed
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = guideRed.withOpacity(0.50)
+        ..strokeWidth = 3.4
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+
+    final Iterable<PathMetric> metrics = path.computeMetrics();
+    if (metrics.isEmpty) {
+      return;
+    }
+    final PathMetric metric = metrics.first;
+    const double dashLen = 8;
+    const double gapLen = 5;
+    double distance = dashProgress * (dashLen + gapLen);
+
+    while (distance < metric.length) {
+      final double end = (distance + dashLen).clamp(0.0, metric.length);
+      canvas.drawPath(metric.extractPath(distance, end), pathPaint);
+      distance += dashLen + gapLen;
+    }
+  }
+
+  void _drawTextCentered(
+    Canvas canvas,
+    String text,
+    Offset center, {
+    double fontSize = 12,
+    FontWeight fontWeight = FontWeight.w700,
+    Color color = Colors.white,
+  }) {
+    final TextPainter painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: color,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
+          letterSpacing: 0.2,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    painter.paint(
+      canvas,
+      center - Offset(painter.width / 2, painter.height / 2),
+    );
+  }
+
+  void _drawMovingIndicator(Canvas canvas, Path path) {
+    final Iterable<PathMetric> metrics = path.computeMetrics();
+    if (metrics.isEmpty) {
+      return;
+    }
+    final PathMetric metric = metrics.first;
     final Tangent? movingTangent = metric.getTangentForOffset(
       metric.length * travelProgress.clamp(0.0, 1.0),
     );
 
     if (movingTangent != null) {
-      canvas.drawCircle(movingTangent.position, 8, Paint()..color = _kBlue);
       canvas.drawCircle(
-          movingTangent.position, 3, Paint()..color = Colors.white);
+        movingTangent.position,
+        7,
+        Paint()..color = guideRed,
+      );
+      canvas.drawCircle(
+        movingTangent.position,
+        2.5,
+        Paint()..color = Colors.white,
+      );
     }
+  }
 
-    final Tangent? destination = metric.getTangentForOffset(metric.length);
-    if (destination != null) {
-      canvas.drawCircle(destination.position, 6, Paint()..color = _kGreen);
-    }
-
+  void _drawDestinationMarker(Canvas canvas, Offset position) {
     canvas.drawCircle(
-      Offset(startX, startY),
-      5,
-      Paint()..color = _kGreen,
+      position,
+      6.5,
+      Paint()
+        ..color = appBlue
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+    canvas.drawCircle(
+      position,
+      4,
+      Paint()..color = appBlue,
     );
   }
 

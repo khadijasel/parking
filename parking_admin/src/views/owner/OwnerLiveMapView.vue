@@ -274,6 +274,10 @@ const laneRowSet = computed(() => {
   return new Set(selectedGrid.value.laneRows ?? [])
 })
 
+const laneColSet = computed(() => {
+  return new Set(selectedGrid.value.laneCols ?? [])
+})
+
 const spotMapByCell = computed(() => {
   const map = new Map()
   selectedSpots.value.forEach((spot) => {
@@ -462,12 +466,39 @@ const spotAt = (row, col) => {
   return spotMapByCell.value.get(`${row}-${col}`) ?? null
 }
 
-const isLaneCell = (row) => {
+const isHorizontalLane = (row) => {
   return laneRowSet.value.has(row)
 }
 
+const isVerticalLane = (col) => {
+  return laneColSet.value.has(col)
+}
+
+const isLaneCell = (row, col) => {
+  return isHorizontalLane(row) || isVerticalLane(col)
+}
+
+const getLaneType = (row, col) => {
+  const hasHorizontal = isHorizontalLane(row)
+  const hasVertical = isVerticalLane(col)
+  if (hasHorizontal && hasVertical) {
+    return 'intersection'
+  }
+  if (hasHorizontal) {
+    return 'horizontal'
+  }
+  if (hasVertical) {
+    return 'vertical'
+  }
+  return null
+}
+
 const cellClass = (row, col) => {
-  if (isLaneCell(row)) {
+  if (isLaneCell(row, col)) {
+    const laneType = getLaneType(row, col)
+    if (laneType === 'intersection') {
+      return 'cursor-default border-solid border-primary bg-primary/10 text-primary font-bold'
+    }
     return 'cursor-default border-dashed border-outline-variant bg-surface-container text-outline'
   }
 
@@ -492,7 +523,7 @@ const cellClass = (row, col) => {
 }
 
 const onGridCellClick = (row, col) => {
-  if (isLaneCell(row)) {
+  if (isLaneCell(row, col)) {
     return
   }
 
@@ -665,11 +696,13 @@ onBeforeUnmount(() => {
             Visualisation des voies et places. Cliquez une place pour afficher ses details.
           </p>
 
-          <div class="mt-4 grid grid-cols-4 gap-2 text-xs font-semibold">
+          <div class="mt-4 grid grid-cols-6 gap-2 text-xs font-semibold">
             <span class="rounded-lg bg-emerald-100 px-2 py-1 text-emerald-700">Libres: {{ selectedParkingStats.available }}</span>
             <span class="rounded-lg bg-red-100 px-2 py-1 text-red-700">Occupees: {{ selectedParkingStats.occupied }}</span>
             <span class="rounded-lg bg-amber-100 px-2 py-1 text-amber-700">Reservees: {{ selectedParkingStats.reserved }}</span>
             <span class="rounded-lg bg-slate-200 px-2 py-1 text-slate-700">Offline: {{ selectedParkingStats.offline }}</span>
+            <span class="rounded-lg bg-surface-container px-2 py-1 text-outline">— Voie horiz</span>
+            <span class="rounded-lg bg-primary/10 px-2 py-1 text-primary font-bold">✕ Croisement</span>
           </div>
 
           <div class="mt-4 overflow-x-auto">
@@ -686,8 +719,16 @@ onBeforeUnmount(() => {
                   :class="[cellClass(row, col), selectedSpot?.row === row && selectedSpot?.col === col ? 'ring-2 ring-primary/60' : '']"
                   @click="onGridCellClick(row, col)"
                 >
-                  <template v-if="isLaneCell(row)">
-                    VOIE
+                  <template v-if="isLaneCell(row, col)">
+                    <template v-if="getLaneType(row, col) === 'intersection'">
+                      ✕
+                    </template>
+                    <template v-else-if="getLaneType(row, col) === 'horizontal'">
+                      —
+                    </template>
+                    <template v-else-if="getLaneType(row, col) === 'vertical'">
+                      &#124;
+                    </template>
                   </template>
                   <template v-else-if="spotAt(row, col)">
                     <span>{{ spotAt(row, col).label }}</span>
