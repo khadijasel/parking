@@ -23,7 +23,7 @@
 #define WIFI_TIMEOUT_MS  15000
 
 // ── API Laravel ───────────────────────────────────────────────
-#define API_BASE_URL     "http://192.168.1.3:8000/api"
+#define API_BASE_URL     "http://localhost:8000/api"
 #define IOT_SECRET_KEY   "smartpark_iot_secret_key_2024"
 #define PARKING_ID       "arduino-sim"
 #define API_TIMEOUT_MS   8000
