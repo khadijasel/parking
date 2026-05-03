@@ -462,9 +462,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               )
             : const Icon(Icons.g_mobiledata, size: 28, color: Colors.black87),
         label: Text(
-          _isGoogleLoading
-              ? 'Inscription Google...'
-              : 'Continuer avec Google',
+          _isGoogleLoading ? 'Inscription Google...' : 'Continuer avec Google',
           style: const TextStyle(
             color: Colors.black87,
             fontWeight: FontWeight.w600,

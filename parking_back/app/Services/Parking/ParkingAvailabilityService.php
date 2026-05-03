@@ -13,16 +13,12 @@ class ParkingAvailabilityService
     private const ARDUINO_PARKING_NAME = 'Notre parking';
 
     private const DEFAULT_PARKINGS = [
-        ['id' => '1', 'name' => 'Parking Didouche Mourad', 'total' => 20, 'arduino' => false],
-        ['id' => '2', 'name' => 'Parking Port d\'Alger', 'total' => 35, 'arduino' => false],
-        ['id' => '3', 'name' => 'Parking Grande Poste', 'total' => 10, 'arduino' => false],
-        ['id' => '4', 'name' => 'Parking Place des Martyrs', 'total' => 15, 'arduino' => false],
-        ['id' => '5', 'name' => 'Parking Audin', 'total' => 8, 'arduino' => false],
-        ['id' => '6', 'name' => 'Parking Centre Ville Tlemcen', 'total' => 24, 'arduino' => false],
-        ['id' => '7', 'name' => 'Parking Lalla Setti', 'total' => 18, 'arduino' => false],
-        ['id' => '8', 'name' => 'Parking Imama Tlemcen', 'total' => 32, 'arduino' => false],
-        ['id' => '9', 'name' => 'Parking Kiffane', 'total' => 21, 'arduino' => false],
-        ['id' => '10', 'name' => 'Parking Universite Tlemcen', 'total' => 45, 'arduino' => false],
+        ['id' => 'algiers-airport', 'name' => 'Algiers International Airport Houari Boumediene', 'total' => 2500, 'arduino' => false],
+        ['id' => 'port-algiers', 'name' => 'Port of Algiers', 'total' => 500, 'arduino' => false],
+        ['id' => 'bab-ezzouar-mall', 'name' => 'Bab Ezzouar Mall', 'total' => 1200, 'arduino' => false],
+        ['id' => 'city-center-mall', 'name' => 'City Center Mall', 'total' => 800, 'arduino' => false],
+        ['id' => 'garden-city-mall', 'name' => 'Garden City Mall', 'total' => 1500, 'arduino' => false],
+        ['id' => 'oran-airport', 'name' => 'Aeroport d\'Oran Ahmed Ben Bella', 'total' => 1200, 'arduino' => false],
         ['id' => 'arduino-sim', 'name' => self::ARDUINO_PARKING_NAME, 'total' => 6, 'arduino' => true],
     ];
 

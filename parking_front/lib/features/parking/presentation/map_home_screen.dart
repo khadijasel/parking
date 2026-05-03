@@ -306,9 +306,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
   ];
 
   List<Parking> get _parkingsByDistance {
-    final all = _parkings
-        .map(_withDynamicAvailability)
-        .toList(growable: false);
+    final all = _parkings.map(_withDynamicAvailability).toList(growable: false);
     if (_userLocation == null) return all;
     all.sort((a, b) {
       final da = LocationService.distanceKm(_userLocation!, a.location);
@@ -666,6 +664,28 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     });
   }
 
+  Future<void> _handleSearchSubmit(String value) async {
+    final String trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _searchQuery = trimmed;
+    });
+
+    final List<Parking> matches = _visibleParkings;
+    if (matches.isEmpty) {
+      AppFeedback.showInfo(
+          context, 'Aucun parking trouve pour cette recherche.');
+      return;
+    }
+
+    final Parking target = matches.first;
+    _selectParking(target);
+    await _activateNavigation(target);
+  }
+
   void _centerOnUserLocation() {
     if (_userLocation == null) {
       _loadUserLocation(force: true);
@@ -936,6 +956,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
                           }
                         });
                       },
+                      onSubmitted: _handleSearchSubmit,
                       decoration: InputDecoration(
                         hintText: 'Rechercher a $_searchCityHint...',
                         hintStyle: TextStyle(

@@ -70,14 +70,21 @@ class ReservationController extends Controller
             $this->refreshTimeoutStatus($currentActiveReservation);
         }
 
-        $hasActiveReservation = Reservation::query()
+        $activeReservationQuery = Reservation::query()
             ->where('user_id', (string) $user->getAuthIdentifier())
-            ->whereIn('reservation_status', $activeStatuses)
-            ->exists();
+            ->whereIn('reservation_status', $activeStatuses);
+
+        if ($parkingId !== '') {
+            $activeReservationQuery->where('parking_id', $parkingId);
+        } else {
+            $activeReservationQuery->where('parking_name', $parkingName);
+        }
+
+        $hasActiveReservation = $activeReservationQuery->exists();
 
         if ($hasActiveReservation) {
             return response()->json([
-                'message' => 'Vous avez deja une reservation en cours. Terminez ou annulez-la avant d en creer une nouvelle.',
+                'message' => 'Vous avez deja une reservation active pour ce parking. Terminez ou annulez-la avant d en creer une nouvelle.',
             ], 422);
         }
 

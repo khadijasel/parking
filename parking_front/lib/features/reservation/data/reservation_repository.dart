@@ -217,6 +217,84 @@ class ReservationRepository {
     }
   }
 
+  Future<Map<String, dynamic>> scanParkingTicket({
+    String? ticketId,
+    String? ticketCode,
+    String? parkingId,
+  }) async {
+    final String? token = await _localStorage.readToken();
+    if (token == null || token.isEmpty) {
+      throw const ReservationException(
+          'Session expiree. Reconnectez-vous puis reessayez.');
+    }
+
+    try {
+      final Map<String, dynamic> data = await _apiService.scanParkingTicket(
+        token: token,
+        ticketId: ticketId,
+        ticketCode: ticketCode,
+        parkingId: parkingId,
+      );
+
+      _invalidateReservationsCache();
+      _invalidateParkingHistoryCache();
+
+      final Object? parkingSessionRaw = data['parking_session'];
+      if (parkingSessionRaw is Map<String, dynamic>) {
+        _currentSessionCache =
+            ParkingSessionApiModel.fromJson(parkingSessionRaw);
+        _currentSessionCacheAt = DateTime.now();
+        _hasCurrentSessionCache = true;
+      } else if (parkingSessionRaw is Map) {
+        final Map<String, dynamic> normalized =
+            parkingSessionRaw.map<String, dynamic>(
+          (dynamic key, dynamic value) => MapEntry<String, dynamic>(
+            key.toString(),
+            value,
+          ),
+        );
+        _currentSessionCache = ParkingSessionApiModel.fromJson(normalized);
+        _currentSessionCacheAt = DateTime.now();
+        _hasCurrentSessionCache = true;
+      } else {
+        _invalidateCurrentSessionCache();
+      }
+
+      return data;
+    } on ReservationApiException catch (error) {
+      throw ReservationException(error.message);
+    }
+  }
+
+  Future<Map<String, dynamic>> exitParkingTicket({
+    required String ticketId,
+    String? ticketCode,
+  }) async {
+    final String? token = await _localStorage.readToken();
+    if (token == null || token.isEmpty) {
+      throw const ReservationException(
+          'Session expiree. Reconnectez-vous puis reessayez.');
+    }
+
+    try {
+      final Map<String, dynamic> data = await _apiService.exitParkingTicket(
+        token: token,
+        ticketId: ticketId,
+        ticketCode: ticketCode,
+      );
+
+      _currentSessionCache = null;
+      _currentSessionCacheAt = DateTime.now();
+      _hasCurrentSessionCache = true;
+      _invalidateReservationsCache();
+      _invalidateParkingHistoryCache();
+
+      return data;
+    } on ReservationApiException catch (error) {
+      throw ReservationException(error.message);
+    }
+  }
+
   Future<ParkingSessionApiModel?> fetchCurrentParkingSession({
     bool forceRefresh = false,
   }) async {

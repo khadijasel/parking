@@ -7,6 +7,7 @@ use App\Http\Requests\Payment\ConfirmPaymentRequest;
 use App\Http\Requests\Payment\InitiatePaymentRequest;
 use App\Models\Payment;
 use App\Models\ParkingSession;
+use App\Models\ParkingTicket;
 use App\Models\Reservation;
 use App\Services\Payment\MockBankService;
 use Carbon\CarbonImmutable;
@@ -140,6 +141,13 @@ class PaymentController extends Controller
                 }
 
                 $reservation->save();
+
+                ParkingTicket::query()
+                    ->where('reservation_id', (string) $reservation->getKey())
+                    ->update([
+                        'status' => 'paid',
+                        'paid_at' => CarbonImmutable::now(),
+                    ]);
             }
         }
 

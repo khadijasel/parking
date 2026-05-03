@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\Admin\UserManagementController;
 use App\Http\Controllers\Api\Owner\OwnerParkingSettingsController;
 use App\Http\Controllers\Api\ParkingCatalogController;
 use App\Http\Controllers\Api\ParkingAvailabilityController;
+use App\Http\Controllers\Api\ParkingTicketController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ReservationController;
 use Illuminate\Support\Facades\Route;
@@ -15,6 +16,11 @@ use Illuminate\Support\Facades\Route;
 Route::get('parkings', [ParkingCatalogController::class, 'index']);
 Route::get('parkings/availability', [ParkingAvailabilityController::class, 'index']);
 Route::post('parkings/arduino/availability', [ParkingAvailabilityController::class, 'updateArduino']);
+
+Route::prefix('iot')->group(function (): void {
+	Route::get('tickets', [ParkingTicketController::class, 'index']);
+	Route::post('tickets', [ParkingTicketController::class, 'create']);
+});
 
 Route::prefix('user/auth')->group(function (): void {
 	Route::post('register', [UserAuthController::class, 'register']);
@@ -72,6 +78,8 @@ Route::prefix('user')->middleware('auth:user')->group(function (): void {
 	Route::get('parking-sessions/current', [ReservationController::class, 'currentSession']);
 	Route::post('parking-sessions/exit', [ReservationController::class, 'exitSession']);
 	Route::get('parking-sessions/history', [ReservationController::class, 'sessionHistory']);
+	Route::post('tickets/scan', [ParkingTicketController::class, 'scan']);
+	Route::post('tickets/{ticketId}/exit', [ParkingTicketController::class, 'exit']);
 
 	Route::post('payments/initiate', [PaymentController::class, 'initiate']);
 	Route::post('payments/confirm', [PaymentController::class, 'confirm']);

@@ -235,6 +235,91 @@ class ReservationApiService {
     }
   }
 
+  Future<Map<String, dynamic>> scanParkingTicket({
+    required String token,
+    String? ticketId,
+    String? ticketCode,
+    String? parkingId,
+  }) async {
+    try {
+      final Response<dynamic> response = await _dio.post<dynamic>(
+        ApiConstants.userTicketScanPath,
+        data: <String, dynamic>{
+          if ((ticketId ?? '').trim().isNotEmpty) 'ticket_id': ticketId,
+          if ((ticketCode ?? '').trim().isNotEmpty) 'ticket_code': ticketCode,
+          if ((parkingId ?? '').trim().isNotEmpty) 'parking_id': parkingId,
+        },
+        options: Options(
+          headers: <String, String>{
+            'Authorization': 'Bearer $token',
+          },
+          validateStatus: (int? status) => status != null && status < 500,
+        ),
+      );
+
+      final int statusCode = response.statusCode ?? 0;
+      final Map<String, dynamic> payload = _normalizePayload(response.data);
+
+      if (statusCode != 200) {
+        throw ReservationApiException(
+          _extractMessage(payload),
+          statusCode: statusCode,
+        );
+      }
+
+      final Object? data = payload['data'];
+      if (data is! Map<String, dynamic>) {
+        throw const ReservationApiException(
+            'Ticket invalide recu depuis le serveur.');
+      }
+
+      return data;
+    } on DioException catch (error) {
+      throw _mapDioException(error);
+    }
+  }
+
+  Future<Map<String, dynamic>> exitParkingTicket({
+    required String token,
+    required String ticketId,
+    String? ticketCode,
+  }) async {
+    try {
+      final Response<dynamic> response = await _dio.post<dynamic>(
+        ApiConstants.userTicketExitPath(ticketId),
+        data: <String, dynamic>{
+          if ((ticketCode ?? '').trim().isNotEmpty) 'ticket_code': ticketCode,
+        },
+        options: Options(
+          headers: <String, String>{
+            'Authorization': 'Bearer $token',
+          },
+          validateStatus: (int? status) => status != null && status < 500,
+        ),
+      );
+
+      final int statusCode = response.statusCode ?? 0;
+      final Map<String, dynamic> payload = _normalizePayload(response.data);
+
+      if (statusCode != 200) {
+        throw ReservationApiException(
+          _extractMessage(payload),
+          statusCode: statusCode,
+        );
+      }
+
+      final Object? data = payload['data'];
+      if (data is! Map<String, dynamic>) {
+        throw const ReservationApiException(
+            'Ticket invalide recu depuis le serveur.');
+      }
+
+      return data;
+    } on DioException catch (error) {
+      throw _mapDioException(error);
+    }
+  }
+
   Future<Map<String, dynamic>?> fetchCurrentParkingSession({
     required String token,
   }) async {

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:parking_front/core/widgets/app_feedback.dart';
 import 'package:parking_front/features/main/main_screen.dart';
+import 'package:parking_front/features/scanner/presentation/screens/scanner_screen.dart';
 
 import '../../../parking/data/parking_data.dart';
 import '../../../parking/data/parking_availability_repository.dart';
@@ -208,6 +209,7 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
   String? _cancellingId;
   Map<String, int> _dynamicSpotsById = const <String, int>{};
   Map<String, int> _dynamicSpotsByName = const <String, int>{};
+  final Set<String> _expiringNotifiedIds = <String>{};
 
   @override
   void initState() {
@@ -272,6 +274,8 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
         _isLoading = false;
       });
 
+      _notifyExpiringReservations(mapped);
+
       _screenCache = List<ReservationModel>.from(mapped);
       _screenCacheAt = DateTime.now();
     } on ReservationException catch (error) {
@@ -283,6 +287,13 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
         _isLoading = false;
         _errorMessage = error.message;
       });
+
+      if (_isMongoError(error.message)) {
+        AppFeedback.showError(
+          context,
+          'Erreur de base de donnees. Veuillez reessayer.',
+        );
+      }
     } catch (_) {
       if (!mounted) {
         return;
@@ -292,6 +303,45 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
         _isLoading = false;
         _errorMessage = 'Impossible de charger vos reservations.';
       });
+    }
+  }
+
+  bool _isMongoError(String message) {
+    final String normalized = message.toLowerCase();
+    return normalized.contains('mongo');
+  }
+
+  void _notifyExpiringReservations(List<ReservationModel> reservations) {
+    final now = DateTime.now();
+    for (final reservation in reservations) {
+      if (reservation.uiStatus != ReservationUiStatus.active) {
+        continue;
+      }
+
+      final expiresAt = reservation.expiresAt;
+      if (expiresAt == null) {
+        continue;
+      }
+
+      final remaining = expiresAt.difference(now);
+      if (remaining <= Duration.zero ||
+          remaining > const Duration(minutes: 5)) {
+        continue;
+      }
+
+      if (_expiringNotifiedIds.contains(reservation.id)) {
+        continue;
+      }
+
+      _expiringNotifiedIds.add(reservation.id);
+      if (!mounted) {
+        return;
+      }
+
+      AppFeedback.showWarning(
+        context,
+        'Votre reservation expire bientot (moins de 5 minutes).',
+      );
     }
   }
 
@@ -410,29 +460,24 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
     }
   }
 
-  Future<void> _scanTicket(String reservationId) async {
-    try {
-      await _reservationRepository.completeReservationByTicket(reservationId);
-      await _loadReservations(forceRefresh: true);
-
-      if (!mounted) {
-        return;
-      }
-
-      AppFeedback.showSuccess(context, 'Ticket scanne. Reservation terminee.');
-    } on ReservationException catch (error) {
-      if (!mounted) {
-        return;
-      }
-
-      AppFeedback.showError(context, error.message);
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      AppFeedback.showError(context, 'Erreur lors du scan ticket.');
+  Future<void> _scanTicket(String _reservationId) async {
+    if (!mounted) {
+      return;
     }
+
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ScannerScreen(
+          onScanSuccess: () async {
+            await _loadReservations(forceRefresh: true);
+            if (mounted) {
+              Navigator.pop(context);
+            }
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _openReservationDetails(ReservationModel reservation) async {

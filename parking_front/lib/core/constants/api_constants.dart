@@ -74,6 +74,9 @@ class ApiConstants {
       '/user/parking-sessions/exit';
   static const String userParkingSessionHistoryPath =
       '/user/parking-sessions/history';
+  static const String userTicketScanPath = '/user/tickets/scan';
+  static String userTicketExitPath(String ticketId) =>
+      '/user/tickets/$ticketId/exit';
   static const String userPaymentsInitiatePath = '/user/payments/initiate';
   static const String userPaymentsConfirmPath = '/user/payments/confirm';
   static const String userPaymentsHistoryPath = '/user/payments/history';

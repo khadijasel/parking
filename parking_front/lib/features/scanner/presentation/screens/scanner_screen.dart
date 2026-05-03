@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -19,6 +21,24 @@ import '../../../reservation/data/reservation_repository.dart';
 
 const _kBlue = Color(0xFF4A90E2);
 
+enum _ScanMode { entry, exit }
+
+class _TicketPayload {
+  final String? ticketId;
+  final String? ticketCode;
+  final String? parkingId;
+
+  const _TicketPayload({
+    this.ticketId,
+    this.ticketCode,
+    this.parkingId,
+  });
+
+  bool get isEmpty =>
+      (ticketId == null || ticketId!.trim().isEmpty) &&
+      (ticketCode == null || ticketCode!.trim().isEmpty);
+}
+
 class ScannerScreen extends StatefulWidget {
   final VoidCallback? onScanSuccess;
 
@@ -33,6 +53,7 @@ class _ScannerScreenState extends State<ScannerScreen>
   bool _torchOn = false;
   bool _isScanning = true;
   bool _isSubmitting = false;
+  _ScanMode _scanMode = _ScanMode.entry;
   final ReservationRepository _reservationRepository = ReservationRepository();
 
   // Animation ligne de scan
@@ -80,15 +101,73 @@ class _ScannerScreenState extends State<ScannerScreen>
     setState(() => _isSubmitting = true);
 
     try {
-      final ReservationApiModel reservation =
-          await _reservationRepository.completeReservationByTicket(code);
-      _showResultSheet(
-        code,
-        isValid: true,
-        message: 'Votre ticket a ete scanne avec succes.',
-        ticketReference: reservation.id,
-        afterClose: widget.onScanSuccess,
-      );
+      final _TicketPayload payload = _parseTicketPayload(code);
+      if (payload.isEmpty) {
+        _showResultSheet(
+          code,
+          isValid: false,
+          message: 'Ticket invalide. Essayez a nouveau.',
+        );
+        return;
+      }
+
+      if (_scanMode == _ScanMode.entry) {
+        try {
+          final Map<String, dynamic> result =
+              await _reservationRepository.scanParkingTicket(
+            ticketId: payload.ticketId,
+            ticketCode: payload.ticketCode,
+            parkingId: payload.parkingId,
+          );
+
+          _showResultSheet(
+            code,
+            isValid: true,
+            message: 'Ticket scanne avec succes.',
+            ticketReference: _extractTicketId(result),
+            afterClose: widget.onScanSuccess,
+          );
+        } on ReservationException catch (error) {
+          if (_looksLikeLegacyReservation(code) &&
+              _isTicketNotFound(error.message)) {
+            final ReservationApiModel reservation =
+                await _reservationRepository.completeReservationByTicket(code);
+            _showResultSheet(
+              code,
+              isValid: true,
+              message: 'Ticket scanne avec succes.',
+              ticketReference: reservation.id,
+              afterClose: widget.onScanSuccess,
+            );
+            return;
+          }
+          rethrow;
+        }
+      } else {
+        final String? ticketId = payload.ticketId;
+        if (ticketId == null || ticketId.trim().isEmpty) {
+          _showResultSheet(
+            code,
+            isValid: false,
+            message: 'Ticket invalide: identifiant manquant.',
+          );
+          return;
+        }
+
+        final Map<String, dynamic> result =
+            await _reservationRepository.exitParkingTicket(
+          ticketId: ticketId,
+          ticketCode: payload.ticketCode,
+        );
+
+        _showResultSheet(
+          code,
+          isValid: true,
+          message: 'Sortie autorisee. Bonne route.',
+          ticketReference: _extractTicketId(result) ?? ticketId,
+          afterClose: widget.onScanSuccess,
+        );
+      }
     } on ReservationException catch (error) {
       _showResultSheet(
         code,
@@ -106,6 +185,75 @@ class _ScannerScreenState extends State<ScannerScreen>
         setState(() => _isSubmitting = false);
       }
     }
+  }
+
+  _TicketPayload _parseTicketPayload(String raw) {
+    final String trimmed = raw.trim();
+    if (trimmed.isEmpty) {
+      return const _TicketPayload();
+    }
+
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        final Object? decoded = jsonDecode(trimmed);
+        if (decoded is Map) {
+          final Map<String, dynamic> map = decoded.map<String, dynamic>(
+            (dynamic key, dynamic value) => MapEntry<String, dynamic>(
+              key.toString(),
+              value,
+            ),
+          );
+          return _TicketPayload(
+            ticketId: _stringOrNull(map['ticket_id'] ?? map['ticketId']),
+            ticketCode: _stringOrNull(map['ticket_code'] ?? map['ticketCode']),
+            parkingId: _stringOrNull(map['parking_id'] ?? map['parkingId']),
+          );
+        }
+      } catch (_) {
+        // Ignore invalid JSON and fallback to raw parsing.
+      }
+    }
+
+    if (_looksLikeLegacyReservation(trimmed)) {
+      return _TicketPayload(ticketId: trimmed);
+    }
+
+    return _TicketPayload(ticketCode: trimmed);
+  }
+
+  String? _stringOrNull(Object? value) {
+    if (value == null) {
+      return null;
+    }
+
+    final String text = value.toString().trim();
+    if (text.isEmpty) {
+      return null;
+    }
+
+    return text;
+  }
+
+  bool _looksLikeLegacyReservation(String value) {
+    return RegExp(r'^[a-fA-F0-9]{24}$').hasMatch(value.trim());
+  }
+
+  bool _isTicketNotFound(String message) {
+    return message.toLowerCase().contains('introuvable');
+  }
+
+  String? _extractTicketId(Map<String, dynamic> data) {
+    final Object? ticketRaw = data['ticket'];
+    if (ticketRaw is Map) {
+      final Object? id = ticketRaw['id'];
+      if (id != null) {
+        final String text = id.toString().trim();
+        if (text.isNotEmpty) {
+          return text;
+        }
+      }
+    }
+    return null;
   }
 
   void _showResultSheet(
@@ -142,6 +290,15 @@ class _ScannerScreenState extends State<ScannerScreen>
 
   Future<void> _simulateScanFromCurrentReservation() async {
     if (_isSubmitting) {
+      return;
+    }
+
+    if (_scanMode == _ScanMode.exit) {
+      _showResultSheet(
+        'SORTIE',
+        isValid: false,
+        message: 'Scannez un ticket de sortie pour continuer.',
+      );
       return;
     }
 
@@ -259,16 +416,24 @@ class _ScannerScreenState extends State<ScannerScreen>
 
           // ── Texte instruction ─────────────────────────────
           Positioned(
-            top: size.height / 2 - frameH / 2 - 52,
+            top: size.height / 2 - frameH / 2 - 72,
             left: 0,
             right: 0,
-            child: const Text(
-              'Placez le ticket dans le cadre',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500),
+            child: Column(
+              children: [
+                Text(
+                  _scanMode == _ScanMode.entry
+                      ? 'Placez le ticket d entree dans le cadre'
+                      : 'Placez le ticket de sortie dans le cadre',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 10),
+                _buildModeToggle(),
+              ],
             ),
           ),
 
@@ -302,6 +467,52 @@ class _ScannerScreenState extends State<ScannerScreen>
             child: _buildBottomBar(),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildModeToggle() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _modeChip(label: 'Entree', mode: _ScanMode.entry),
+        const SizedBox(width: 12),
+        _modeChip(label: 'Sortie', mode: _ScanMode.exit),
+      ],
+    );
+  }
+
+  Widget _modeChip({required String label, required _ScanMode mode}) {
+    final bool isActive = _scanMode == mode;
+    return GestureDetector(
+      onTap: () {
+        if (_scanMode == mode) {
+          return;
+        }
+        setState(() {
+          _scanMode = mode;
+        });
+        HapticFeedback.selectionClick();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? _kBlue : Colors.black.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive ? _kBlue : Colors.white24,
+            width: 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isActive ? Colors.white : Colors.white70,
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+          ),
+        ),
       ),
     );
   }
