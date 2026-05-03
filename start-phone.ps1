@@ -24,7 +24,7 @@ function Assert-Tool {
     }
 }
 
-function Normalize-ApiPath {
+function Format-ApiPath {
     param([string]$RawApiPath)
 
     $clean = $RawApiPath
@@ -144,7 +144,7 @@ function Get-DotEnvValue {
     return ""
 }
 
-function Ensure-FirewallRule {
+function Set-FirewallRule {
     param(
         [int]$ListenPort,
         [switch]$SkipRule,
@@ -206,7 +206,7 @@ if (-not (Test-Path (Join-Path $frontPath "pubspec.yaml"))) {
 Assert-Tool -CommandName "php"
 Assert-Tool -CommandName "flutter"
 
-$normalizedApiPath = Normalize-ApiPath -RawApiPath $ApiPath
+$normalizedApiPath = Format-ApiPath -RawApiPath $ApiPath
 $localIp = Resolve-LocalIp -OverrideIp $IpAddress
 $apiBaseUrl = "http://$localIp`:$Port$normalizedApiPath"
 $resolvedDeviceId = Resolve-AndroidDeviceId -RequestedDeviceId $DeviceId
@@ -215,7 +215,7 @@ Write-Step "Using local IP: $localIp"
 Write-Step "Using Android device: $resolvedDeviceId"
 Write-Step "Using API base URL: $apiBaseUrl"
 
-Ensure-FirewallRule -ListenPort $Port -SkipRule:$SkipFirewallRule -Dry:$DryRun
+Set-FirewallRule -ListenPort $Port -SkipRule:$SkipFirewallRule -Dry:$DryRun
 Start-BackendServer -BackendPath $backendPath -ListenPort $Port -Dry:$DryRun
 
 if ($DryRun) {

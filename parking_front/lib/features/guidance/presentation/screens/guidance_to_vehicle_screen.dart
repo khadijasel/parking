@@ -339,7 +339,6 @@ class _GuidanceToVehicleScreenState extends ConsumerState<GuidanceToVehicleScree
   Widget _slotCard(_ParkingSlot slot) {
     final bool isTarget = slot.label == _mappedTargetLabel;
     final Color fillColor;
-    final bool isFreeSlot = !isTarget && slot.state == _SlotState.libre;
 
     if (isTarget) {
       fillColor = appBlue;

@@ -12,7 +12,7 @@ class AppTheme {
       surface: Colors.white,
     ),
 
-    cardTheme: CardThemeData(
+    cardTheme: CardTheme(
       color: AppColors.card,
       elevation: 4,
       shape: RoundedRectangleBorder(
