@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:parking_front/core/widgets/app_feedback.dart';
+import 'package:parking_front/features/guidance/presentation/utils/guidance_spot_layout.dart';
+import 'package:parking_front/features/parking/models/parking.dart';
 import 'package:parking_front/features/reservation/data/reservation_repository.dart';
 
 import 'exit_success_screen.dart';
@@ -12,18 +14,21 @@ import 'exit_success_screen.dart';
 const _kBg = Color(0xFFF0F4FA);
 const _kBlue = Color(0xFF4A90E2);
 const _kGreen = Color(0xFF2ECC71);
-const _kSpotGray = Color(0xFF98A7BB);
+const _kOrange = Color(0xFFF5A623);
+const _kRed = Color(0xFFE53935);
 const _kDark = Color(0xFF1A1A2E);
 const _kMid = Color(0xFF8A9BB5);
 
 class GuidanceToExitScreen extends StatefulWidget {
   final String spotLabel;
   final bool showMapComingSoon;
+  final List<ParkingIndoorSpot> spots;
 
   const GuidanceToExitScreen({
     super.key,
     this.spotLabel = 'B2',
     this.showMapComingSoon = false,
+    this.spots = const <ParkingIndoorSpot>[],
   });
 
   @override
@@ -36,6 +41,8 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
   final ReservationRepository _reservationRepository = ReservationRepository();
 
   late final AnimationController _pathController;
+  late final GuidanceSpotLayout _layout;
+  late final GuidanceSpotViewData _currentSpotData;
   Timer? _timer;
 
   bool _voiceEnabled = true;
@@ -43,30 +50,18 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
   int _distanceMeters = 70;
   String _instruction = '';
 
-  // Spot column index (0=left A3/B3, 1=center A2/B2, 2=right A1/B1)
-  bool get _isTopRow => _normalizedSpotLabel.toUpperCase().startsWith('A');
+  // Spot column index (0=left, 1=center, 2=right)
+  bool get _isTopRow => _currentSpotData.rowIndex == 0;
 
-  int get _spotColIndex {
-    final Match? match = RegExp(r'(\d+)').firstMatch(_normalizedSpotLabel);
-    final int n = int.tryParse(match?.group(1) ?? '1') ?? 1;
-    return 3 - n.clamp(1, 3);
-  }
+  int get _spotColIndex => _currentSpotData.colIndex;
 
-  String get _normalizedSpotLabel {
-    final String source = widget.spotLabel.trim().toUpperCase();
-    final Iterable<Match> matches =
-        RegExp(r'([AB])\s*-?\s*(\d+)').allMatches(source);
-    if (matches.isEmpty) return 'A1';
-    final Match match = matches.last;
-    final String letter = match.group(1) ?? 'A';
-    final int raw = int.tryParse(match.group(2) ?? '1') ?? 1;
-    final int normalized = ((raw - 1) % 3) + 1;
-    return '$letter$normalized';
-  }
+  String get _normalizedSpotLabel => _currentSpotData.displayLabel;
 
   @override
   void initState() {
     super.initState();
+    _layout = GuidanceSpotLayout.fromIndoorSpots(widget.spots);
+    _currentSpotData = _resolveCurrentSpotData();
 
     _pathController = AnimationController(
       vsync: this,
@@ -106,6 +101,16 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
     await _tts.setSpeechRate(0.47);
     await _tts.setVolume(1.0);
     await _tts.setPitch(1.0);
+  }
+
+  GuidanceSpotViewData _resolveCurrentSpotData() {
+    final String resolvedLabel = resolveSpotLabelFromTicketCode(
+      widget.spotLabel,
+      widget.spots,
+      fallback: widget.spotLabel,
+    );
+
+    return _layout.findByLabel(resolvedLabel) ?? _layout.topRow.first;
   }
 
   double get _progress => (70 - _distanceMeters) / 70;
@@ -217,15 +222,24 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
                         child: AnimatedBuilder(
                           animation: _pathController,
                           builder: (_, __) {
-                            return CustomPaint(
-                              size: const Size(280, 360),
-                              painter: _ExitTopViewPainter(
-                                dashProgress: _pathController.value,
-                                travelProgress: _progress.clamp(0.0, 1.0),
-                                spotLabel: _normalizedSpotLabel,
-                                isTopRow: _isTopRow,
-                                spotColIndex: _spotColIndex,
-                              ),
+                            return LayoutBuilder(
+                              builder: (context, constraints) {
+                                return CustomPaint(
+                                  size: Size(
+                                    constraints.maxWidth,
+                                    constraints.maxHeight,
+                                  ),
+                                  painter: _ExitTopViewPainter(
+                                    dashProgress: _pathController.value,
+                                    travelProgress: _progress.clamp(0.0, 1.0),
+                                    spotLabel: _normalizedSpotLabel,
+                                    isTopRow: _isTopRow,
+                                    spotColIndex: _spotColIndex,
+                                    topRow: _layout.topRow,
+                                    bottomRow: _layout.bottomRow,
+                                  ),
+                                );
+                              },
                             );
                           },
                         ),
@@ -322,7 +336,7 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      '🟢 Votre place · ⚫ Autres places',
+                      '🔵 Votre place · 🟢 Libre · 🟠 Réservé · 🔴 Occupé',
                       style: TextStyle(
                         fontSize: 12,
                         color: _kMid,
@@ -429,6 +443,8 @@ class _ExitTopViewPainter extends CustomPainter {
   final String spotLabel;
   final bool isTopRow;
   final int spotColIndex; // 0=left(A3/B3), 1=center(A2/B2), 2=right(A1/B1)
+  final List<GuidanceSpotViewData> topRow;
+  final List<GuidanceSpotViewData> bottomRow;
 
   _ExitTopViewPainter({
     required this.dashProgress,
@@ -436,14 +452,12 @@ class _ExitTopViewPainter extends CustomPainter {
     required this.spotLabel,
     required this.isTopRow,
     required this.spotColIndex,
+    required this.topRow,
+    required this.bottomRow,
   });
 
   static const double _roadW = 28.0;
   static const double _treeR = 9.0;
-
-  // All 6 spot labels
-  static const List<String> _topLabels = ['A3', 'A2', 'A1'];
-  static const List<String> _bottomLabels = ['B3', 'B2', 'B1'];
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -494,8 +508,8 @@ class _ExitTopViewPainter extends CustomPainter {
 
     // Row A
     for (int c = 0; c < nCols; c++) {
-      final String label = _topLabels[c];
-      final bool isTarget = label == spotLabel;
+      final GuidanceSpotViewData spot = topRow[c];
+      final bool isTarget = spot.label == spotLabel;
       _drawSpot(
         canvas,
         Rect.fromLTWH(
@@ -504,15 +518,15 @@ class _ExitTopViewPainter extends CustomPainter {
           colW - spotMargin * 2,
           spotAreaH - spotMargin * 2,
         ),
-        label,
+        spot,
         isTarget,
       );
     }
 
     // Row B
     for (int c = 0; c < nCols; c++) {
-      final String label = _bottomLabels[c];
-      final bool isTarget = label == spotLabel;
+      final GuidanceSpotViewData spot = bottomRow[c];
+      final bool isTarget = spot.label == spotLabel;
       _drawSpot(
         canvas,
         Rect.fromLTWH(
@@ -521,7 +535,7 @@ class _ExitTopViewPainter extends CustomPainter {
           colW - spotMargin * 2,
           (rowBBot - rowBTop) - spotMargin * 2,
         ),
-        label,
+        spot,
         isTarget,
       );
     }
@@ -560,25 +574,23 @@ class _ExitTopViewPainter extends CustomPainter {
         : (rowBTop + (rowBBot - rowBTop) / 2);
 
     final double rightRoadCX = rightRoadLeft + _roadW / 2;
-    final double topRoadCY = 0 + _roadW / 2;      // center of top horizontal road
-    final double bottomRoadCY = bottomRoadTop + _roadW / 2; // center of bottom horizontal road
+    final double topRoadCY = _roadW / 2; // center of top horizontal road
+    final double bottomRoadCY = bottomRoadTop + _roadW / 2;
     final double exitY = h; // bottom of canvas = SORTIE
 
     Path path;
     if (isTopRow) {
-      // Row A → top road → right road → SORTIE
+      // Row A: stay on top road, then right road.
       path = Path()
-        ..moveTo(spotCX, spotCY)
-        ..lineTo(spotCX, topRoadCY)         // go UP to top horizontal road
-        ..lineTo(rightRoadCX, topRoadCY)    // go RIGHT along top road
-        ..lineTo(rightRoadCX, exitY);       // go DOWN right road to SORTIE
+        ..moveTo(spotCX, topRoadCY)
+        ..lineTo(rightRoadCX, topRoadCY)
+        ..lineTo(rightRoadCX, exitY);
     } else {
-      // Row B → bottom road → right road → SORTIE
+      // Row B: stay on bottom road, then right road.
       path = Path()
-        ..moveTo(spotCX, spotCY)
-        ..lineTo(spotCX, bottomRoadCY)      // go DOWN to bottom horizontal road
-        ..lineTo(rightRoadCX, bottomRoadCY) // go RIGHT along bottom road
-        ..lineTo(rightRoadCX, exitY);       // go DOWN right road to SORTIE
+        ..moveTo(spotCX, bottomRoadCY)
+        ..lineTo(rightRoadCX, bottomRoadCY)
+        ..lineTo(rightRoadCX, exitY);
     }
 
     _drawAnimatedPath(canvas, path);
@@ -587,12 +599,30 @@ class _ExitTopViewPainter extends CustomPainter {
     canvas.drawCircle(
       Offset(spotCX, spotCY),
       6,
-      Paint()..color = _kGreen,
+      Paint()..color = _kBlue,
     );
   }
 
-  void _drawSpot(Canvas canvas, Rect rect, String label, bool isTarget) {
-    final Color fillColor = isTarget ? _kGreen : _kSpotGray;
+  void _drawSpot(
+    Canvas canvas,
+    Rect rect,
+    GuidanceSpotViewData spot,
+    bool isTarget,
+  ) {
+    final Color fillColor;
+    if (isTarget) {
+      fillColor = _kBlue;
+    } else {
+      switch (spot.state) {
+        case GuidanceSpotState.available:
+          fillColor = _kGreen;
+        case GuidanceSpotState.reserved:
+          fillColor = _kOrange;
+        case GuidanceSpotState.occupied:
+          fillColor = _kRed;
+      }
+    }
+
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect, const Radius.circular(8)),
       Paint()..color = fillColor,
@@ -600,7 +630,7 @@ class _ExitTopViewPainter extends CustomPainter {
 
     final TextPainter tp = TextPainter(
       text: TextSpan(
-        text: label,
+        text: spot.displayLabel,
         style: TextStyle(
           color: isTarget ? Colors.white : Colors.white70,
           fontSize: 13,

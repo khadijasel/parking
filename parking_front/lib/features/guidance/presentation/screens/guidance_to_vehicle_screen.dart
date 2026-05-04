@@ -4,34 +4,26 @@ import 'dart:ui' show Tangent;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:parking_front/features/guidance/presentation/utils/guidance_spot_layout.dart';
+import 'package:parking_front/features/parking/models/parking.dart';
 
 import 'vehicle_found_screen.dart';
 
 const _kBg = Color(0xFFF0F4FA);
 const _kBlue = Color(0xFF4A90E2);
 const _kGreen = Color(0xFF2ECC71);
-const _kSpotGray = Color(0xFF98A7BB);
+const _kOrange = Color(0xFFF5A623);
+const _kRed = Color(0xFFE53935);
 const _kDark = Color(0xFF1A1A2E);
 const _kMid = Color(0xFF8A9BB5);
 const _kCard = Colors.white;
-
-enum _SlotState {
-  libre,
-  occupe,
-}
-
-class _ParkingSlot {
-  final String label;
-  final _SlotState state;
-
-  const _ParkingSlot(this.label, this.state);
-}
 
 class GuidanceToVehicleScreen extends StatefulWidget {
   final String spotLabel;
   final String parkingName;
   final String reservationId;
   final int durationMinutes;
+  final List<ParkingIndoorSpot> spots;
 
   const GuidanceToVehicleScreen({
     super.key,
@@ -39,6 +31,7 @@ class GuidanceToVehicleScreen extends StatefulWidget {
     this.parkingName = 'Notre parking',
     this.reservationId = '',
     this.durationMinutes = 0,
+    this.spots = const <ParkingIndoorSpot>[],
   });
 
   @override
@@ -50,21 +43,12 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
     with SingleTickerProviderStateMixin {
   final FlutterTts _tts = FlutterTts();
 
-  // Top row: A3(col0), A2(col1), A1(col2)
-  final List<_ParkingSlot> _topRow = const <_ParkingSlot>[
-    _ParkingSlot('A3', _SlotState.occupe),
-    _ParkingSlot('A2', _SlotState.occupe),
-    _ParkingSlot('A1', _SlotState.occupe),
-  ];
-
-  // Bottom row: B3(col0), B2(col1), B1(col2)
-  final List<_ParkingSlot> _bottomRow = const <_ParkingSlot>[
-    _ParkingSlot('B3', _SlotState.libre),
-    _ParkingSlot('B2', _SlotState.occupe),
-    _ParkingSlot('B1', _SlotState.libre),
-  ];
-
   late final AnimationController _pathController;
+  late final GuidanceSpotLayout _layout;
+  late final GuidanceSpotViewData _targetSpotData;
+  late final bool _resolvedIsTopRow;
+  late final int _resolvedTargetColIndex;
+  late final String _resolvedTargetLabel;
   Timer? _timer;
 
   bool _voiceEnabled = true;
@@ -75,28 +59,24 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
   int _distanceMeters = 90;
   String _instruction = '';
 
-  Match? get _spotMatch {
-    final Iterable<Match> matches =
-        RegExp(r'([A-Z])(\d+)').allMatches(widget.spotLabel.toUpperCase());
-    if (matches.isEmpty) return null;
-    return matches.last;
+  GuidanceSpotViewData _resolveTargetSpotData() {
+    final String resolvedLabel = resolveSpotLabelFromTicketCode(
+      widget.spotLabel,
+      widget.spots,
+      fallback: widget.spotLabel,
+    );
+
+    return _layout.findByLabel(resolvedLabel) ?? _layout.topRow.first;
   }
-
-  String get _targetLetter => _spotMatch?.group(1) ?? 'B';
-  int get _targetNumber => int.tryParse(_spotMatch?.group(2) ?? '2') ?? 2;
-
-  bool get _isTopRow => _targetLetter == 'A';
-
-  int get _targetColIndex {
-    // A1→col2, A2→col1, A3→col0 | B1→col2, B2→col1, B3→col0
-    return 3 - _targetNumber.clamp(1, 3);
-  }
-
-  String get _mappedTargetLabel => '$_targetLetter${_targetNumber.clamp(1, 3)}';
 
   @override
   void initState() {
     super.initState();
+    _layout = GuidanceSpotLayout.fromIndoorSpots(widget.spots);
+    _targetSpotData = _resolveTargetSpotData();
+    _resolvedIsTopRow = _targetSpotData.rowIndex == 0;
+    _resolvedTargetColIndex = _targetSpotData.colIndex;
+    _resolvedTargetLabel = _targetSpotData.displayLabel;
     _pathController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
@@ -138,11 +118,11 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
     if (p < 0.35) {
       next = 'Entrez et avancez sur la voie de gauche.';
     } else if (p < 0.72) {
-      next = _isTopRow
-          ? 'Tournez a droite et continuez vers les places A.'
-          : 'Continuez tout droit vers les places B.';
+      next = _resolvedIsTopRow
+          ? 'Tournez a droite et continuez vers les places du haut.'
+          : 'Continuez tout droit vers les places du bas.';
     } else {
-      next = 'Votre voiture est proche de la place $_mappedTargetLabel.';
+      next = 'Votre voiture est proche de la place $_resolvedTargetLabel.';
     }
 
     if (forceSpeak || next != _instruction) {
@@ -171,7 +151,7 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
       context,
       MaterialPageRoute(
         builder: (_) => VehicleFoundScreen(
-          spotLabel: widget.spotLabel,
+          spotLabel: _resolvedTargetLabel,
           reservationId: widget.reservationId,
           parkingName: widget.parkingName,
           dureeMinutes: widget.durationMinutes <= 0 ? 1 : widget.durationMinutes,
@@ -255,17 +235,25 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
                               child: AnimatedBuilder(
                                 animation: _pathController,
                                 builder: (_, __) {
-                                  return CustomPaint(
-                                    size: const Size(300, 360),
-                                    painter: _TopViewParkingPainter(
-                                      dashProgress: _pathController.value,
-                                      travelProgress: _progress.clamp(0.0, 1.0),
-                                      targetLabel: _mappedTargetLabel,
-                                      isTopRow: _isTopRow,
-                                      targetColIndex: _targetColIndex,
-                                      topRow: _topRow,
-                                      bottomRow: _bottomRow,
-                                    ),
+                                  return LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      return CustomPaint(
+                                        size: Size(
+                                          constraints.maxWidth,
+                                          constraints.maxHeight,
+                                        ),
+                                        painter: _TopViewParkingPainter(
+                                          dashProgress: _pathController.value,
+                                          travelProgress:
+                                              _progress.clamp(0.0, 1.0),
+                                          targetLabel: _resolvedTargetLabel,
+                                          isTopRow: _resolvedIsTopRow,
+                                          targetColIndex: _resolvedTargetColIndex,
+                                          topRow: _layout.topRow,
+                                          bottomRow: _layout.bottomRow,
+                                        ),
+                                      );
+                                    },
                                   );
                                 },
                               ),
@@ -355,13 +343,13 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
                     runSpacing: 8,
                     children: <Widget>[
                       _InfoChip(label: 'Distance: $_distanceMeters m'),
-                      _InfoChip(label: 'Place: $_mappedTargetLabel'),
+                      _InfoChip(label: 'Place: $_resolvedTargetLabel'),
                       _InfoChip(label: widget.parkingName),
                     ],
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    '🟢 Votre voiture · ⚪ Libre · ⚫ Occupé',
+                    '🔵 Votre voiture · 🟢 Libre · 🟠 Réservé · 🔴 Occupé',
                     style: TextStyle(
                       fontSize: 12,
                       color: _kMid,
@@ -445,8 +433,8 @@ class _TopViewParkingPainter extends CustomPainter {
   final String targetLabel;
   final bool isTopRow;
   final int targetColIndex; // 0=left(A3/B3), 1=center(A2/B2), 2=right(A1/B1)
-  final List<_ParkingSlot> topRow;
-  final List<_ParkingSlot> bottomRow;
+  final List<GuidanceSpotViewData> topRow;
+  final List<GuidanceSpotViewData> bottomRow;
 
   _TopViewParkingPainter({
     required this.dashProgress,
@@ -558,7 +546,7 @@ class _TopViewParkingPainter extends CustomPainter {
     // ── Row A spots (top row, spots open downward) ─────────────────────────
     const double spotMargin = 4.0;
     for (int c = 0; c < nCols; c++) {
-      final _ParkingSlot slot = topRow[c];
+      final GuidanceSpotViewData slot = topRow[c];
       final bool isTarget = slot.label == targetLabel;
       final Rect rect = Rect.fromLTWH(
         leftRoadRight + colW * c + spotMargin,
@@ -571,7 +559,7 @@ class _TopViewParkingPainter extends CustomPainter {
 
     // ── Row B spots (bottom row, spots open upward) ────────────────────────
     for (int c = 0; c < nCols; c++) {
-      final _ParkingSlot slot = bottomRow[c];
+      final GuidanceSpotViewData slot = bottomRow[c];
       final bool isTarget = slot.label == targetLabel;
       final Rect rect = Rect.fromLTWH(
         leftRoadRight + colW * c + spotMargin,
@@ -616,33 +604,26 @@ class _TopViewParkingPainter extends CustomPainter {
     final double entryX = leftRoadLeft + _roadW / 2;
     final double entryY = bottomRoadBot; // bottom of canvas = ENTRÉE
 
-    // Target spot center
+    // Target column center
     final double targetCX = colCX[targetColIndex];
-    final double targetCY = isTopRow
-        ? (rowATop + spotAreaH / 2)
-        : (rowBTop + (rowBBot - rowBTop) / 2);
+    final double topRoadCY = topRoadTop + _roadW / 2;
+    final double bottomRoadCY = bottomRoadTop + _roadW / 2;
 
-    // Build path along roads only:
-    // ENTRÉE → up leftRoad → turn at appropriate height → horizontal to target col → into spot
+    // Build path along roads only (no spot crossing).
     Path path;
 
-    if (!isTopRow) {
-      // Row B: enter from bottom-left, go up leftRoad to center of rowB, turn right to target col
-      final double turnY = targetCY;
+    if (isTopRow) {
+      // Row A: stay on top road.
       path = Path()
         ..moveTo(entryX, entryY)
-        ..lineTo(entryX, turnY)       // up left road to rowB level
-        ..lineTo(targetCX, turnY)     // right along rowB center
-        ..lineTo(targetCX, targetCY); // already there (same y)
+        ..lineTo(entryX, topRoadCY)
+        ..lineTo(targetCX, topRoadCY);
     } else {
-      // Row A: enter bottom-left, go up leftRoad all the way to topRoad,
-      // turn right on topRoad to target col, drop down into rowA
-      final double topRoadCY = topRoadTop + _roadW / 2;
+      // Row B: stay on bottom road.
       path = Path()
         ..moveTo(entryX, entryY)
-        ..lineTo(entryX, topRoadCY)   // up left road to top road
-        ..lineTo(targetCX, topRoadCY) // right along top road
-        ..lineTo(targetCX, targetCY); // drop down into row A spot
+        ..lineTo(entryX, bottomRoadCY)
+        ..lineTo(targetCX, bottomRoadCY);
     }
 
     _drawAnimatedPath(canvas, path);
@@ -655,16 +636,23 @@ class _TopViewParkingPainter extends CustomPainter {
     );
   }
 
-  void _drawSpot(Canvas canvas, Rect rect, _ParkingSlot slot, bool isTarget) {
+  void _drawSpot(
+    Canvas canvas,
+    Rect rect,
+    GuidanceSpotViewData slot,
+    bool isTarget,
+  ) {
     Color fillColor;
     if (isTarget) {
-      fillColor = _kGreen;
+      fillColor = _kBlue;
     } else {
       switch (slot.state) {
-        case _SlotState.libre:
-          fillColor = const Color(0xFF3A4A60);
-        case _SlotState.occupe:
-          fillColor = _kSpotGray;
+        case GuidanceSpotState.available:
+          fillColor = _kGreen;
+        case GuidanceSpotState.reserved:
+          fillColor = _kOrange;
+        case GuidanceSpotState.occupied:
+          fillColor = _kRed;
       }
     }
 
@@ -672,7 +660,7 @@ class _TopViewParkingPainter extends CustomPainter {
     canvas.drawRRect(rRect, Paint()..color = fillColor);
 
     // Border for empty spots
-    if (!isTarget && slot.state == _SlotState.libre) {
+    if (!isTarget && slot.state == GuidanceSpotState.available) {
       canvas.drawRRect(
         rRect,
         Paint()
@@ -694,7 +682,7 @@ class _TopViewParkingPainter extends CustomPainter {
     // Label
     final TextPainter tp = TextPainter(
       text: TextSpan(
-        text: slot.label,
+        text: slot.displayLabel,
         style: TextStyle(
           color: isTarget ? Colors.white : Colors.white70,
           fontSize: 13,
@@ -818,7 +806,7 @@ class _TopViewParkingPainter extends CustomPainter {
     // Destination dot
     final Tangent? destination = metric.getTangentForOffset(metric.length);
     if (destination != null) {
-      canvas.drawCircle(destination.position, 6, Paint()..color = _kGreen);
+      canvas.drawCircle(destination.position, 6, Paint()..color = _kBlue);
     }
   }
 

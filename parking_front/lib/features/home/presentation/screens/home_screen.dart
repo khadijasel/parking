@@ -7,6 +7,7 @@ import 'package:parking_front/features/payment/data/payment_repository.dart';
 import 'package:parking_front/features/payment/presentation/screens/payment_confirmation_screen.dart';
 import 'package:parking_front/features/payment/presentation/screens/payment_screen.dart';
 import 'package:parking_front/core/state/selected_spot_provider.dart';
+import 'package:parking_front/features/guidance/presentation/utils/guidance_spot_layout.dart';
 import '../../../guidance/presentation/screens/guidance_to_exit_screen.dart';
 import '../../../guidance/presentation/screens/guidance_to_spot_screen.dart';
 import '../../../guidance/presentation/screens/guidance_to_vehicle_screen.dart';
@@ -89,6 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final ReservationRepository _reservationRepository = ReservationRepository();
   final PaymentRepository _paymentRepository = PaymentRepository();
+  final ParkingRepository _parkingRepository = ParkingRepository();
   final Set<String> _parkedReservationIds = <String>{};
   final Set<String> _vehicleFoundReservationIds = <String>{};
 
@@ -168,14 +170,21 @@ class _HomeScreenState extends State<HomeScreen> {
         entry,
         forceRefresh: forcePaymentHistoryRefresh,
       );
+      Parking? matchedParking = _resolveParkingByName(apiSession.parkingName);
+      if (matchedParking?.indoorMap?.spots.isEmpty ?? true) {
+        try {
+          await _parkingRepository.fetchParkings();
+        } catch (_) {
+          // Keep the best local fallback when the catalog is temporarily unavailable.
+        }
+        matchedParking = _resolveParkingByName(apiSession.parkingName);
+      }
       final bool isVehicleParked =
           _parkedReservationIds.contains(apiSession.reservationId);
       final bool isVehicleFound = isVehicleParked &&
           _vehicleFoundReservationIds.contains(apiSession.reservationId);
       final String normalizedSpotLabel =
-          _resolveSpotLabel(apiSession.ticketCode);
-      final Parking? matchedParking =
-          _resolveParkingByName(apiSession.parkingName);
+          _resolveSpotLabel(apiSession.ticketCode, matchedParking);
 
       setState(() {
         _session = _Session(
@@ -433,24 +442,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  String _resolveSpotLabel(String rawTicketCode) {
-    final String source = rawTicketCode.trim().toUpperCase();
-    if (source.isEmpty) {
-      return 'A1';
-    }
-
-    final Iterable<Match> matches =
-        RegExp(r'([AB])\s*-?\s*(\d+)').allMatches(source);
-    if (matches.isNotEmpty) {
-      final Match last = matches.last;
-      final String letter = last.group(1) ?? 'A';
-      final int rawNumber = int.tryParse(last.group(2) ?? '1') ?? 1;
-      final int normalizedNumber = ((rawNumber - 1) % 3) + 1;
-
-      return '$letter$normalizedNumber';
-    }
-
-    return 'A1';
+  String _resolveSpotLabel(String rawTicketCode, Parking? parking) {
+    return resolveSpotLabelFromTicketCode(
+      rawTicketCode,
+      parking?.indoorMap?.spots ?? const <ParkingIndoorSpot>[],
+    );
   }
 
   double _resolveParkingRate(String parkingName) {
@@ -659,6 +655,8 @@ class _HomeScreenState extends State<HomeScreen> {
             builder: (_) => GuidanceToSpotScreen(
               spotLabel: session.spotLabel,
               isGuideToFree: false,
+              spots: session.parking?.indoorMap?.spots ??
+                  const <ParkingIndoorSpot>[],
             ),
           ),
         ) ??
@@ -729,6 +727,8 @@ class _HomeScreenState extends State<HomeScreen> {
               parkingName: session.parkingName,
               reservationId: session.reservationId,
               durationMinutes: (_elapsedSec / 60).ceil(),
+              spots: session.parking?.indoorMap?.spots ??
+                  const <ParkingIndoorSpot>[],
             ),
           ),
         ) ??
@@ -764,6 +764,8 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => GuidanceToExitScreen(
           spotLabel: session.spotLabel,
           showMapComingSoon: !guidanceEnabled,
+          spots: session.parking?.indoorMap?.spots ??
+              const <ParkingIndoorSpot>[],
         ),
       ),
     );

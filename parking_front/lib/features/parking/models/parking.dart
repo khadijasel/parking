@@ -50,6 +50,10 @@ class ParkingIndoorSpot {
       state: Parking._toStringValue(json['state']),
     );
   }
+
+  /// Get the effective display label. Falls back to spotId if label is empty.
+  /// Provides resilience against backend field name changes.
+  String get displayLabel => label.isNotEmpty ? label : spotId;
 }
 
 class ParkingIndoorMap {
