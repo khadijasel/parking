@@ -94,8 +94,7 @@ void setup() {
 
   if (state.wifiOk) {
     lcd.showWifiOk(api.ip());
-    api.syncReservations(state);  // charger les réservations existantes
-    api.pushAllSpots(state);       // envoyer état courant au backend
+    api.sendInfraredReadings(state);  // synchroniser l'état IR initial
   } else {
     lcd.showWifiErr();
     delay(1500);
@@ -150,15 +149,6 @@ void taskSensors() {
   // ── IR : état des 6 places ─────────────────────────────────
   if (ir.update(state)) {
     leds.update(state);
-    // Envoyer à l'API uniquement les places qui ont changé
-    for (int i = 0; i < NB_PLACES; i++) {
-      Spot& s = state.spots[i];
-      if (s.changed && s.status != s.sentStatus) {
-        api.updateSpot(s.label, s.status);
-        s.sentStatus = s.status;
-        s.changed    = false;
-      }
-    }
   }
 
   // ── Ultrason ENTRÉE ────────────────────────────────────────
@@ -183,11 +173,9 @@ void taskApi() {
     state.wifiOk = api.connectWifi();
     return;
   }
-  // Récupère les réservations créées depuis l'app mobile
-  // → allume les LEDs jaunes des places réservées
-  if (api.syncReservations(state)) {
-    leds.update(state);
-  }
+
+  // Envoi batch des 6 capteurs IR vers Laravel
+  api.sendInfraredReadings(state);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -220,14 +208,7 @@ void onCarEntry() {
   }
 
   // Démarrer session dans Laravel
-  if (api.isUp()) {
-    String sid = api.startSession();
-    if (sid.length() > 0) {
-      strncpy(state.sessionId, sid.c_str(),
-        sizeof(state.sessionId) - 1);
-      state.hasSession = true;
-    }
-  }
+  // La session est gérée côté app/backend, l'ESP32 ne l'initie plus ici.
 }
 
 // ════════════════════════════════════════════════════════════
@@ -240,12 +221,5 @@ void onCarExit() {
   gateOut.open();
   lcd.msg(" Bonne route !  ", "   Merci !      ");
 
-  // Terminer session dans Laravel
-  if (api.isUp() && state.hasSession) {
-    if (api.endSession(state.sessionId)) {
-      state.hasSession = false;
-      memset(state.sessionId, 0, sizeof(state.sessionId));
-      Serial.println("[EVENT] Session terminée");
-    }
-  }
+  // Pas d'appel session backend ici.
 }

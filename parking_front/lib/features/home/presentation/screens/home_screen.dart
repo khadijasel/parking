@@ -659,7 +659,6 @@ class _HomeScreenState extends State<HomeScreen> {
             builder: (_) => GuidanceToSpotScreen(
               spotLabel: session.spotLabel,
               isGuideToFree: false,
-              indoorMap: session.parking?.indoorMap,
             ),
           ),
         ) ??
@@ -730,7 +729,6 @@ class _HomeScreenState extends State<HomeScreen> {
               parkingName: session.parkingName,
               reservationId: session.reservationId,
               durationMinutes: (_elapsedSec / 60).ceil(),
-              indoorMap: session.parking?.indoorMap,
             ),
           ),
         ) ??
@@ -766,7 +764,6 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => GuidanceToExitScreen(
           spotLabel: session.spotLabel,
           showMapComingSoon: !guidanceEnabled,
-          indoorMap: session.parking?.indoorMap,
         ),
       ),
     );
