@@ -5,7 +5,7 @@
 //  Matériel :
 //    • 1× LCD 16×2 I2C (0x27)  SDA=GPIO21  SCL=GPIO22
 //    • 6× LED jaune (réservation)
-//        A1=GPIO21 A2=GPIO22 A3=GPIO23
+//        A1=GPIO21 P2=GPIO22 A3=GPIO23
 //        B1=GPIO2  B2=GPIO0  B3=GPIO12
 //    • 6× Capteur IR FC-51
 //        A1=GPIO25 A2=GPIO26 A3=GPIO27
@@ -54,6 +54,27 @@ unsigned long tPoll = 0, tApi = 0, tLcd = 0;
 
 // ── États précédents ultrason (détection front montant) ───────
 bool prevEntry = false, prevExit = false;
+
+// ════════════════════════════════════════════════════════════
+//  ÉVÉNEMENTS SÉRIE (Python listener)
+//
+//  But : émettre une ligne JSON simple et ASCII (sans accents)
+//  pour que python/serial_listener.py puisse détecter l'entrée.
+//  Exemple : {"event":"entry","parking_id":"arduino-sim"}
+// ════════════════════════════════════════════════════════════
+void emitSerialEvent(const char* eventName, const char* spotLabel = nullptr) {
+  Serial.print("{\"event\":\"");
+  Serial.print(eventName);
+  Serial.print("\",\"parking_id\":\"");
+  Serial.print(PARKING_ID);
+
+  if (spotLabel != nullptr && spotLabel[0] != '\0') {
+    Serial.print("\",\"spot_label\":\"");
+    Serial.print(spotLabel);
+  }
+
+  Serial.println("\"}");
+}
 
 // ════════════════════════════════════════════════════════════
 //  SETUP
@@ -207,6 +228,9 @@ void onCarEntry() {
     lcd.msg("  Bienvenue !   ", "  Bonne place ! ");
   }
 
+  // Event machine-readable pour le générateur Python (1 seule ligne par entrée)
+  emitSerialEvent("entry", (fi >= 0) ? state.spots[fi].label : nullptr);
+
   // Démarrer session dans Laravel
   // La session est gérée côté app/backend, l'ESP32 ne l'initie plus ici.
 }
@@ -216,6 +240,9 @@ void onCarEntry() {
 // ════════════════════════════════════════════════════════════
 void onCarExit() {
   Serial.println("[EVENT] ─── Voiture SORTIE ───");
+
+  // Event série utile si on veut plus tard automatiser une logique côté PC.
+  emitSerialEvent("exit");
 
   // Ouvrir barrière sortie
   gateOut.open();

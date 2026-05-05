@@ -167,6 +167,51 @@ curl -X GET "http://localhost:8000/api/parkings/availability" \
 [API] Parking has 3 available spots
 ```
 
+## Génération de ticket (Python)
+
+Le dossier `python/` contient un générateur de ticket QR qui appelle l'API Laravel :
+
+- `POST /api/iot/tickets` (header `X-IoT-Key`)
+- Génère ensuite une image PNG avec le payload QR.
+
+### 1) Événement série émis par l'ESP32
+
+À chaque détection **d'entrée**, l'ESP32 émet maintenant **une ligne JSON ASCII** sur le port série.
+Exemple :
+
+```json
+{"event":"entry","parking_id":"arduino-sim","spot_label":"A1"}
+```
+
+Le script Python `python/serial_listener.py` écoute ces événements et déclenche la génération du ticket.
+
+Si `spot_label` est présent, le backend l'intègre dans `ticket_code` (ex: `ARD-A1-9F3KQZ`) afin que l'application Flutter puisse déduire la place et lancer le guidage.
+
+### 2) Pré-requis Python
+
+Installer les dépendances :
+
+```bash
+pip install -r python/requirements.txt
+```
+
+### 3) Lancer le listener
+
+Exemple (Windows) :
+
+```bash
+python python/serial_listener.py \
+  --port COM3 \
+  --api http://<IP_DU_PC>:8000/api \
+  --api-key smartpark_iot_secret_key_2024 \
+  --parking-id arduino-sim \
+  --parking-name "Notre Parking"
+```
+
+Notes :
+- `--api-key` doit matcher `ARDUINO_API_KEY` côté Laravel.
+- L'ESP32 et le PC doivent être sur le même réseau (ou API accessible).
+
 ## Timings par défaut
 
 | Opération | Interval | Variable |

@@ -3,7 +3,7 @@ php artisan serve --host=0.0.0.0 --port=8000
 
 
 front
-flutter run -d 55bfa800 --dart-define="API_BASE_URL=http://192.168.1.3:8000/api"
+flutter run -d 55bfa800 --dart-define="API_BASE_URL=http://192.168.1.7:8000/api"
 Set-Location "C:\Users\HP\Desktop\parking\parking\parking_front" flutter run -d 55bfa800 --dart-define="API_BASE_URL=http://127.0.0.1:8000/api"
 
 flutter run -d 5hinduhiuwmf5pcm --dart-define="API_BASE_URL=http://172.20.10.2:8000/api"

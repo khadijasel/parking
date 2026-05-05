@@ -14,6 +14,7 @@ class ParkingTicket extends Model
         'ticket_code',
         'parking_id',
         'parking_name',
+        'spot_label',
         'entry_time',
         'status',
         'user_id',

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:parking_front/core/constants/api_constants.dart';
 import 'package:parking_front/core/widgets/app_feedback.dart';
 import 'package:parking_front/features/payment/data/mock_payment_service.dart';
 import 'package:parking_front/features/payment/data/payment_repository.dart';
@@ -183,8 +184,9 @@ class _HomeScreenState extends State<HomeScreen> {
           _parkedReservationIds.contains(apiSession.reservationId);
       final bool isVehicleFound = isVehicleParked &&
           _vehicleFoundReservationIds.contains(apiSession.reservationId);
-      final String normalizedSpotLabel =
-          _resolveSpotLabel(apiSession.ticketCode, matchedParking);
+        final String normalizedSpotLabel = apiSession.spotLabel.trim().isNotEmpty
+          ? apiSession.spotLabel.trim()
+          : _resolveSpotLabel(apiSession.ticketCode, matchedParking);
 
       setState(() {
         _session = _Session(
@@ -307,10 +309,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (sessionPaymentStatus == 'paid') {
       return true;
-    }
-
-    if (sessionPaymentStatus.isNotEmpty && sessionPaymentStatus != 'paid') {
-      return false;
     }
 
     if (reservationId.isEmpty) {
@@ -568,11 +566,41 @@ class _HomeScreenState extends State<HomeScreen> {
   String _formatTime(DateTime dt) =>
       '${dt.toLocal().hour.toString().padLeft(2, '0')}:${dt.toLocal().minute.toString().padLeft(2, '0')}';
 
+  String _sanitizeTicketFileKey(String value) {
+    final String safe = value
+        .trim()
+        .replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_')
+        .replaceAll(RegExp(r'^_+'), '')
+        .replaceAll(RegExp(r'_+$'), '');
+
+    return safe;
+  }
+
+  String _resolveTicketPngUrl(String ticketCode) {
+    final String trimmed = ticketCode.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+
+    final String base = ApiConstants.baseUrl;
+    final String origin = base.replaceFirst(RegExp(r'/api/?$'), '');
+    final String key = _sanitizeTicketFileKey(trimmed);
+    if (origin.trim().isEmpty || key.isEmpty) {
+      return '';
+    }
+
+    return '$origin/tickets/ticket_$key.png';
+  }
+
   void _showTicketDialog() {
     final _Session? session = _session;
     if (session == null) {
       return;
     }
+
+    final String ticketKey =
+        session.ticketCode.isEmpty ? session.spotLabel : session.ticketCode;
+    final String ticketPngUrl = _resolveTicketPngUrl(ticketKey);
 
     showDialog<void>(
       context: context,
@@ -581,19 +609,45 @@ class _HomeScreenState extends State<HomeScreen> {
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           title: const Text('Ticket numerique'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Parking: ${session.parkingName}'),
-              const SizedBox(height: 6),
-              Text(
-                  'Ticket: ${session.ticketCode.isEmpty ? session.spotLabel : session.ticketCode}'),
-              const SizedBox(height: 6),
-              Text('Reservation: ${session.reservationId}'),
-              const SizedBox(height: 6),
-              Text('Entree: ${_formatTime(session.entryTime)}'),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (ticketPngUrl.isNotEmpty) ...[
+                  Center(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.network(
+                        ticketPngUrl,
+                        width: 240,
+                        height: 340,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 240,
+                          height: 340,
+                          alignment: Alignment.center,
+                          color: const Color(0xFFF0F2F5),
+                          child: const Icon(
+                            Icons.qr_code_2_rounded,
+                            color: _kBlue,
+                            size: 72,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                Text('Parking: ${session.parkingName}'),
+                const SizedBox(height: 6),
+                Text('Ticket: $ticketKey'),
+                const SizedBox(height: 6),
+                Text('Reservation: ${session.reservationId}'),
+                const SizedBox(height: 6),
+                Text('Entree: ${_formatTime(session.entryTime)}'),
+              ],
+            ),
           ),
           actions: [
             TextButton(

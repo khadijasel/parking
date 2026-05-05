@@ -5,6 +5,7 @@ class ParkingSessionApiModel {
   final String parkingName;
   final String parkingAddress;
   final String ticketCode;
+  final String spotLabel;
   final String status;
   final String reservationStatus;
   final String reservationPaymentStatus;
@@ -24,6 +25,7 @@ class ParkingSessionApiModel {
     required this.parkingName,
     required this.parkingAddress,
     required this.ticketCode,
+    required this.spotLabel,
     required this.status,
     required this.reservationStatus,
     required this.reservationPaymentStatus,
@@ -47,6 +49,7 @@ class ParkingSessionApiModel {
       parkingName: (json['parking_name'] ?? '').toString(),
       parkingAddress: (json['parking_address'] ?? '').toString(),
       ticketCode: (json['ticket_code'] ?? '').toString(),
+        spotLabel: (json['spot_label'] ?? '').toString(),
       status: (json['status'] ?? '').toString(),
       reservationStatus: (json['reservation_status'] ?? '').toString(),
       reservationPaymentStatus:

@@ -15,6 +15,7 @@ class Reservation extends Model
         'parking_id',
         'parking_name',
         'parking_address',
+        'spot_label',
         'equipments',
         'duration_type',
         'duration_minutes',

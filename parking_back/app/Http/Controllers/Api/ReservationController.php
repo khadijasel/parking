@@ -97,6 +97,18 @@ class ReservationController extends Controller
             ], 422);
         }
 
+        $reservedSpotLabel = $this->reserveSpotLabelForReservation($parking);
+        if ($reservedSpotLabel === null && $this->isArduinoSimParking($parking)) {
+            $this->parkingAvailabilityService->releaseSpot(
+                $parkingName,
+                $parkingId,
+            );
+
+            return response()->json([
+                'message' => 'Aucune place disponible pour ce parking.',
+            ], 422);
+        }
+
         $durationType = (string) $payload['duration_type'];
         $isShortDuration = $durationType === 'courte';
 
@@ -106,6 +118,7 @@ class ReservationController extends Controller
                 'parking_id' => $parkingId,
                 'parking_name' => $parkingName,
                 'parking_address' => $parkingAddress,
+                'spot_label' => $reservedSpotLabel ?? '',
                 'equipments' => $payload['equipments'] ?? [],
                 'duration_type' => $durationType,
                 'duration_minutes' => (int) ($payload['duration_minutes'] ?? 0),
@@ -119,12 +132,23 @@ class ReservationController extends Controller
                 'spot_locked' => true,
             ]);
         } catch (\Throwable $e) {
+            if (is_string($reservedSpotLabel) && $reservedSpotLabel !== '') {
+                $this->releaseSpotLabelFromParking($parking, $reservedSpotLabel);
+            }
             $this->parkingAvailabilityService->releaseSpot(
                 $parkingName,
                 $parkingId,
             );
 
             throw $e;
+        }
+
+        if (trim((string) ($reservation->spot_label ?? '')) === '') {
+            $reservation->spot_label = $this->resolveSpotLabel(
+                $parkingName,
+                (string) $reservation->getKey(),
+            );
+            $reservation->save();
         }
 
         return response()->json([
@@ -404,6 +428,201 @@ class ReservationController extends Controller
         ]);
     }
 
+    private function reserveSpotLabelForReservation(Parking $parking): ?string
+    {
+        $indoorMap = (array) ($parking->indoor_map ?? []);
+        $spots = collect($indoorMap['spots'] ?? [])
+            ->map(fn ($spot): array => (array) $spot)
+            ->values()
+            ->all();
+
+        if (! count($spots) && $this->isArduinoSimParking($parking)) {
+            $spots = $this->defaultArduinoSimSpots();
+            $indoorMap = [
+                ...$indoorMap,
+                'spots' => $spots,
+            ];
+        }
+
+        if (! count($spots)) {
+            return null;
+        }
+
+        $reservedIndex = null;
+        foreach ($spots as $index => $spot) {
+            $state = strtoupper(trim((string) ($spot['state'] ?? 'AVAILABLE')));
+            if ($state === 'AVAILABLE') {
+                $reservedIndex = (int) $index;
+                break;
+            }
+        }
+
+        if ($reservedIndex === null) {
+            return null;
+        }
+
+        $label = trim((string) ($spots[$reservedIndex]['label'] ?? ''));
+        if ($label === '') {
+            return null;
+        }
+
+        $spots[$reservedIndex] = [
+            ...$spots[$reservedIndex],
+            'state' => 'RESERVED',
+            'updatedAt' => CarbonImmutable::now()->toIso8601String(),
+        ];
+
+        $parking->indoor_map = [
+            ...$indoorMap,
+            'spots' => $spots,
+        ];
+        $parking->available_spots = $this->countAvailableSpots($spots);
+        $parking->save();
+
+        return $label;
+    }
+
+    private function releaseSpotLabelFromParking(Parking $parking, string $spotLabel): void
+    {
+        $spotLabel = strtoupper(trim($spotLabel));
+        if ($spotLabel === '') {
+            return;
+        }
+
+        $indoorMap = (array) ($parking->indoor_map ?? []);
+        $spots = collect($indoorMap['spots'] ?? [])
+            ->map(fn ($spot): array => (array) $spot)
+            ->values()
+            ->all();
+
+        if (! count($spots) && $this->isArduinoSimParking($parking)) {
+            $spots = $this->defaultArduinoSimSpots();
+        }
+
+        if (! count($spots)) {
+            return;
+        }
+
+        $didUpdate = false;
+        foreach ($spots as $index => $spot) {
+            $label = strtoupper(trim((string) ($spot['label'] ?? '')));
+            if ($label !== $spotLabel) {
+                continue;
+            }
+
+            $state = strtoupper(trim((string) ($spot['state'] ?? '')));
+            if ($state === 'RESERVED') {
+                $spots[$index] = [
+                    ...$spot,
+                    'state' => 'AVAILABLE',
+                    'updatedAt' => CarbonImmutable::now()->toIso8601String(),
+                ];
+                $didUpdate = true;
+            }
+
+            break;
+        }
+
+        if (! $didUpdate) {
+            return;
+        }
+
+        $parking->indoor_map = [
+            ...$indoorMap,
+            'spots' => $spots,
+        ];
+        $parking->available_spots = $this->countAvailableSpots($spots);
+        $parking->save();
+    }
+
+    private function isArduinoSimParking(Parking $parking): bool
+    {
+        $parkingId = strtolower(trim((string) ($parking->parking_id ?? $parking->getKey())));
+        $parkingName = strtolower(trim((string) ($parking->name ?? '')));
+
+        return $parkingId === 'arduino-sim'
+            || str_contains($parkingName, 'arduino')
+            || str_contains($parkingName, 'notre parking');
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function defaultArduinoSimSpots(): array
+    {
+        $now = CarbonImmutable::now()->toIso8601String();
+
+        return [
+            [
+                'spotId' => 'A3',
+                'label' => 'A3',
+                'row' => 0,
+                'col' => 0,
+                'type' => 'STANDARD',
+                'state' => 'AVAILABLE',
+                'sensor' => ['arduinoId' => 'arduino-sim', 'channel' => '', 'topic' => ''],
+                'updatedAt' => $now,
+            ],
+            [
+                'spotId' => 'A2',
+                'label' => 'A2',
+                'row' => 0,
+                'col' => 1,
+                'type' => 'STANDARD',
+                'state' => 'AVAILABLE',
+                'sensor' => ['arduinoId' => 'arduino-sim', 'channel' => '', 'topic' => ''],
+                'updatedAt' => $now,
+            ],
+            [
+                'spotId' => 'A1',
+                'label' => 'A1',
+                'row' => 0,
+                'col' => 2,
+                'type' => 'STANDARD',
+                'state' => 'AVAILABLE',
+                'sensor' => ['arduinoId' => 'arduino-sim', 'channel' => '', 'topic' => ''],
+                'updatedAt' => $now,
+            ],
+            [
+                'spotId' => 'B3',
+                'label' => 'B3',
+                'row' => 2,
+                'col' => 0,
+                'type' => 'STANDARD',
+                'state' => 'AVAILABLE',
+                'sensor' => ['arduinoId' => 'arduino-sim', 'channel' => '', 'topic' => ''],
+                'updatedAt' => $now,
+            ],
+            [
+                'spotId' => 'B2',
+                'label' => 'B2',
+                'row' => 2,
+                'col' => 1,
+                'type' => 'STANDARD',
+                'state' => 'AVAILABLE',
+                'sensor' => ['arduinoId' => 'arduino-sim', 'channel' => '', 'topic' => ''],
+                'updatedAt' => $now,
+            ],
+            [
+                'spotId' => 'B1',
+                'label' => 'B1',
+                'row' => 2,
+                'col' => 2,
+                'type' => 'STANDARD',
+                'state' => 'AVAILABLE',
+                'sensor' => ['arduinoId' => 'arduino-sim', 'channel' => '', 'topic' => ''],
+                'updatedAt' => $now,
+            ],
+        ];
+    }
+
+    private function countAvailableSpots(array $spots): int
+    {
+        return max(0, collect($spots)
+            ->filter(fn (array $spot): bool => strtoupper(trim((string) ($spot['state'] ?? ''))) === 'AVAILABLE')
+            ->count());
+    }
+
     private function resolveParkingRecord(string $parkingId, string $parkingName): ?Parking
     {
         $normalizedId = trim($parkingId);
@@ -474,6 +693,18 @@ class ReservationController extends Controller
             return;
         }
 
+        $spotLabel = trim((string) ($reservation->spot_label ?? ''));
+        if ($spotLabel !== '') {
+            $parking = $this->resolveParkingRecord(
+                (string) ($reservation->parking_id ?? ''),
+                (string) ($reservation->parking_name ?? ''),
+            );
+
+            if ($parking instanceof Parking) {
+                $this->releaseSpotLabelFromParking($parking, $spotLabel);
+            }
+        }
+
         $this->parkingAvailabilityService->releaseSpot(
             (string) ($reservation->parking_name ?? ''),
             (string) ($reservation->parking_id ?? ''),
@@ -537,6 +768,14 @@ class ReservationController extends Controller
         $now = CarbonImmutable::now();
         $userId = (string) $reservation->user_id;
 
+        $spotLabel = trim((string) ($reservation->spot_label ?? ''));
+        if ($spotLabel === '') {
+            $spotLabel = $this->resolveSpotLabel(
+                (string) ($reservation->parking_name ?? ''),
+                (string) $reservation->getKey(),
+            );
+        }
+
         $existingActiveSessions = ParkingSession::query()
             ->where('user_id', $userId)
             ->where('status', self::SESSION_STATUS_ACTIVE)
@@ -552,6 +791,7 @@ class ReservationController extends Controller
             'parking_name' => (string) $reservation->parking_name,
             'parking_address' => (string) ($reservation->parking_address ?? ''),
             'ticket_code' => $this->buildTicketCode($reservation),
+            'spot_label' => $spotLabel,
             'status' => self::SESSION_STATUS_ACTIVE,
             'started_at' => $now,
             'ended_at' => null,
@@ -595,7 +835,10 @@ class ReservationController extends Controller
         $parkingName = (string) ($reservation->parking_name ?? '');
         $reservationId = (string) $reservation->getKey();
         $parkingCode = $this->resolveParkingCode($parkingName);
-        $spotLabel = $this->resolveSpotLabel($parkingName, $reservationId);
+        $spotLabel = trim((string) ($reservation->spot_label ?? ''));
+        if ($spotLabel === '') {
+            $spotLabel = $this->resolveSpotLabel($parkingName, $reservationId);
+        }
 
         return $parkingCode.'-'.$spotLabel;
     }
@@ -639,9 +882,10 @@ class ReservationController extends Controller
     {
         $normalized = strtolower($parkingName);
         if (str_contains($normalized, 'arduino') || str_contains($normalized, 'notre parking')) {
-            $spot = $this->stableIndex($reservationId, 6) + 1;
+            $labels = ['A1', 'A2', 'A3', 'B1', 'B2', 'B3'];
+            $index = $this->stableIndex($reservationId, count($labels));
 
-            return 'A'.$spot;
+            return $labels[$index] ?? 'A1';
         }
 
         $letters = ['A', 'B', 'C', 'D', 'E', 'F'];
@@ -705,6 +949,7 @@ class ReservationController extends Controller
         $reservationDurationType = '';
         $reservationAmount = 0.0;
         $sessionPaymentStatus = 'unpaid';
+        $spotLabel = trim((string) ($session->spot_label ?? ''));
 
         if ($startedAt) {
             $rawDuration = $startedAt->diffInSeconds($endedAt ?? CarbonImmutable::now(), false);
@@ -720,6 +965,17 @@ class ReservationController extends Controller
                 $reservationPaymentStatus = (string) ($reservation->payment_status ?? '');
                 $reservationDurationType = (string) ($reservation->duration_type ?? '');
                 $reservationAmount = (float) ($reservation->amount ?? 0);
+
+                if ($spotLabel === '') {
+                    $spotLabel = trim((string) ($reservation->spot_label ?? ''));
+                }
+
+                if ($spotLabel === '') {
+                    $spotLabel = $this->resolveSpotLabel(
+                        (string) ($reservation->parking_name ?? ''),
+                        (string) $reservation->getKey(),
+                    );
+                }
 
                 if ($startedAt) {
                     $sessionPaymentStatus = $this->hasSuccessfulPaymentForSession(
@@ -739,6 +995,7 @@ class ReservationController extends Controller
             'parking_name' => (string) ($session->parking_name ?? ''),
             'parking_address' => (string) ($session->parking_address ?? ''),
             'ticket_code' => (string) ($session->ticket_code ?? ''),
+            'spot_label' => $spotLabel,
             'status' => (string) ($session->status ?? self::SESSION_STATUS_ACTIVE),
             'duration_seconds' => $durationSeconds,
             'reservation_status' => $reservationStatus,
@@ -770,6 +1027,7 @@ class ReservationController extends Controller
             'reservation_status' => (string) ($reservation->reservation_status ?? self::STATUS_PENDING_PAYMENT),
             'payment_status' => (string) ($reservation->payment_status ?? 'unpaid'),
             'spot_locked' => (bool) ($reservation->spot_locked ?? false),
+            'spot_label' => (string) ($reservation->spot_label ?? ''),
             'expires_at' => $reservation->expires_at?->toIso8601String(),
             'cancelled_at' => $reservation->cancelled_at?->toIso8601String(),
             'created_at' => $reservation->created_at?->toIso8601String(),

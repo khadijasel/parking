@@ -66,6 +66,7 @@ def create_ticket(
     parking_id: str,
     parking_name: str,
     api_key: Optional[str] = None,
+    spot_label: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     base_url = normalize_base_url(api_base_url)
     url = f"{base_url}/iot/tickets"
@@ -74,6 +75,9 @@ def create_ticket(
         "parking_id": parking_id,
         "parking_name": parking_name,
     }
+
+    if spot_label and str(spot_label).strip():
+        payload["spot_label"] = str(spot_label).strip()
 
     headers = {"Accept": "application/json"}
     if api_key:
@@ -126,6 +130,7 @@ def render_ticket_png(
     qr_payload: Dict[str, Any],
     output_dir: Path,
     parking_name_override: Optional[str] = None,
+    spot_label_override: Optional[str] = None,
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -144,6 +149,12 @@ def render_ticket_png(
     draw.text((20, 60), f"Parking: {parking_name}", fill="black", font=font)
     draw.text((20, 90), f"Entree: {formatted_entry}", fill="black", font=font)
 
+    spot_label = (spot_label_override or "").strip()
+    if not spot_label:
+        spot_label = str(ticket.get("spot_label") or ticket.get("spotLabel") or "").strip()
+    if spot_label:
+        draw.text((20, 150), f"Place: {spot_label}", fill="black", font=font)
+
     ticket_code = str(ticket.get("ticket_code") or "").strip()
     if ticket_code:
         draw.text((20, 120), f"Code: {ticket_code}", fill="black", font=font)
@@ -155,9 +166,8 @@ def render_ticket_png(
     canvas.paste(qr_image, (qr_x, qr_y))
 
     ticket_id = str(ticket.get("id") or "")
-    stamp = datetime.now(_algeria_tz()).strftime("%Y%m%d_%H%M%S")
-    suffix = _sanitize_filename(ticket_code or ticket_id or stamp)
-    filename = f"ticket_{suffix}_{stamp}.png"
+    suffix = _sanitize_filename(ticket_code or ticket_id)
+    filename = f"ticket_{suffix}.png"
 
     path = output_dir / filename
     canvas.save(path, format="PNG")
@@ -170,15 +180,28 @@ def generate_ticket(
     parking_name: str,
     output_dir: Path,
     api_key: Optional[str] = None,
+    spot_label: Optional[str] = None,
 ) -> TicketResult:
     ticket, qr_payload = create_ticket(
         api_base_url=api_base_url,
         parking_id=parking_id,
         parking_name=parking_name,
         api_key=api_key,
+        spot_label=spot_label,
     )
-    image_path = render_ticket_png(ticket, qr_payload, output_dir, parking_name)
+    image_path = render_ticket_png(
+        ticket,
+        qr_payload,
+        output_dir,
+        parking_name,
+        spot_label_override=spot_label,
+    )
     return TicketResult(ticket=ticket, qr_payload=qr_payload, image_path=image_path)
+
+
+def default_ticket_output_dir() -> Path:
+    repo_root = Path(__file__).resolve().parents[1]
+    return repo_root / "parking_back" / "public" / "tickets"
 
 
 if __name__ == "__main__":
@@ -186,7 +209,7 @@ if __name__ == "__main__":
     parking_id = os.getenv("PARKING_ID", "arduino-sim")
     parking_name = os.getenv("PARKING_NAME", "Notre Parking")
     api_key = os.getenv("ARDUINO_API_KEY")
-    output = Path(os.getenv("TICKET_OUTPUT_DIR", "python/output"))
+    output = Path(os.getenv("TICKET_OUTPUT_DIR", str(default_ticket_output_dir())))
 
     result = generate_ticket(
         api_base_url=api_base,

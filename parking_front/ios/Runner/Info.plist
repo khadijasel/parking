@@ -45,6 +45,10 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>SmartPark a besoin de la camera pour scanner votre ticket QR.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SmartPark a besoin d acceder a vos photos pour scanner un ticket depuis la galerie.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SmartPark utilise votre localisation pour proposer les parkings les plus proches et afficher l itineraire.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

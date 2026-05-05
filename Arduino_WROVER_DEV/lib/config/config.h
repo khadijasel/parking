@@ -2,97 +2,137 @@
 #define CONFIG_H
 
 // ════════════════════════════════════════════════════════════
-//  SmartPark — ESP32 WROVER-Dev
-//  Matériel final :
-//    • 1× LCD 16×2 I2C (adresse 0x27)
-//    • 6× LED jaune (1 par place, allumée = RÉSERVÉ)
-//    • 6× Capteur IR FC-51 (détection occupation)
-//    • 2× HC-SR04 (entrée + sortie)
-//    • 2× Servo SG90 (barrière entrée + sortie)
-//    • ESP32 WROVER-Dev
+//  SmartPark — Configuration ESP32 WROVER-Dev
+//  Fichier : lib/config/config.h
 //
-//  RÈGLES WROVER — pins interdits :
-//    ✗ GPIO 6-11  → Flash interne
-//    ✗ GPIO 16-17 → PSRAM
-//    ✗ GPIO 34-39 → INPUT ONLY (pas de sortie)
+//  RÈGLES WROVER (ne jamais violer) :
+//    ✗ GPIO 6-11   → Flash SPI interne     — INTERDITS
+//    ✗ GPIO 16-17  → PSRAM du WROVER       — INTERDITS
+//    ✗ GPIO 34-39  → INPUT ONLY            — seulement en lecture
+//    ⚠ GPIO 0      → BOOT pin              — OK après boot
+//    ⚠ GPIO 2      → LED onboard           — OK en output
+//    ⚠ GPIO 12     → Boot voltage select   — OK après boot
+//    ⚠ GPIO 15     → Active UART log boot  — OK
 // ════════════════════════════════════════════════════════════
 
 // ── WiFi ─────────────────────────────────────────────────────
-#define WIFI_SSID        "idoomAdsl"
-#define WIFI_PASSWORD    "afafimad1967"
-#define WIFI_TIMEOUT_MS  15000
+#define WIFI_SSID           "TON_WIFI_SSID"
+#define WIFI_PASSWORD       "TON_MOT_DE_PASSE"
+#define WIFI_TIMEOUT_MS     15000
 
 // ── API Laravel ───────────────────────────────────────────────
-#define API_BASE_URL     "http://localhost:8000/api"
-#define IOT_SECRET_KEY   "smartpark_iot_secret_key_2024"
-#define PARKING_ID       "arduino-sim"
-#define API_TIMEOUT_MS   8000
+#define API_BASE_URL        "http://192.168.1.100:8000/api"
+#define IOT_SECRET_KEY      "smartpark_iot_secret_key_2024"
+#define INFRARED_SENSOR_KEY "your_secret_arduino_key_2024"
+#define PARKING_ID          "arduino-sim"
+#define API_TIMEOUT_MS      8000
 
 // ════════════════════════════════════════════════════════════
-//  BROCHES — Attribution définitive WROVER-Dev
+//  BROCHES — NOUVEAU CÂBLAGE FINAL
+//  (mis à jour selon branchement physique réel)
 // ════════════════════════════════════════════════════════════
 
-// ── HC-SR04 Ultrason ─────────────────────────────────────────
-//  ⚠️  ECHO = 5V → pont diviseur 1kΩ/2kΩ obligatoire vers 3.3V
-#define TRIG_ENTREE      4    // ✓
-#define ECHO_ENTREE      5    // ✓  (avec diviseur)
-#define TRIG_SORTIE      18   // ✓
-#define ECHO_SORTIE      19   // ✓  (avec diviseur)
-#define DISTANCE_SEUIL   18   // cm — voiture détectée si < 18 cm
+// ── LEDs jaunes (1 par place, allumée = RÉSERVÉ) ─────────────
+//  Câblage : anode(+) → 220Ω → GPIO · cathode(−) → GND
+#define LED_P1   23    // Place A1 — ✓ safe
+#define LED_P2   27    // Place A2 — ✓ safe
+#define LED_P3   15    // Place A3 — ⚠ active UART log au boot (ignorable)
+#define LED_P4   12    // Place B1 — ⚠ pull-down 10kΩ conseillée
+#define LED_P5    2    // Place B2 — ⚠ LED onboard aussi (cosmétique)
+#define LED_P6   -1    // Place B3 — ❌ PIN NON DÉFINIE — trouver GPIO libre
+                       //            Candidats libres : GPIO 0, GPIO 4 (si HC-SR04 changé)
+                       //            Recommandé : GPIO 0 (avec pull-up 10kΩ)
 
-// ── Servomoteurs SG90 ─────────────────────────────────────────
-//  Alimenter depuis 5V externe — jamais depuis ESP32
-#define SERVO_ENTREE     13   // ✓  signal PWM
-#define SERVO_SORTIE     14   // ✓  signal PWM
-#define SERVO_FERME      10   // degrés  → barrière bloquée
-#define SERVO_OUVERT     90   // degrés  → voie libre
-#define SERVO_DUREE_MS   3500 // ms avant fermeture automatique
+// ── Aliases (compatibilité) ─────────────────────────────────
+// Certains modules utilisent les noms LED_A1..LED_B3.
+#define LED_A1 LED_P1
+#define LED_A2 LED_P2
+#define LED_A3 LED_P3
+#define LED_B1 LED_P4
+#define LED_B2 LED_P5
+#define LED_B3 LED_P6
 
 // ── Capteurs IR FC-51 ─────────────────────────────────────────
-//  LOW  = voiture présente (OCCUPÉ)
-//  HIGH = rien devant      (LIBRE)
-#define IR_A1   25   // ✓
-#define IR_A2   26   // ✓
-#define IR_A3   27   // ✓
-#define IR_B1   32   // ✓
-#define IR_B2   33   // ✓
-#define IR_B3   15   // ✓  (légèrement actif au boot — ignorable)
+//  LOW = voiture présente / HIGH = place libre
+//  GPIO 34-39 = INPUT ONLY → parfait pour capteurs
+#define IR_A1   34    // Place A1 — ✓ INPUT ONLY (OK pour lecture)
+#define IR_A2   35    // Place A2 — ✓ INPUT ONLY
+#define IR_A3   32    // Place A3 — ✓ safe
+#define IR_B1   33    // Place B1 — ✓ safe
+#define IR_B2   25    // Place B2 — ✓ safe
+#define IR_B3   26    // Place B3 — ✓ safe
 
-// ── LEDs jaunes — 1 par place, allumée = RÉSERVÉ ─────────────
-//  Câblage : anode(+) → résistance 220Ω → GPIO
-//            cathode(−) → GND
-//  Éteinte  = libre ou occupée (capteur IR s'en charge)
-//  Allumée  = place réservée via l'application mobile
-#define LED_A1   21   // ✓
-#define LED_A2   22   // ✓
-#define LED_A3   23   // ✓
-#define LED_B1    2   // ✓  (LED onboard aussi — OK)
-#define LED_B2    0   // ✓  (boot pin — pull-up 10kΩ conseillée)
-#define LED_B3   12   // ✓  (pull-down 10kΩ conseillée)
+// ── HC-SR04 Ultrason ─────────────────────────────────────────
+//  ⚠️ PONT DIVISEUR OBLIGATOIRE SUR ECHO (5V → 3.3V) :
+//     ECHO → R1(1kΩ) → GPIO → R2(2kΩ) → GND
+#define TRIG_ENTREE   4    // ✓ safe
+#define ECHO_ENTREE   5    // ✓ safe (avec diviseur tension)
+#define TRIG_SORTIE  18    // ✓ safe
+#define ECHO_SORTIE  16    // ✓ safe (avec diviseur tension)
+                           // Note : GPIO16 est PSRAM sur WROVER !
+                           // ⚠️ Si le WROVER utilise la PSRAM → changer
+                           //    ECHO_SORTIE vers GPIO 19 ou autre pin libre
+#define DISTANCE_SEUIL  18 // cm — voiture détectée si distance < 18 cm
 
-// ── LCD 16×2 I2C ─────────────────────────────────────────────
-//  Module I2C PCF8574 — adresse 0x27
+// ── Servomoteurs SG90 ─────────────────────────────────────────
+//  Fil rouge   → 5V externe (JAMAIS depuis ESP32)
+//  Fil marron  → GND commun
+//  Fil orange  → GPIO signal
+#define SERVO_ENTREE   13  // ✓ safe PWM
+#define SERVO_SORTIE   14  // ✓ safe PWM
+#define SERVO_FERME     0  // degrés — barrière bloquée
+#define SERVO_OUVERT   90  // degrés — voie libre
+#define SERVO_DUREE_MS 3500
+
+// ── LCD I2C 16×2 ─────────────────────────────────────────────
 //  VCC → 5V externe · GND → GND commun
-//  SDA / SCL → 3.3V OK
-#define LCD_SDA   21   // ← Note : partagé avec LED_A1
-#define LCD_SCL   22   // ← Note : partagé avec LED_A2
-//  Solution : le bus I2C est open-drain, la LED peut cohabiter
-//  si on l'utilise en sortie SEULEMENT quand le bus est libre
-//  → Utiliser GPIO différents si problème (voir README)
-#define LCD_ADDR  0x27
+//  Wire.begin(SDA, SCL) appelé explicitement (WROVER)
+#define LCD_SDA   21   // ✓ safe
+#define LCD_SCL   22   // ✓ safe
+#define LCD_ADDR  0x27 // adresse I2C (0x3F si 0x27 ne marche pas)
 #define LCD_COLS  16
-#define LCD_ROWS  2
+#define LCD_ROWS   2
+
+// ════════════════════════════════════════════════════════════
+//  RÉSUMÉ CÂBLAGE (pour référence rapide)
+//
+//  LED_P1  = GPIO 23  (A1)
+//  LED_P2  = GPIO 27  (A2)
+//  LED_P3  = GPIO 15  (A3)
+//  LED_P4  = GPIO 12  (B1)
+//  LED_P5  = GPIO 2   (B2)
+//  LED_P6  = GPIO ??? (B3) ← À DÉFINIR
+//
+//  IR_A1   = GPIO 34  (A1) INPUT ONLY
+//  IR_A2   = GPIO 35  (A2) INPUT ONLY
+//  IR_A3   = GPIO 32  (A3)
+//  IR_B1   = GPIO 33  (B1)
+//  IR_B2   = GPIO 25  (B2)
+//  IR_B3   = GPIO 26  (B3)
+//
+//  TRIG_E  = GPIO 4   HC-SR04 Entrée
+//  ECHO_E  = GPIO 5   HC-SR04 Entrée (+pont diviseur)
+//  TRIG_S  = GPIO 18  HC-SR04 Sortie
+//  ECHO_S  = GPIO 16  HC-SR04 Sortie (+pont diviseur)
+//            ⚠️ GPIO 16 = PSRAM sur WROVER → vérifier !
+//
+//  SERVO_E = GPIO 13
+//  SERVO_S = GPIO 14
+//
+//  LCD SDA = GPIO 21
+//  LCD SCL = GPIO 22
+// ════════════════════════════════════════════════════════════
 
 // ── Timings ───────────────────────────────────────────────────
-#define POLL_MS      2000   // lecture IR + HC-SR04
-#define API_MS       6000   // sync avec Laravel
-#define LCD_MS       1500   // rafraîchissement écran
+#define POLL_MS   2000   // lecture IR + ultrason (ms)
+#define API_MS    6000   // sync backend Laravel (ms)
+#define LCD_MS    1500   // rafraîchissement LCD (ms)
 
 // ── Parking ───────────────────────────────────────────────────
-#define NB_PLACES    6
+#define NB_PLACES   6
 
 // ── Debug ─────────────────────────────────────────────────────
-#define BAUD_RATE    115200
-#define DEBUG        true
+#define BAUD_RATE   115200
+#define DEBUG       true
 
-#endif
+#endif // CONFIG_H

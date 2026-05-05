@@ -1,48 +1,92 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../reservation/data/models/reservation_api_model.dart';
 import '../../../reservation/data/reservation_repository.dart';
 
 // ════════════════════════════════════════════════════════════
-//  SCANNER SCREEN
-//  — Cadre QR animé avec ligne de scan
-//  — Bouton torche + galerie + historique
-//  — Nécessite : mobile_scanner dans pubspec.yaml
-//    flutter pub add mobile_scanner
+//  SCANNER SCREEN — SmartPark
 //
-//  Pour activer la vraie caméra, décommenter les imports
-//  mobile_scanner et remplacer le fond noir par MobileScanner
+//  Principe :
+//    1. Scanne ticket QR généré par le script Python
+//    2. QR contient JSON :
+//       { "ticket_id": "...", "ticket_code": "...",
+//         "parking_id": "arduino-sim", "entry_time": "...",
+//         "status": "unpaid" }
+//
+//    Mode ENTRÉE :
+//      → Valide le parking_id dans la base de données
+//      → Si parking inconnu → "Ticket invalide"
+//      → Si session déjà active avec ce ticket → lit juste les données
+//      → Sinon → lance la session → home_screen affiche session + même QR
+//
+//    Mode SORTIE :
+//      → Rescanne le même ticket
+//      → Vérifie status = "paid" côté backend
+//      → PAID + délai < 15 min → barrière ouvre
+//      → Sinon → message erreur
+//
+//    Règle d'unicité ticket :
+//      → Chaque ticket a un UUID unique
+//      → Une fois la session terminée, ce ticket est marqué "used"
+//      → Impossible de rescanner un ticket déjà utilisé (session closed)
+//
+//  Dépendances pubspec.yaml :
+//    mobile_scanner: ^5.x.x
+//    image_picker: ^1.x.x
 // ════════════════════════════════════════════════════════════
 
-// import 'package:mobile_scanner/mobile_scanner.dart'; // ← décommenter
+const _kBlue    = Color(0xFF4A90E2);
+const _kGreen   = Color(0xFF2ECC71);
+const _kRed     = Color(0xFFE53935);
+const _kDark    = Color(0xFF1A1A2E);
+const _kMid     = Color(0xFF8A9BB5);
 
-const _kBlue = Color(0xFF4A90E2);
+// ── Enum mode scan ───────────────────────────────────────────
+enum ScanMode { entry, exit }
 
-enum _ScanMode { entry, exit }
-
+// ── Modèle payload ticket ────────────────────────────────────
 class _TicketPayload {
   final String? ticketId;
   final String? ticketCode;
   final String? parkingId;
+  final String? entryTime;
+  final String? status;
 
   const _TicketPayload({
     this.ticketId,
     this.ticketCode,
     this.parkingId,
+    this.entryTime,
+    this.status,
   });
 
   bool get isEmpty =>
-      (ticketId == null || ticketId!.trim().isEmpty) &&
-      (ticketCode == null || ticketCode!.trim().isEmpty);
+      (ticketId?.trim().isEmpty ?? true) &&
+      (ticketCode?.trim().isEmpty ?? true);
+
+  bool get isPaid => status?.trim().toLowerCase() == 'paid';
+
+  String get display =>
+      ticketCode ?? ticketId ?? 'TICKET-INCONNU';
 }
+
+// ════════════════════════════════════════════════════════════
 
 class ScannerScreen extends StatefulWidget {
   final VoidCallback? onScanSuccess;
+  final ScanMode initialMode;
 
-  const ScannerScreen({super.key, this.onScanSuccess});
+  const ScannerScreen({
+    super.key,
+    this.onScanSuccess,
+    this.initialMode = ScanMode.entry,
+  });
 
   @override
   State<ScannerScreen> createState() => _ScannerScreenState();
@@ -50,25 +94,35 @@ class ScannerScreen extends StatefulWidget {
 
 class _ScannerScreenState extends State<ScannerScreen>
     with SingleTickerProviderStateMixin {
-  bool _torchOn = false;
-  bool _isScanning = true;
-  bool _isSubmitting = false;
-  _ScanMode _scanMode = _ScanMode.entry;
-  final ReservationRepository _reservationRepository = ReservationRepository();
 
-  // Animation ligne de scan
-  late AnimationController _scanCtrl;
-  late Animation<double> _scanAnim;
+  // ── Contrôleurs ──────────────────────────────────────────
+  late final MobileScannerController _cameraCtrl;
+  late final AnimationController     _scanCtrl;
+  late final Animation<double>       _scanAnim;
 
-  // Pour la vraie caméra :
-  // final MobileScannerController _cameraCtrl = MobileScannerController();
+  // ── États ────────────────────────────────────────────────
+  bool      _torchOn      = false;
+  bool      _isScanning   = true;
+  bool      _isSubmitting = false;
+  ScanMode  _mode         = ScanMode.entry;
+
+  final ReservationRepository _repo = ReservationRepository();
+  final ImagePicker           _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
+    _mode = widget.initialMode;
+
+    _cameraCtrl = MobileScannerController(
+      torchEnabled: false,
+      autoStart: true,
+      detectionSpeed: DetectionSpeed.noDuplicates,
+    );
+
     _scanCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
+      duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
 
     _scanAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -79,104 +133,103 @@ class _ScannerScreenState extends State<ScannerScreen>
   @override
   void dispose() {
     _scanCtrl.dispose();
-    // _cameraCtrl.dispose();
+    _cameraCtrl.dispose();
     super.dispose();
   }
 
+  // ── Toggle lampe torche ──────────────────────────────────
   void _toggleTorch() {
     setState(() => _torchOn = !_torchOn);
+    _cameraCtrl.toggleTorch();
     HapticFeedback.selectionClick();
-    // _cameraCtrl.toggleTorch();
   }
 
-  Future<void> _onQRDetected(String code) async {
-    if (_isSubmitting) {
-      return;
-    }
-
-    HapticFeedback.heavyImpact();
-    setState(() => _isScanning = false);
-    _scanCtrl.stop();
-
-    setState(() => _isSubmitting = true);
+  // ── Ouvrir galerie et lire QR ────────────────────────────
+  Future<void> _openGallery() async {
+    final XFile? file = await _picker.pickImage(source: ImageSource.gallery);
+    if (file == null || !mounted) return;
 
     try {
-      final _TicketPayload payload = _parseTicketPayload(code);
+      final BarcodeCapture? capture =
+          await _cameraCtrl.analyzeImage(file.path);
+      if (capture == null || capture.barcodes.isEmpty) {
+        if (mounted) {
+          _showResultSheet(
+            '',
+            isValid: false,
+            message: 'Aucun QR trouvé dans cette image.',
+          );
+        }
+        return;
+      }
+      final String code = capture.barcodes.first.rawValue ?? '';
+      if (code.isNotEmpty) {
+        await _onQRDetected(code);
+      }
+    } catch (_) {
+      if (mounted) {
+        _showResultSheet(
+          '',
+          isValid: false,
+          message: 'Impossible de lire le QR depuis la galerie.',
+        );
+      }
+    }
+  }
+
+  // ── Callback détection QR par caméra ─────────────────────
+  void _onDetect(BarcodeCapture capture) {
+    if (!_isScanning || _isSubmitting) return;
+    final String code = capture.barcodes.first.rawValue ?? '';
+    if (code.isNotEmpty) {
+      _onQRDetected(code);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════
+  //  LOGIQUE PRINCIPALE — traitement du QR scanné
+  // ════════════════════════════════════════════════════════
+  Future<void> _onQRDetected(String rawCode) async {
+    if (_isSubmitting) return;
+
+    HapticFeedback.heavyImpact();
+    setState(() {
+      _isScanning   = false;
+      _isSubmitting = true;
+    });
+    _scanCtrl.stop();
+
+    try {
+      // 1. Parser le QR
+      final _TicketPayload payload = _parsePayload(rawCode);
+
+      // 2. Ticket vide / illisible
       if (payload.isEmpty) {
         _showResultSheet(
-          code,
+          rawCode,
           isValid: false,
-          message: 'Ticket invalide. Essayez a nouveau.',
+          message: 'QR invalide ou illisible. Veuillez réessayer.',
         );
         return;
       }
 
-      if (_scanMode == _ScanMode.entry) {
-        try {
-          final Map<String, dynamic> result =
-              await _reservationRepository.scanParkingTicket(
-            ticketId: payload.ticketId,
-            ticketCode: payload.ticketCode,
-            parkingId: payload.parkingId,
-          );
-
-          _showResultSheet(
-            code,
-            isValid: true,
-            message: 'Ticket scanne avec succes.',
-            ticketReference: _extractTicketId(result),
-            afterClose: widget.onScanSuccess,
-          );
-        } on ReservationException catch (error) {
-          if (_looksLikeLegacyReservation(code) &&
-              _isTicketNotFound(error.message)) {
-            final ReservationApiModel reservation =
-                await _reservationRepository.completeReservationByTicket(code);
-            _showResultSheet(
-              code,
-              isValid: true,
-              message: 'Ticket scanne avec succes.',
-              ticketReference: reservation.id,
-              afterClose: widget.onScanSuccess,
-            );
-            return;
-          }
-          rethrow;
-        }
-      } else {
-        final String? ticketId = payload.ticketId;
-        if (ticketId == null || ticketId.trim().isEmpty) {
-          _showResultSheet(
-            code,
-            isValid: false,
-            message: 'Ticket invalide: identifiant manquant.',
-          );
-          return;
-        }
-
-        final Map<String, dynamic> result =
-            await _reservationRepository.exitParkingTicket(
-          ticketId: ticketId,
-          ticketCode: payload.ticketCode,
-        );
-
-        _showResultSheet(
-          code,
-          isValid: true,
-          message: 'Sortie autorisee. Bonne route.',
-          ticketReference: _extractTicketId(result) ?? ticketId,
-          afterClose: widget.onScanSuccess,
-        );
+      // ── MODE ENTRÉE ──────────────────────────────────────
+      if (_mode == ScanMode.entry) {
+        await _handleEntry(rawCode, payload);
       }
-    } on ReservationException catch (error) {
+      // ── MODE SORTIE ──────────────────────────────────────
+      else {
+        await _handleExit(rawCode, payload);
+      }
+    } on ReservationException catch (e) {
       _showResultSheet(
-        code,
+        rawCode,
         isValid: false,
-        message: error.message,
+        message: e.message,
       );
     } catch (_) {
       _showResultSheet(
-        code,
+        rawCode,
         isValid: false,
         message: 'Impossible de valider ce ticket pour le moment.',
       );
@@ -187,97 +240,237 @@ class _ScannerScreenState extends State<ScannerScreen>
     }
   }
 
-  _TicketPayload _parseTicketPayload(String raw) {
-    final String trimmed = raw.trim();
-    if (trimmed.isEmpty) {
-      return const _TicketPayload();
+  // ── Mode ENTRÉE ──────────────────────────────────────────
+  Future<void> _handleEntry(
+      String rawCode, _TicketPayload payload) async {
+
+    // Règle 1 : parking_id doit appartenir à l'application
+    // → le backend le vérifie — si invalide → ReservationException
+    // Règle 2 : si session déjà active avec ce ticket → lit juste les données
+    // Règle 3 : si ticket déjà utilisé (session closed) → erreur
+
+    try {
+      final Map<String, dynamic> result = await _repo.scanParkingTicket(
+        ticketId:   payload.ticketId,
+        ticketCode: payload.ticketCode,
+        parkingId:  payload.parkingId,
+      );
+
+      final String? ref = _extractTicketRef(result);
+
+      _showResultSheet(
+        rawCode,
+        isValid: true,
+        message: 'Session démarrée avec succès.\nGuidez-vous vers votre place.',
+        ticketReference: ref,
+        qrImagePath: _extractQrImagePath(result),
+        afterClose: widget.onScanSuccess,
+      );
+    } on ReservationException catch (e) {
+      // Parking non reconnu → "Ticket invalide"
+      if (_isParkingNotFound(e.message)) {
+        _showResultSheet(
+          rawCode,
+          isValid: false,
+          message: 'Ticket invalide : ce parking n\'est pas dans notre réseau.',
+        );
+        return;
+      }
+
+      // Session déjà active avec ce ticket → lire seulement
+      if (_isAlreadyActive(e.message)) {
+        _showResultSheet(
+          rawCode,
+          isValid: true,
+          message: 'Session déjà en cours.\nInformations du ticket lues.',
+          ticketReference: payload.ticketCode ?? payload.ticketId,
+          afterClose: widget.onScanSuccess,
+        );
+        return;
+      }
+
+      // Ticket déjà utilisé (session terminée)
+      if (_isAlreadyUsed(e.message)) {
+        _showResultSheet(
+          rawCode,
+          isValid: false,
+          message: 'Ce ticket a déjà été utilisé.\nChaque session nécessite un nouveau ticket.',
+        );
+        return;
+      }
+
+      // Fallback ancienne réservation MongoDB ID
+      if (_isMongoId(rawCode) && _isTicketNotFound(e.message)) {
+        final ReservationApiModel res =
+            await _repo.completeReservationByTicket(rawCode);
+        _showResultSheet(
+          rawCode,
+          isValid: true,
+          message: 'Ticket scanné avec succès.',
+          ticketReference: res.id,
+          afterClose: widget.onScanSuccess,
+        );
+        return;
+      }
+
+      rethrow;
+    }
+  }
+
+  // ── Mode SORTIE ──────────────────────────────────────────
+  Future<void> _handleExit(
+      String rawCode, _TicketPayload payload) async {
+
+    final String ticketId = (payload.ticketId ?? '').trim();
+    final String? ticketCode = payload.ticketCode?.trim();
+
+    if (ticketId.isEmpty) {
+      _showResultSheet(
+        rawCode,
+        isValid: false,
+        message: 'Ticket invalide : ticket_id manquant.\nScannez le QR complet.',
+      );
+      return;
     }
 
-    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    final Map<String, dynamic> result = await _repo.exitParkingTicket(
+      ticketId: ticketId,
+      ticketCode: ticketCode,
+    );
+
+    final String? ref =
+        _extractTicketRef(result) ?? (ticketCode?.isNotEmpty == true ? ticketCode : ticketId);
+
+    _showResultSheet(
+      rawCode,
+      isValid: true,
+      message: 'Sortie autorisée.\nBonne route !',
+      ticketReference: ref,
+      afterClose: widget.onScanSuccess,
+    );
+  }
+
+  // ════════════════════════════════════════════════════════
+  //  PARSING QR
+  // ════════════════════════════════════════════════════════
+  _TicketPayload _parsePayload(String raw) {
+    final String t = raw.trim();
+    if (t.isEmpty) return const _TicketPayload();
+
+    // JSON QR généré par le script Python
+    // { "ticket_id": "...", "ticket_code": "...",
+    //   "parking_id": "arduino-sim", "entry_time": "...",
+    //   "status": "unpaid" }
+    if (t.startsWith('{') && t.endsWith('}')) {
       try {
-        final Object? decoded = jsonDecode(trimmed);
+        final Object? decoded = jsonDecode(t);
         if (decoded is Map) {
           final Map<String, dynamic> map = decoded.map<String, dynamic>(
-            (dynamic key, dynamic value) => MapEntry<String, dynamic>(
-              key.toString(),
-              value,
-            ),
+            (k, v) => MapEntry(k.toString(), v),
           );
           return _TicketPayload(
-            ticketId: _stringOrNull(map['ticket_id'] ?? map['ticketId']),
-            ticketCode: _stringOrNull(map['ticket_code'] ?? map['ticketCode']),
-            parkingId: _stringOrNull(map['parking_id'] ?? map['parkingId']),
+            ticketId:   _str(map['ticket_id']   ?? map['ticketId']),
+            ticketCode: _str(map['ticket_code']  ?? map['ticketCode']),
+            parkingId:  _str(map['parking_id']   ?? map['parkingId']),
+            entryTime:  _str(map['entry_time']   ?? map['entryTime']),
+            status:     _str(map['status']),
           );
         }
-      } catch (_) {
-        // Ignore invalid JSON and fallback to raw parsing.
-      }
+      } catch (_) {}
     }
 
-    if (_looksLikeLegacyReservation(trimmed)) {
-      return _TicketPayload(ticketId: trimmed);
+    // MongoDB ObjectId (fallback legacy)
+    if (_isMongoId(t)) {
+      return _TicketPayload(ticketId: t);
     }
 
-    return _TicketPayload(ticketCode: trimmed);
+    // Texte brut → considéré comme ticket_code
+    return _TicketPayload(ticketCode: t);
   }
 
-  String? _stringOrNull(Object? value) {
-    if (value == null) {
-      return null;
-    }
-
-    final String text = value.toString().trim();
-    if (text.isEmpty) {
-      return null;
-    }
-
-    return text;
+  // ════════════════════════════════════════════════════════
+  //  HELPERS
+  // ════════════════════════════════════════════════════════
+  String? _str(Object? v) {
+    if (v == null) return null;
+    final String s = v.toString().trim();
+    return s.isEmpty ? null : s;
   }
 
-  bool _looksLikeLegacyReservation(String value) {
-    return RegExp(r'^[a-fA-F0-9]{24}$').hasMatch(value.trim());
-  }
+  bool _isMongoId(String v) =>
+      RegExp(r'^[a-fA-F0-9]{24}$').hasMatch(v.trim());
 
-  bool _isTicketNotFound(String message) {
-    return message.toLowerCase().contains('introuvable');
-  }
+  bool _isParkingNotFound(String msg) =>
+      msg.toLowerCase().contains('parking') &&
+      (msg.toLowerCase().contains('introuvable') ||
+       msg.toLowerCase().contains('not found') ||
+       msg.toLowerCase().contains('invalide'));
 
-  String? _extractTicketId(Map<String, dynamic> data) {
-    final Object? ticketRaw = data['ticket'];
-    if (ticketRaw is Map) {
-      final Object? id = ticketRaw['id'];
+  bool _isAlreadyActive(String msg) =>
+      msg.toLowerCase().contains('session') &&
+      (msg.toLowerCase().contains('active') ||
+       msg.toLowerCase().contains('en cours'));
+
+  bool _isAlreadyUsed(String msg) =>
+      msg.toLowerCase().contains('déjà utilisé') ||
+      msg.toLowerCase().contains('already used') ||
+      msg.toLowerCase().contains('terminée');
+
+  bool _isTicketNotFound(String msg) =>
+      msg.toLowerCase().contains('introuvable') ||
+      msg.toLowerCase().contains('not found');
+
+  String? _extractTicketRef(Map<String, dynamic> data) {
+    final Object? ticket = data['ticket'];
+    if (ticket is Map) {
+      final Object? id = ticket['id'] ?? ticket['ticket_code'];
       if (id != null) {
-        final String text = id.toString().trim();
-        if (text.isNotEmpty) {
-          return text;
-        }
+        final String s = id.toString().trim();
+        if (s.isNotEmpty) return s;
       }
+    }
+    final Object? ref = data['ticket_code'] ?? data['ticketCode'];
+    if (ref != null) {
+      final String s = ref.toString().trim();
+      if (s.isNotEmpty) return s;
     }
     return null;
   }
 
+  String? _extractQrImagePath(Map<String, dynamic> data) {
+    final Object? path = data['qr_image_path'] ?? data['qrImagePath'];
+    if (path != null) {
+      final String s = path.toString().trim();
+      return s.isNotEmpty ? s : null;
+    }
+    return null;
+  }
+
+  // ════════════════════════════════════════════════════════
+  //  BOTTOM SHEET résultat
+  // ════════════════════════════════════════════════════════
   void _showResultSheet(
     String code, {
     required bool isValid,
     required String message,
     String? ticketReference,
+    String? qrImagePath,
     VoidCallback? afterClose,
   }) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isDismissible: false,
+      isScrollControlled: true,
       builder: (_) => _ScanResultSheet(
-        code: code,
-        isValid: isValid,
-        message: message,
+        code:            code,
+        isValid:         isValid,
+        message:         message,
         ticketReference: ticketReference,
+        qrImagePath:     qrImagePath,
         onRetry: () {
           Navigator.pop(context);
-          setState(() {
-            _isScanning = true;
-            _isSubmitting = false;
-          });
+          setState(() => _isScanning = true);
           _scanCtrl.repeat(reverse: true);
         },
         onClose: () {
@@ -288,378 +481,330 @@ class _ScannerScreenState extends State<ScannerScreen>
     );
   }
 
-  Future<void> _simulateScanFromCurrentReservation() async {
-    if (_isSubmitting) {
-      return;
-    }
-
-    if (_scanMode == _ScanMode.exit) {
-      _showResultSheet(
-        'SORTIE',
-        isValid: false,
-        message: 'Scannez un ticket de sortie pour continuer.',
-      );
-      return;
-    }
-
-    try {
-      final List<ReservationApiModel> reservations =
-          await _reservationRepository.fetchMyReservations();
-
-      ReservationApiModel? candidate;
-      for (final ReservationApiModel reservation in reservations) {
-        if (reservation.reservationStatus.toLowerCase() == 'in_transit') {
-          candidate = reservation;
-          break;
-        }
-      }
-
-      if (candidate == null) {
-        for (final ReservationApiModel reservation in reservations) {
-          if (reservation.reservationStatus.toLowerCase() == 'confirmed') {
-            candidate = reservation;
-            break;
-          }
-        }
-      }
-
-      if (candidate == null || candidate.id.isEmpty) {
-        _showResultSheet(
-          'AUCUNE-RESERVATION',
-          isValid: false,
-          message: 'Aucune reservation valide a scanner.',
-        );
-        return;
-      }
-
-      await _onQRDetected(candidate.id);
-    } on ReservationException catch (error) {
-      _showResultSheet(
-        'ERREUR-SCAN',
-        isValid: false,
-        message: error.message,
-      );
-    } catch (_) {
-      _showResultSheet(
-        'ERREUR-SCAN',
-        isValid: false,
-        message: 'Impossible de recuperer une reservation a scanner.',
-      );
-    }
-  }
-
+  // ════════════════════════════════════════════════════════
+  //  BUILD
+  // ════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final frameW = size.width * 0.72;
-    final frameH = frameW * 1.25;
+    final Size   sz     = MediaQuery.of(context).size;
+    final double frameW = sz.width * 0.73;
+    final double frameH = frameW * 1.22;
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          // ── Fond caméra (simulé en noir) ──────────────────
-          // Remplacer par :
-          // MobileScanner(
-          //   controller: _cameraCtrl,
-          //   onDetect: (capture) {
-          //     final code = capture.barcodes.first.rawValue ?? '';
-          //     if (_isScanning && code.isNotEmpty) _onQRDetected(code);
-          //   },
-          // ),
-          Container(color: Colors.black87),
+      body: Stack(children: [
 
-          // ── Overlay foncé autour du cadre ──────────────────
-          _buildOverlay(size, frameW, frameH),
-
-          // ── Cadre QR avec coins bleus ─────────────────────
-          Center(
-            child: SizedBox(
-              width: frameW,
-              height: frameH,
-              child: Stack(children: [
-                // Fond semi-transparent dans le cadre
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                // Coins bleus
-                _buildCorners(frameW, frameH),
-                // Ligne de scan animée
-                if (_isScanning)
-                  AnimatedBuilder(
-                    animation: _scanAnim,
-                    builder: (_, __) => Positioned(
-                      top: _scanAnim.value * (frameH - 4),
-                      left: 16,
-                      right: 16,
-                      child: Container(
-                        height: 2,
-                        decoration: BoxDecoration(
-                          color: _kBlue,
-                          borderRadius: BorderRadius.circular(1),
-                          boxShadow: [
-                            BoxShadow(
-                                color: _kBlue.withOpacity(0.6),
-                                blurRadius: 8,
-                                spreadRadius: 2),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-              ]),
-            ),
-          ),
-
-          // ── Texte instruction ─────────────────────────────
-          Positioned(
-            top: size.height / 2 - frameH / 2 - 72,
-            left: 0,
-            right: 0,
+        // ── VRAIE CAMÉRA ───────────────────────────────────
+        MobileScanner(
+          controller: _cameraCtrl,
+          onDetect: _onDetect,
+          errorBuilder: (_, error) => Container(
+            color: Colors.black,
+            alignment: Alignment.center,
             child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                const Icon(Icons.camera_alt_outlined,
+                    color: Colors.white54, size: 48),
+                const SizedBox(height: 12),
                 Text(
-                  _scanMode == _ScanMode.entry
-                      ? 'Placez le ticket d entree dans le cadre'
-                      : 'Placez le ticket de sortie dans le cadre',
+                  'Erreur caméra : ${error.errorDetails?.message ?? "inconnue"}',
+                  style: const TextStyle(color: Colors.white54, fontSize: 13),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500),
                 ),
-                const SizedBox(height: 10),
-                _buildModeToggle(),
               ],
             ),
           ),
+        ),
 
-          // ── Bouton fermer (X) ─────────────────────────────
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _circleBtn(
-                    icon: Icons.close,
-                    onTap: () => Navigator.pop(context),
-                  ),
-                  _circleBtn(
-                    icon: _torchOn
-                        ? Icons.flashlight_on_rounded
-                        : Icons.flashlight_off_rounded,
-                    onTap: _toggleTorch,
-                  ),
-                ],
+        // ── OVERLAY FONCÉ ──────────────────────────────────
+        _buildOverlay(sz, frameW, frameH),
+
+        // ── CADRE QR ───────────────────────────────────────
+        Center(
+          child: SizedBox(
+            width: frameW,
+            height: frameH,
+            child: Stack(children: [
+              // Fond semi-transparent
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.04),
+                  borderRadius: BorderRadius.circular(18),
+                ),
               ),
+              // Coins bleus
+              _buildCorners(frameW, frameH),
+              // Ligne scan animée
+              if (_isScanning)
+                AnimatedBuilder(
+                  animation: _scanAnim,
+                  builder: (_, __) => Positioned(
+                    top:  _scanAnim.value * (frameH - 4),
+                    left: 14,
+                    right: 14,
+                    child: Container(
+                      height: 2.5,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(colors: [
+                          _kBlue.withOpacity(0),
+                          _kBlue,
+                          _kBlue.withOpacity(0),
+                        ]),
+                        borderRadius: BorderRadius.circular(2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _kBlue.withOpacity(0.5),
+                            blurRadius: 10,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              // Spinner pendant traitement
+              if (_isSubmitting)
+                const Center(
+                  child: CircularProgressIndicator(
+                    color: _kBlue,
+                    strokeWidth: 2.5,
+                  ),
+                ),
+            ]),
+          ),
+        ),
+
+        // ── INSTRUCTION + MODE TOGGLE ──────────────────────
+        Positioned(
+          top:   sz.height / 2 - frameH / 2 - 82,
+          left:  0,
+          right: 0,
+          child: Column(children: [
+            Text(
+              _mode == ScanMode.entry
+                  ? 'Placez le ticket d\'entrée dans le cadre'
+                  : 'Placez le ticket de sortie dans le cadre',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 12),
+            _buildModeToggle(),
+          ]),
+        ),
+
+        // ── BARRE HAUT : Fermer + Torche ───────────────────
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _circleBtn(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.pop(context),
+                ),
+                _circleBtn(
+                  icon: _torchOn
+                      ? Icons.flashlight_on_rounded
+                      : Icons.flashlight_off_rounded,
+                  onTap: _toggleTorch,
+                  active: _torchOn,
+                ),
+              ],
             ),
           ),
+        ),
 
-          // ── Barre actions bas ─────────────────────────────
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: _buildBottomBar(),
+        // ── BARRE BAS : Galerie · Scan · Historique ────────
+        Positioned(
+          bottom: MediaQuery.of(context).padding.bottom + 24,
+          left:   0,
+          right:  0,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              // Galerie
+              _bottomBtn(
+                icon: Icons.photo_library_outlined,
+                onTap: _openGallery,
+                label: 'Galerie',
+              ),
+              // Bouton scan central
+              GestureDetector(
+                onTap: _isSubmitting ? null : () {
+                  setState(() => _isScanning = true);
+                  _scanCtrl.repeat(reverse: true);
+                  HapticFeedback.mediumImpact();
+                },
+                child: Container(
+                  width: 68,
+                  height: 68,
+                  decoration: BoxDecoration(
+                    color: _isSubmitting
+                        ? Colors.white30
+                        : _kBlue,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: _kBlue.withOpacity(0.4),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: _isSubmitting
+                      ? const Center(
+                          child: SizedBox(
+                            width: 26,
+                            height: 26,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2.5,
+                            ),
+                          ),
+                        )
+                      : const Icon(Icons.qr_code_scanner_rounded,
+                          color: Colors.white, size: 30),
+                ),
+              ),
+              // Torche (raccourci bas)
+              _bottomBtn(
+                icon: _torchOn
+                    ? Icons.flashlight_on_rounded
+                    : Icons.flashlight_off_rounded,
+                onTap: _toggleTorch,
+                label: 'Lampe',
+                active: _torchOn,
+              ),
+            ],
           ),
+        ),
+
+      ]),
+    );
+  }
+
+  // ════════════════════════════════════════════════════════
+  //  WIDGETS INTERNES
+  // ════════════════════════════════════════════════════════
+
+  Widget _buildModeToggle() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _modeChip('Entrée', ScanMode.entry),
+          const SizedBox(width: 4),
+          _modeChip('Sortie', ScanMode.exit),
         ],
       ),
     );
   }
 
-  Widget _buildModeToggle() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _modeChip(label: 'Entree', mode: _ScanMode.entry),
-        const SizedBox(width: 12),
-        _modeChip(label: 'Sortie', mode: _ScanMode.exit),
-      ],
-    );
-  }
-
-  Widget _modeChip({required String label, required _ScanMode mode}) {
-    final bool isActive = _scanMode == mode;
+  Widget _modeChip(String label, ScanMode mode) {
+    final bool active = _mode == mode;
     return GestureDetector(
       onTap: () {
-        if (_scanMode == mode) {
-          return;
-        }
-        setState(() {
-          _scanMode = mode;
-        });
+        setState(() => _mode = mode);
         HapticFeedback.selectionClick();
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
         decoration: BoxDecoration(
-          color: isActive ? _kBlue : Colors.black.withOpacity(0.5),
+          color: active ? _kBlue : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isActive ? _kBlue : Colors.white24,
-            width: 1,
-          ),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: isActive ? Colors.white : Colors.white70,
-            fontWeight: FontWeight.w600,
+            color: active ? Colors.white : Colors.white54,
             fontSize: 13,
+            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
           ),
         ),
       ),
     );
   }
 
-  // ── Overlay foncé ─────────────────────────────────────────
-  Widget _buildOverlay(Size size, double frameW, double frameH) {
-    final cx = size.width / 2 - frameW / 2;
-    final cy = size.height / 2 - frameH / 2;
+  Widget _buildOverlay(Size sz, double fw, double fh) {
+    final double cx = (sz.width - fw) / 2;
+    final double cy = (sz.height - fh) / 2;
+    final double opacity = 0.72;
+    final Color c = Colors.black.withOpacity(opacity);
 
     return Stack(children: [
-      // Haut
-      Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          height: cy,
-          child: Container(color: Colors.black.withOpacity(0.6))),
-      // Bas
-      Positioned(
-          top: cy + frameH,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: Container(color: Colors.black.withOpacity(0.6))),
-      // Gauche
-      Positioned(
-          top: cy,
-          left: 0,
-          width: cx,
-          height: frameH,
-          child: Container(color: Colors.black.withOpacity(0.6))),
-      // Droite
-      Positioned(
-          top: cy,
-          left: cx + frameW,
-          right: 0,
-          height: frameH,
-          child: Container(color: Colors.black.withOpacity(0.6))),
+      // Top
+      Positioned(top: 0, left: 0, right: 0, height: cy,
+          child: Container(color: c)),
+      // Bottom
+      Positioned(top: cy + fh, left: 0, right: 0, bottom: 0,
+          child: Container(color: c)),
+      // Left
+      Positioned(top: cy, left: 0, width: cx, height: fh,
+          child: Container(color: c)),
+      // Right
+      Positioned(top: cy, right: 0, width: cx, height: fh,
+          child: Container(color: c)),
     ]);
   }
 
-  // ── Coins du cadre ────────────────────────────────────────
   Widget _buildCorners(double w, double h) {
-    const r = 16.0;
-    const t = 4.0;
-    const l = 28.0;
-    return Stack(children: [
-      // Haut gauche
-      Positioned(
-          top: 0, left: 0, child: _corner(l, l, t, r, top: true, left: true)),
-      // Haut droit
-      Positioned(
-          top: 0, right: 0, child: _corner(l, l, t, r, top: true, left: false)),
-      // Bas gauche
-      Positioned(
-          bottom: 0,
-          left: 0,
-          child: _corner(l, l, t, r, top: false, left: true)),
-      // Bas droit
-      Positioned(
-          bottom: 0,
-          right: 0,
-          child: _corner(l, l, t, r, top: false, left: false)),
-    ]);
-  }
+    const double len = 28;
+    const double thick = 3.5;
+    const double r = 12;
+    final Color col = _kBlue;
 
-  Widget _corner(double w, double h, double t, double r,
-      {required bool top, required bool left}) {
-    return SizedBox(
-      width: w,
-      height: h,
-      child: CustomPaint(
-        painter: _CornerPainter(
-            top: top, left: left, thickness: t, radius: r, color: _kBlue),
+    Widget corner(bool top, bool left) => Positioned(
+      top:    top ? 0 : null,
+      bottom: top ? null : 0,
+      left:   left ? 0 : null,
+      right:  left ? null : 0,
+      child: SizedBox(
+        width: len + r,
+        height: len + r,
+        child: CustomPaint(
+          painter: _CornerPainter(
+              top: top, left: left, thickness: thick,
+              radius: r, color: col),
+        ),
       ),
     );
+
+    return Stack(children: [
+      corner(true, true),
+      corner(true, false),
+      corner(false, true),
+      corner(false, false),
+    ]);
   }
 
-  // ── Bouton circulaire ─────────────────────────────────────
-  Widget _circleBtn({required IconData icon, required VoidCallback onTap}) {
+  Widget _circleBtn({
+    required IconData icon,
+    required VoidCallback onTap,
+    bool active = false,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 46,
-        height: 46,
+        width: 42,
+        height: 42,
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.55),
+          color: active
+              ? _kBlue.withOpacity(0.8)
+              : Colors.black.withOpacity(0.55),
           shape: BoxShape.circle,
         ),
         child: Icon(icon, color: Colors.white, size: 22),
-      ),
-    );
-  }
-
-  // ── Barre du bas : galerie + photo + historique ───────────
-  Widget _buildBottomBar() {
-    return Container(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).padding.bottom + 16,
-        top: 20,
-      ),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          // Galerie
-          _bottomBtn(
-            icon: Icons.photo_outlined,
-            onTap: () {
-              // Ouvrir galerie pour scanner image
-            },
-          ),
-          // Bouton principal scan
-          GestureDetector(
-            onTap: () {
-              // Test : simuler un scan
-              _simulateScanFromCurrentReservation();
-            },
-            child: Container(
-              width: 68,
-              height: 68,
-              decoration: BoxDecoration(
-                color: _kBlue,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                      color: _kBlue.withOpacity(0.4),
-                      blurRadius: 16,
-                      spreadRadius: 2),
-                ],
-              ),
-              child: const Icon(Icons.camera_alt_rounded,
-                  color: Colors.white, size: 30),
-            ),
-          ),
-          // Historique
-          _bottomBtn(
-            icon: Icons.history_rounded,
-            onTap: () {},
-          ),
-        ],
       ),
     );
   }
@@ -667,28 +812,43 @@ class _ScannerScreenState extends State<ScannerScreen>
   Widget _bottomBtn({
     required IconData icon,
     required VoidCallback onTap,
+    required String label,
+    bool active = false,
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.55),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, color: Colors.white, size: 22),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              color: active
+                  ? _kBlue.withOpacity(0.85)
+                  : Colors.black.withOpacity(0.55),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: Colors.white, size: 24),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            label,
+            style: const TextStyle(
+                color: Colors.white70, fontSize: 11,
+                fontWeight: FontWeight.w500),
+          ),
+        ],
       ),
     );
   }
 }
 
 // ════════════════════════════════════════════════════════════
-//  CORNER PAINTER — dessine un coin du cadre
+//  CORNER PAINTER
 // ════════════════════════════════════════════════════════════
-
 class _CornerPainter extends CustomPainter {
-  final bool top, left;
+  final bool  top, left;
   final double thickness, radius;
   final Color color;
 
@@ -702,15 +862,15 @@ class _CornerPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
+    final Paint paint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = thickness
       ..strokeCap = StrokeCap.round;
 
-    final path = Path();
-    final w = size.width;
-    final h = size.height;
+    final Path path = Path();
+    final double w = size.width;
+    final double h = size.height;
 
     if (top && left) {
       path.moveTo(0, h);
@@ -737,7 +897,6 @@ class _CornerPainter extends CustomPainter {
           radius: Radius.circular(radius), clockwise: false);
       path.lineTo(w, 0);
     }
-
     canvas.drawPath(path, paint);
   }
 
@@ -746,14 +905,14 @@ class _CornerPainter extends CustomPainter {
 }
 
 // ════════════════════════════════════════════════════════════
-//  RESULT BOTTOM SHEET
+//  SCAN RESULT BOTTOM SHEET
 // ════════════════════════════════════════════════════════════
-
 class _ScanResultSheet extends StatelessWidget {
-  final String code;
-  final bool isValid;
-  final String message;
-  final String? ticketReference;
+  final String     code;
+  final bool       isValid;
+  final String     message;
+  final String?    ticketReference;
+  final String?    qrImagePath;     // chemin vers .png du ticket généré Python
   final VoidCallback onRetry;
   final VoidCallback onClose;
 
@@ -762,6 +921,7 @@ class _ScanResultSheet extends StatelessWidget {
     required this.isValid,
     required this.message,
     this.ticketReference,
+    this.qrImagePath,
     required this.onRetry,
     required this.onClose,
   });
@@ -771,14 +931,15 @@ class _ScanResultSheet extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
       ),
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+      padding: EdgeInsets.fromLTRB(
+          24, 16, 24, MediaQuery.of(context).padding.bottom + 24),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
+
         // Poignée
         Container(
-          width: 40,
-          height: 4,
+          width: 40, height: 4,
           margin: const EdgeInsets.only(bottom: 20),
           decoration: BoxDecoration(
             color: Colors.grey.shade300,
@@ -788,12 +949,11 @@ class _ScanResultSheet extends StatelessWidget {
 
         // Icône résultat
         Container(
-          width: 72,
-          height: 72,
+          width: 72, height: 72,
           decoration: BoxDecoration(
             color: isValid
-                ? const Color(0xFF2ECC71).withOpacity(0.12)
-                : const Color(0xFFE53935).withOpacity(0.12),
+                ? _kGreen.withOpacity(0.12)
+                : _kRed.withOpacity(0.12),
             shape: BoxShape.circle,
           ),
           child: Icon(
@@ -801,26 +961,25 @@ class _ScanResultSheet extends StatelessWidget {
                 ? Icons.check_circle_outline_rounded
                 : Icons.error_outline_rounded,
             size: 40,
-            color: isValid ? const Color(0xFF2ECC71) : const Color(0xFFE53935),
+            color: isValid ? _kGreen : _kRed,
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
 
         Text(
-          isValid ? 'Ticket validé !' : 'QR code invalide',
+          isValid ? 'Ticket validé !' : 'Ticket invalide',
           style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF1A1A2E)),
+            fontSize: 20, fontWeight: FontWeight.w800, color: _kDark),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
-          isValid ? message : '$message\nVeuillez réessayer.',
+          message,
           textAlign: TextAlign.center,
           style: const TextStyle(
-              fontSize: 14, color: Color(0xFF8A9BB5), height: 1.5),
+              fontSize: 14, color: _kMid, height: 1.5),
         ),
 
+        // Référence ticket + aperçu QR image (si disponible)
         if (isValid) ...[
           const SizedBox(height: 16),
           Container(
@@ -830,32 +989,59 @@ class _ScanResultSheet extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
             ),
             child: Row(children: [
-              const Icon(Icons.confirmation_number_outlined,
-                  color: Color(0xFF4A90E2), size: 20),
-              const SizedBox(width: 10),
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Référence ticket',
-                    style: TextStyle(fontSize: 11, color: Color(0xFF8A9BB5))),
-                Text(ticketReference ?? code,
+              // Miniature du ticket .png si disponible
+              if (qrImagePath != null) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.file(
+                    File(qrImagePath!),
+                    width: 56,
+                    height: 56,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.qr_code_2_rounded,
+                      color: _kBlue,
+                      size: 40,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ] else ...[
+                const Icon(Icons.confirmation_number_outlined,
+                    color: _kBlue, size: 22),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  const Text('Référence ticket',
+                      style: TextStyle(fontSize: 11, color: _kMid)),
+                  const SizedBox(height: 4),
+                  Text(
+                    ticketReference ?? code,
                     style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF1A1A2E))),
-              ]),
+                        color: _kDark),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ]),
+              ),
             ]),
           ),
         ],
 
-        const SizedBox(height: 24),
+        const SizedBox(height: 22),
 
+        // Boutons
         if (isValid)
           SizedBox(
-            width: double.infinity,
-            height: 52,
+            width: double.infinity, height: 52,
             child: ElevatedButton(
               onPressed: onClose,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4A90E2),
+                backgroundColor: _kBlue,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16)),
@@ -874,12 +1060,12 @@ class _ScanResultSheet extends StatelessWidget {
                 onPressed: onClose,
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Color(0xFFE2ECF9)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: const Text('Fermer',
-                    style: TextStyle(color: Color(0xFF1A1A2E))),
+                    style: TextStyle(color: _kDark, fontWeight: FontWeight.w600)),
               ),
             ),
             const SizedBox(width: 12),
@@ -887,15 +1073,16 @@ class _ScanResultSheet extends StatelessWidget {
               child: ElevatedButton(
                 onPressed: onRetry,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A90E2),
+                  backgroundColor: _kBlue,
                   elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: const Text('Réessayer',
                     style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w600)),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600)),
               ),
             ),
           ]),

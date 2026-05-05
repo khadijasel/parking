@@ -110,7 +110,9 @@ class _GuidanceToSpotScreenState extends State<GuidanceToSpotScreen>
       return resolved ?? _layout.topRow.first;
     }
 
-    if (resolved != null && resolved.state == GuidanceSpotState.available) {
+    if (resolved != null &&
+        (resolved.state == GuidanceSpotState.available ||
+            resolved.state == GuidanceSpotState.reserved)) {
       return resolved;
     }
 
