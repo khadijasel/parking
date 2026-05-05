@@ -127,7 +127,7 @@ class ReservationController extends Controller
                 'deposit_amount' => $isShortDuration ? 0.0 : (float) ($payload['deposit_amount'] ?? 200.0),
                 'reservation_status' => $isShortDuration ? self::STATUS_CONFIRMED : self::STATUS_PENDING_PAYMENT,
                 'payment_status' => $isShortDuration ? 'not_required' : 'unpaid',
-                'expires_at' => CarbonImmutable::now()->addMinutes(30),
+                'expires_at' => CarbonImmutable::now()->addMinutes($isShortDuration ? 30 : 60),
                 'cancelled_at' => null,
                 'spot_locked' => true,
             ]);

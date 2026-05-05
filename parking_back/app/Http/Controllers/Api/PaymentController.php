@@ -137,7 +137,10 @@ class PaymentController extends Controller
                 }
 
                 if ((string) $reservation->duration_type !== 'courte') {
-                    $reservation->expires_at = CarbonImmutable::now()->addHour();
+                    $createdAt = $reservation->created_at
+                        ? CarbonImmutable::instance($reservation->created_at)
+                        : CarbonImmutable::now();
+                    $reservation->expires_at = $createdAt->addHour();
                 }
 
                 $reservation->save();
