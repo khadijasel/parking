@@ -13,6 +13,7 @@ class ParkingSession extends Model
     protected $fillable = [
         'user_id',
         'reservation_id',
+        'parking_id',
         'parking_name',
         'parking_address',
         'ticket_code',

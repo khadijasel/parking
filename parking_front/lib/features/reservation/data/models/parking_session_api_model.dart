@@ -2,6 +2,7 @@ class ParkingSessionApiModel {
   final String id;
   final String userId;
   final String reservationId;
+  final String parkingId;
   final String parkingName;
   final String parkingAddress;
   final String ticketCode;
@@ -22,6 +23,7 @@ class ParkingSessionApiModel {
     required this.id,
     required this.userId,
     required this.reservationId,
+    required this.parkingId,
     required this.parkingName,
     required this.parkingAddress,
     required this.ticketCode,
@@ -46,6 +48,7 @@ class ParkingSessionApiModel {
       id: (json['id'] ?? '').toString(),
       userId: (json['user_id'] ?? '').toString(),
       reservationId: (json['reservation_id'] ?? '').toString(),
+      parkingId: (json['parking_id'] ?? '').toString(),
       parkingName: (json['parking_name'] ?? '').toString(),
       parkingAddress: (json['parking_address'] ?? '').toString(),
       ticketCode: (json['ticket_code'] ?? '').toString(),

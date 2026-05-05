@@ -36,6 +36,12 @@ class _ExitSuccessScreenState extends State<ExitSuccessScreen>
     )..forward();
     _scaleAnim = Tween<double>(begin: 0.0, end: 1.0)
         .animate(CurvedAnimation(parent: _scaleCtrl, curve: Curves.elasticOut));
+    // Auto-close after 4 seconds to return to HomeScreen
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    });
   }
 
   @override
@@ -47,7 +53,7 @@ class _ExitSuccessScreenState extends State<ExitSuccessScreen>
   void _submitRating() {
     HapticFeedback.mediumImpact();
     // → API PUT /parkings/{id}/rating
-    Navigator.popUntil(context, (r) => r.isFirst);
+    Navigator.pop(context);
   }
 
   @override
@@ -62,7 +68,7 @@ class _ExitSuccessScreenState extends State<ExitSuccessScreen>
             Align(
               alignment: Alignment.centerLeft,
               child: GestureDetector(
-                onTap: () => Navigator.popUntil(context, (r) => r.isFirst),
+                onTap: () => Navigator.pop(context),
                 child: const Icon(Icons.close_rounded, color: _kMid, size: 24),
               ),
             ),

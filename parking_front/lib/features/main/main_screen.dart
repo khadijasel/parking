@@ -172,7 +172,7 @@ class _HomeTabGateState extends State<_HomeTabGate> {
   }
 
   void _refreshSession() {
-    _loadSession(retryOnNull: true);
+    _loadSession(forceRefresh: true, retryOnNull: true);
   }
 
   Future<void> _loadSession({

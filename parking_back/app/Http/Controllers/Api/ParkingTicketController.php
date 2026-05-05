@@ -11,7 +11,6 @@ use App\Services\Parking\ParkingAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 
 class ParkingTicketController extends Controller
@@ -884,6 +883,7 @@ class ParkingTicketController extends Controller
         return ParkingSession::query()->create([
             'user_id' => $userId,
             'reservation_id' => (string) $reservation->getKey(),
+            'parking_id' => (string) ($reservation->parking_id ?? ''),
             'parking_name' => (string) ($reservation->parking_name ?? ''),
             'parking_address' => (string) ($reservation->parking_address ?? ''),
             'ticket_code' => $ticketCode,
@@ -899,6 +899,27 @@ class ParkingTicketController extends Controller
         $now = CarbonImmutable::now();
         $userId = (string) ($ticket->user_id ?? '');
         $spotLabel = trim((string) ($ticket->spot_label ?? ''));
+        $parkingAddress = '';
+
+        // Try to get address from reservation if linked
+        $reservationId = (string) ($ticket->reservation_id ?? '');
+        if ($reservationId !== '') {
+            $reservation = Reservation::query()->find($reservationId);
+            if ($reservation instanceof Reservation) {
+                $parkingAddress = (string) ($reservation->parking_address ?? '');
+            }
+        }
+
+        // Fallback: try to resolve from parking record
+        if ($parkingAddress === '') {
+            $parking = $this->resolveParkingRecord(
+                (string) ($ticket->parking_id ?? ''),
+                (string) ($ticket->parking_name ?? ''),
+            );
+            if ($parking instanceof Parking) {
+                $parkingAddress = trim((string) ($parking->address ?? ''));
+            }
+        }
 
         $existingActive = ParkingSession::query()
             ->where('ticket_code', (string) $ticket->ticket_code)
@@ -912,8 +933,9 @@ class ParkingTicketController extends Controller
         return ParkingSession::query()->create([
             'user_id' => $userId,
             'reservation_id' => (string) ($ticket->reservation_id ?? ''),
+            'parking_id' => (string) ($ticket->parking_id ?? ''),
             'parking_name' => (string) ($ticket->parking_name ?? ''),
-            'parking_address' => '',
+            'parking_address' => $parkingAddress,
             'ticket_code' => (string) $ticket->ticket_code,
             'spot_label' => $spotLabel,
             'status' => self::SESSION_STATUS_ACTIVE,
@@ -965,7 +987,13 @@ class ParkingTicketController extends Controller
             'ticket' => $this->transformTicket($ticket),
             'parking_session' => $session ? [
                 'id' => (string) $session->getKey(),
+                'user_id' => (string) ($session->user_id ?? ''),
+                'reservation_id' => (string) ($session->reservation_id ?? ''),
+                'parking_id' => (string) ($session->parking_id ?? ''),
+                'parking_name' => (string) ($session->parking_name ?? ''),
+                'parking_address' => (string) ($session->parking_address ?? ''),
                 'ticket_code' => (string) ($session->ticket_code ?? ''),
+                'spot_label' => (string) ($session->spot_label ?? ''),
                 'status' => (string) ($session->status ?? ''),
                 'started_at' => $session->started_at?->toIso8601String(),
                 'ended_at' => $session->ended_at?->toIso8601String(),

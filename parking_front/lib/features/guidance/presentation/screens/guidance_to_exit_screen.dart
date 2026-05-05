@@ -8,6 +8,7 @@ import 'package:parking_front/core/widgets/app_feedback.dart';
 import 'package:parking_front/features/guidance/presentation/utils/guidance_spot_layout.dart';
 import 'package:parking_front/features/parking/models/parking.dart';
 import 'package:parking_front/features/reservation/data/reservation_repository.dart';
+import 'package:parking_front/features/scanner/presentation/screens/scanner_screen.dart';
 
 import 'exit_success_screen.dart';
 
@@ -157,21 +158,42 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
   Future<void> _onArrived() async {
     if (_isCompletingExit) return;
     setState(() => _isCompletingExit = true);
+    _tts.stop();
 
     try {
-      await _reservationRepository.exitCurrentParkingSession();
+      // Open exit scanner - session will close after successful ticket scan
+      // Scanner auto-closes and returns true after exit validation
+      final bool exitSuccessful = await Navigator.push<bool>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ScannerScreen(
+                initialMode: ScanMode.exit,
+                onScanSuccess: () {
+                  // Empty callback - scanner handles exit session closure
+                },
+              ),
+            ),
+          ) ??
+          false;
+
       if (!mounted) return;
-      HapticFeedback.heavyImpact();
-      Navigator.pushReplacement(
+
+      if (exitSuccessful) {
+        HapticFeedback.heavyImpact();
+        // Show exit success screen
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute(builder: (_) => const ExitSuccessScreen()),
+        );
+        // Pop back to main navigation
+        if (mounted) Navigator.pop(context);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showError(
         context,
-        MaterialPageRoute(builder: (_) => const ExitSuccessScreen()),
+        e is ReservationException ? e.message : 'Erreur lors de la sortie.',
       );
-    } on ReservationException catch (error) {
-      if (!mounted) return;
-      AppFeedback.showError(context, error.message);
-    } catch (_) {
-      if (!mounted) return;
-      AppFeedback.showError(context, 'Impossible de terminer la sortie.');
     } finally {
       if (mounted) setState(() => _isCompletingExit = false);
     }

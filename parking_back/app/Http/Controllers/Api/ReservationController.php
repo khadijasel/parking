@@ -788,6 +788,7 @@ class ReservationController extends Controller
         return ParkingSession::query()->create([
             'user_id' => $userId,
             'reservation_id' => (string) $reservation->getKey(),
+            'parking_id' => (string) ($reservation->parking_id ?? ''),
             'parking_name' => (string) $reservation->parking_name,
             'parking_address' => (string) ($reservation->parking_address ?? ''),
             'ticket_code' => $this->buildTicketCode($reservation),
@@ -992,6 +993,7 @@ class ReservationController extends Controller
             'id' => (string) $session->getKey(),
             'user_id' => (string) $session->user_id,
             'reservation_id' => (string) $session->reservation_id,
+            'parking_id' => (string) ($session->parking_id ?? ''),
             'parking_name' => (string) ($session->parking_name ?? ''),
             'parking_address' => (string) ($session->parking_address ?? ''),
             'ticket_code' => (string) ($session->ticket_code ?? ''),

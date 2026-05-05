@@ -346,7 +346,16 @@ class _ScannerScreenState extends State<ScannerScreen>
       isValid: true,
       message: 'Sortie autorisée.\nBonne route !',
       ticketReference: ref,
-      afterClose: widget.onScanSuccess,
+      afterClose: () {
+        // Call parent callback first
+        widget.onScanSuccess?.call();
+        // Then auto-close scanner after short delay to show success message
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (mounted) {
+            Navigator.pop(context, true);
+          }
+        });
+      },
     );
   }
 
