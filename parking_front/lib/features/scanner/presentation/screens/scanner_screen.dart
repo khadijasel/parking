@@ -475,6 +475,10 @@ class _ScannerScreenState extends State<ScannerScreen>
         },
         onClose: () {
           Navigator.pop(context);
+          // Réinitialiser l'état de soumission pour permettre les scans suivants
+          if (mounted) {
+            setState(() => _isSubmitting = false);
+          }
           afterClose?.call();
         },
       ),

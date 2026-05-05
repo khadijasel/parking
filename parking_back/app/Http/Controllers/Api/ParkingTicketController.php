@@ -433,7 +433,7 @@ class ParkingTicketController extends Controller
         string $parkingId,
         string $parkingName,
     ): ?Reservation {
-        $statuses = ['confirmed', 'in_transit'];
+        $statuses = ['confirmed', 'in_transit', 'completed'];
 
         $query = Reservation::query()
             ->where('user_id', $userId)

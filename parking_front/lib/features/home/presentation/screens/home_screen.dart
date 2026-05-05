@@ -14,11 +14,14 @@ import '../../../guidance/presentation/screens/guidance_to_spot_screen.dart';
 import '../../../guidance/presentation/screens/guidance_to_vehicle_screen.dart';
 import '../../../guidance/presentation/screens/vehicle_found_screen.dart';
 import '../../../guidance/presentation/screens/vehicle_parked_confirmation_screen.dart';
+import '../../../guidance/presentation/screens/exit_success_screen.dart';
 import '../../../parking/data/parking_data.dart';
 import '../../../parking/data/parking_repository.dart';
 import '../../../parking/models/parking.dart';
 import '../../../reservation/data/models/parking_session_api_model.dart';
 import '../../../reservation/data/reservation_repository.dart';
+import '../../../scanner/presentation/screens/scanner_screen.dart';
+
 
 // ─── Constantes couleurs ───────────────────────────────────────────────────────
 const _kBlue = Color(0xFF4A90E2);
@@ -171,15 +174,14 @@ class _HomeScreenState extends State<HomeScreen> {
         entry,
         forceRefresh: forcePaymentHistoryRefresh,
       );
-      Parking? matchedParking = _resolveParkingByName(apiSession.parkingName);
-      if (matchedParking?.indoorMap?.spots.isEmpty ?? true) {
-        try {
-          await _parkingRepository.fetchParkings();
-        } catch (_) {
-          // Keep the best local fallback when the catalog is temporarily unavailable.
-        }
-        matchedParking = _resolveParkingByName(apiSession.parkingName);
+      // S'assurer que le catalogue de parkings est à jour avant de résoudre
+      try {
+        await _parkingRepository.fetchParkings();
+      } catch (_) {
+        // Keep the best local fallback when the catalog is temporarily unavailable.
       }
+      
+      Parking? matchedParking = _resolveParkingByName(apiSession.parkingName);
       final bool isVehicleParked =
           _parkedReservationIds.contains(apiSession.reservationId);
       final bool isVehicleFound = isVehicleParked &&
@@ -509,8 +511,17 @@ class _HomeScreenState extends State<HomeScreen> {
     final String normalized =
         parkingName.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
-    return normalized.contains('notre parking') ||
+    // Debug pour vérifier la détection
+    print('DEBUG: Parking name: "$parkingName" -> normalized: "$normalized"');
+    
+    // "Notre Parking" est équipé d'une carte, donc on active le guidage
+    // Les autres parkings non équipés afficheront "prochainement"
+    // Retourne TRUE si le parking a une carte (pas de message "prochainement")
+    final bool hasMap = normalized.contains('notre parking') ||
         normalized.contains('arduino');
+    
+    print('DEBUG: Has map (no "prochainement"): $hasMap for "$parkingName"');
+    return hasMap;
   }
 
   Future<void> _showGuidanceComingSoonDialog() async {
@@ -668,9 +679,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final bool guidanceEnabled =
         _isSmartGuidanceEnabledForParking(session.parkingName);
-    if (!guidanceEnabled) {
+    
+    // Vérification supplémentaire : si le parking a une indoor map, il a une carte
+    final bool hasIndoorMap = session.parking?.indoorMap?.spots.isNotEmpty ?? false;
+    final bool canShowMap = guidanceEnabled || hasIndoorMap;
+    
+    print('DEBUG: Guidance enabled: $guidanceEnabled, Has indoor map: $hasIndoorMap, Can show map: $canShowMap');
+    
+    if (!canShowMap) {
+      // Pour les parkings non équipés, on affiche le message mais on permet le paiement
       await _showGuidanceComingSoonDialog();
 
+      // Marquer comme "véhicule trouvé" pour permettre le paiement
       if (!_parkedReservationIds.contains(session.reservationId)) {
         _parkedReservationIds.add(session.reservationId);
         _vehicleFoundReservationIds.remove(session.reservationId);
@@ -736,9 +756,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final bool guidanceEnabled =
         _isSmartGuidanceEnabledForParking(session.parkingName);
-    if (!guidanceEnabled) {
+    
+    // Vérification supplémentaire : si le parking a une indoor map, il a une carte
+    final bool hasIndoorMap = session.parking?.indoorMap?.spots.isNotEmpty ?? false;
+    final bool canShowMap = guidanceEnabled || hasIndoorMap;
+    
+    print('DEBUG: FindCar - Guidance enabled: $guidanceEnabled, Has indoor map: $hasIndoorMap, Can show map: $canShowMap');
+    
+    if (!canShowMap) {
+      // Pour les parkings non équipés, on affiche le message mais on permet le paiement
       await _showGuidanceComingSoonDialog();
 
+      // Marquer comme "véhicule trouvé" pour permettre le paiement
       if (!session.isVehicleFound) {
         _vehicleFoundReservationIds.add(session.reservationId);
       }
@@ -807,19 +836,51 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final bool guidanceEnabled =
         _isSmartGuidanceEnabledForParking(session.parkingName);
+    
+    // Vérification supplémentaire : si le parking a une indoor map, il a une carte
+    final bool hasIndoorMap = session.parking?.indoorMap?.spots.isNotEmpty ?? false;
+    final bool canShowMap = guidanceEnabled || hasIndoorMap;
+    
+    print('DEBUG: Exit - Guidance enabled: $guidanceEnabled, Has indoor map: $hasIndoorMap, Can show map: $canShowMap');
 
     ProviderScope.containerOf(context, listen: false)
       .read(selectedSpotProvider.notifier)
       .state = session.spotLabel;
 
+    // D'abord afficher le guidage vers la sortie
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
         builder: (_) => GuidanceToExitScreen(
           spotLabel: session.spotLabel,
-          showMapComingSoon: !guidanceEnabled,
+          showMapComingSoon: !canShowMap,
           spots: session.parking?.indoorMap?.spots ??
               const <ParkingIndoorSpot>[],
+        ),
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    // Ensuite scanner le ticket de sortie
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ScannerScreen(
+          initialMode: ScanMode.exit,
+          onScanSuccess: () async {
+            // Après scan réussi, afficher l'écran de succès et terminer la session
+            await Navigator.push<void>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ExitSuccessScreen(
+                  parkingId: _session?.parking?.id,
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -831,6 +892,7 @@ class _HomeScreenState extends State<HomeScreen> {
     await _initializeSession(silent: true, forcePaymentHistoryRefresh: true);
   }
 
+  
   Future<void> _handlePayCurrentSession() async {
     final _Session? session = _session;
     if (session == null) {
@@ -868,21 +930,34 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (session.reservationId.trim().isEmpty) {
-      AppFeedback.showWarning(
-        context,
-        'Reservation introuvable pour cette session.',
-      );
-      return;
+      // Si pas de reservationId, c'est probablement une session walk-in
+      // On utilise le ticketCode comme référence pour le paiement
+      if (session.ticketCode.trim().isNotEmpty) {
+        AppFeedback.showInfo(
+          context,
+          'Session walk-in détectée. Utilisation du ticket pour le paiement.',
+        );
+      } else {
+        AppFeedback.showWarning(
+          context,
+          'Aucune référence de paiement trouvée pour cette session.',
+        );
+        return;
+      }
     }
 
     final int durationMinutes = (_elapsedSec / 60).ceil().clamp(1, 100000);
     final double amount = _computeCurrentTotal();
 
+    final String paymentReference = session.reservationId.trim().isEmpty 
+        ? session.ticketCode 
+        : session.reservationId;
+        
     final bool paymentConfirmed = await Navigator.push<bool>(
           context,
           MaterialPageRoute(
             builder: (_) => PaymentScreen(
-              reservationId: session.reservationId,
+              reservationId: paymentReference,
               parkingName: session.parkingName,
               dureeMinutes: durationMinutes,
               montantFixe: amount,

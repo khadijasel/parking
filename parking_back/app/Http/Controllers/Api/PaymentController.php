@@ -255,23 +255,26 @@ class PaymentController extends Controller
 
     private function resolveAmount(Reservation $reservation, array $payload, bool $hasActiveSession): float
     {
-        $isShortDuration = (string) ($reservation->duration_type ?? '') === 'courte';
         $providedAmount = (float) ($payload['amount'] ?? 0);
 
-        if (! $isShortDuration) {
-            if ($hasActiveSession) {
-                $amount = (float) ($reservation->amount ?? 0);
-                if ($amount > 0) {
-                    return $amount;
-                }
-
-                if ($providedAmount > 0) {
-                    return $providedAmount;
-                }
-
-                return $this->resolveLongDurationFallbackAmount((string) ($reservation->duration_type ?? ''));
+        // Session payment (after ticket scan): always rely on session timer/amount
+        // coming from the client, not on the reservation plan.
+        if ($hasActiveSession) {
+            if ($providedAmount > 0) {
+                return $providedAmount;
             }
 
+            $minutes = $this->resolveDurationMinutes($reservation, $payload, $hasActiveSession);
+            if ($minutes <= 0) {
+                return 0.0;
+            }
+
+            return $minutes * (150.0 / 60.0);
+        }
+
+        $isShortDuration = (string) ($reservation->duration_type ?? '') === 'courte';
+
+        if (! $isShortDuration) {
             $depositAmount = (float) ($reservation->deposit_amount ?? 0);
             if ($depositAmount > 0) {
                 return $depositAmount;
@@ -296,16 +299,20 @@ class PaymentController extends Controller
         $isShortDuration = (string) ($reservation->duration_type ?? '') === 'courte';
         $provided = (int) ($payload['duration_minutes'] ?? 0);
 
+        if ($hasActiveSession) {
+            if ($provided > 0) {
+                return $provided;
+            }
+
+            return max(1, (int) ($reservation->duration_minutes ?? 0));
+        }
+
         if (! $isShortDuration) {
             return max(0, (int) ($reservation->duration_minutes ?? 0));
         }
 
         if ($provided > 0) {
             return $provided;
-        }
-
-        if ($hasActiveSession) {
-            return max(1, (int) ($reservation->duration_minutes ?? 0));
         }
 
         return max(0, (int) ($reservation->duration_minutes ?? 0));

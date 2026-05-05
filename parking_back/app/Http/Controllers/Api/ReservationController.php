@@ -802,7 +802,7 @@ class ReservationController extends Controller
     {
         $reservationId = (string) ($session->reservation_id ?? '');
         if ($reservationId === '') {
-            return false;
+            return true;
         }
 
         $reservation = Reservation::query()->find($reservationId);

@@ -313,7 +313,8 @@ class _GuidanceToSpotScreenState extends State<GuidanceToSpotScreen>
                           color: _kGreen.withOpacity(0.14),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.navigation_rounded, color: _kGreen),
+                        child: const Icon(Icons.navigation_rounded,
+                            color: _kGreen),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -511,8 +512,8 @@ class _SpotFinderTopViewPainter extends CustomPainter {
     }
 
     // Labels
-    _drawLabel(canvas, 'ENTRÉE',
-        Offset(leftRoadRight + 4, bottomRoadTop + _roadW / 2),
+    _drawLabel(
+        canvas, 'ENTRÉE', Offset(leftRoadRight + 4, bottomRoadTop + _roadW / 2),
         color: _kBlue, fontSize: 9, bold: true);
     _drawLabel(canvas, 'SORTIE',
         Offset(rightRoadLeft - 46, bottomRoadTop + _roadW / 2),
@@ -604,9 +605,11 @@ class _SpotFinderTopViewPainter extends CustomPainter {
   }
 
   void _drawTree(Canvas canvas, Offset center) {
-    canvas.drawCircle(center, _treeR + 2, Paint()..color = const Color(0xFF1A2810));
+    canvas.drawCircle(
+        center, _treeR + 2, Paint()..color = const Color(0xFF1A2810));
     canvas.drawCircle(center, _treeR, Paint()..color = const Color(0xFF2D5016));
-    canvas.drawCircle(center, _treeR * 0.6, Paint()..color = const Color(0xFF3D6B1E));
+    canvas.drawCircle(
+        center, _treeR * 0.6, Paint()..color = const Color(0xFF3D6B1E));
   }
 
   void _drawLabel(Canvas canvas, String text, Offset position,
@@ -649,7 +652,8 @@ class _SpotFinderTopViewPainter extends CustomPainter {
     );
     if (movingTangent != null) {
       canvas.drawCircle(movingTangent.position, 8, Paint()..color = _kBlue);
-      canvas.drawCircle(movingTangent.position, 3, Paint()..color = Colors.white);
+      canvas.drawCircle(
+          movingTangent.position, 3, Paint()..color = Colors.white);
     }
 
     final Tangent? destination = metric.getTangentForOffset(metric.length);

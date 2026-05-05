@@ -49,7 +49,7 @@ class ParkingSessionApiModel {
       parkingName: (json['parking_name'] ?? '').toString(),
       parkingAddress: (json['parking_address'] ?? '').toString(),
       ticketCode: (json['ticket_code'] ?? '').toString(),
-        spotLabel: (json['spot_label'] ?? '').toString(),
+      spotLabel: (json['spot_label'] ?? '').toString(),
       status: (json['status'] ?? '').toString(),
       reservationStatus: (json['reservation_status'] ?? '').toString(),
       reservationPaymentStatus:
