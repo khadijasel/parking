@@ -82,18 +82,18 @@ class LocationService {
   }) async {
     final List<Uri> candidates = <Uri>[
       Uri.parse(
-        '${ApiConstants.baseUrl}/routing/driving?'
-        'from_lat=${from.latitude}&from_lng=${from.longitude}'
-        '&to_lat=${to.latitude}&to_lng=${to.longitude}',
-      ),
-      Uri.parse(
         'https://router.project-osrm.org/route/v1/driving/'
         '${from.longitude},${from.latitude};${to.longitude},${to.latitude}'
         '?overview=full&geometries=geojson&alternatives=false&steps=false',
       ),
+      Uri.parse(
+        '${ApiConstants.baseUrl}/routing/driving?'
+        'from_lat=${from.latitude}&from_lng=${from.longitude}'
+        '&to_lat=${to.latitude}&to_lng=${to.longitude}',
+      ),
     ];
 
-    final List<String> serviceNames = ['Backend Proxy', 'OSRM Direct'];
+    final List<String> serviceNames = ['OSRM Direct', 'Backend Proxy'];
 
     for (int i = 0; i < candidates.length; i++) {
       final Uri uri = candidates[i];

@@ -432,34 +432,6 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
     }
   }
 
-  Future<void> _goToParking(String reservationId) async {
-    try {
-      await _reservationRepository.markReservationEnRoute(reservationId);
-      await _loadReservations(forceRefresh: true);
-
-      if (!mounted) {
-        return;
-      }
-
-      AppFeedback.showSuccess(
-        context,
-        'Mode en route active. Scannez le ticket a l arrivee.',
-      );
-    } on ReservationException catch (error) {
-      if (!mounted) {
-        return;
-      }
-
-      AppFeedback.showError(context, error.message);
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      AppFeedback.showError(context, 'Impossible de passer en mode en route.');
-    }
-  }
-
   Future<void> _scanTicket(String _reservationId) async {
     if (!mounted) {
       return;
@@ -509,7 +481,21 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
     }
 
     if (action == 'go') {
-      await _goToParking(reservation.id);
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => MainScreen(
+            initialIndex: 1,
+            isAuthenticated: true,
+            initialMapParking: resolvedParking,
+            initialMapRoute: true,
+          ),
+        ),
+        (Route<dynamic> route) => false,
+      );
       return;
     }
 

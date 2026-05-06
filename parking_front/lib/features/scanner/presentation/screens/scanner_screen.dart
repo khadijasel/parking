@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../reservation/data/models/parking_session_api_model.dart';
 import '../../../reservation/data/models/reservation_api_model.dart';
 import '../../../reservation/data/reservation_repository.dart';
 
@@ -117,7 +118,7 @@ class _ScannerScreenState extends State<ScannerScreen>
     _cameraCtrl = MobileScannerController(
       torchEnabled: false,
       autoStart: true,
-      detectionSpeed: DetectionSpeed.noDuplicates,
+      detectionSpeed: DetectionSpeed.normal,
     );
 
     _scanCtrl = AnimationController(
@@ -244,6 +245,43 @@ class _ScannerScreenState extends State<ScannerScreen>
   Future<void> _handleEntry(
       String rawCode, _TicketPayload payload) async {
 
+    final String scannedRef =
+        (payload.ticketCode ?? payload.ticketId ?? '').trim();
+
+    // Règles locales :
+    //  1) Si une session est déjà active avec CE ticket → lecture uniquement.
+    //  2) Si une session est active avec un AUTRE ticket → refuser le scan.
+    try {
+      final ParkingSessionApiModel? currentSession =
+          await _repo.fetchCurrentParkingSession();
+
+      if (currentSession != null && currentSession.isActive) {
+        final String activeTicket = currentSession.ticketCode.trim();
+        if (scannedRef.isNotEmpty && activeTicket.isNotEmpty) {
+          if (scannedRef.toLowerCase() == activeTicket.toLowerCase()) {
+            _showResultSheet(
+              rawCode,
+              isValid: true,
+              message: 'Session déjà en cours.\nInformations du ticket lues.',
+              ticketReference: scannedRef,
+              afterClose: widget.onScanSuccess,
+            );
+            return;
+          }
+
+          _showResultSheet(
+            rawCode,
+            isValid: false,
+            message:
+                'Impossible : une session est déjà active.\nTerminez la session en cours avant de scanner un autre ticket.',
+          );
+          return;
+        }
+      }
+    } catch (_) {
+      // Ignore (auth/réseau). Le backend gère les cas restants.
+    }
+
     // Règle 1 : parking_id doit appartenir à l'application
     // → le backend le vérifie — si invalide → ReservationException
     // Règle 2 : si session déjà active avec ce ticket → lit juste les données
@@ -324,6 +362,29 @@ class _ScannerScreenState extends State<ScannerScreen>
     final String ticketId = (payload.ticketId ?? '').trim();
     final String? ticketCode = payload.ticketCode?.trim();
 
+    // Si une session est active, on n'autorise la sortie que pour le même ticket.
+    try {
+      final ParkingSessionApiModel? currentSession =
+          await _repo.fetchCurrentParkingSession();
+      if (currentSession != null && currentSession.isActive) {
+        final String activeTicket = currentSession.ticketCode.trim();
+        final String scannedRef = (ticketCode ?? ticketId).trim();
+        if (activeTicket.isNotEmpty &&
+            scannedRef.isNotEmpty &&
+            scannedRef.toLowerCase() != activeTicket.toLowerCase()) {
+          _showResultSheet(
+            rawCode,
+            isValid: false,
+            message:
+                'Impossible : une session est déjà active avec un autre ticket.',
+          );
+          return;
+        }
+      }
+    } catch (_) {
+      // Ignore (auth/réseau).
+    }
+
     if (ticketId.isEmpty) {
       _showResultSheet(
         rawCode,
@@ -333,30 +394,44 @@ class _ScannerScreenState extends State<ScannerScreen>
       return;
     }
 
-    final Map<String, dynamic> result = await _repo.exitParkingTicket(
-      ticketId: ticketId,
-      ticketCode: ticketCode,
-    );
+    try {
+      final Map<String, dynamic> result = await _repo.exitParkingTicket(
+        ticketId: ticketId,
+        ticketCode: ticketCode,
+      );
 
-    final String? ref =
-        _extractTicketRef(result) ?? (ticketCode?.isNotEmpty == true ? ticketCode : ticketId);
+      final String? ref = _extractTicketRef(result) ??
+          (ticketCode?.isNotEmpty == true ? ticketCode : ticketId);
 
-    _showResultSheet(
-      rawCode,
-      isValid: true,
-      message: 'Sortie autorisée.\nBonne route !',
-      ticketReference: ref,
-      afterClose: () {
-        // Call parent callback first
-        widget.onScanSuccess?.call();
-        // Then auto-close scanner after short delay to show success message
-        Future.delayed(const Duration(milliseconds: 800), () {
-          if (mounted) {
-            Navigator.pop(context, true);
-          }
-        });
-      },
-    );
+      _showResultSheet(
+        rawCode,
+        isValid: true,
+        message: 'Sortie autorisée.\nBonne route !',
+        ticketReference: ref,
+        afterClose: () {
+          // Call parent callback first
+          widget.onScanSuccess?.call();
+          // Then auto-close scanner after short delay to show success message
+          Future.delayed(const Duration(milliseconds: 800), () {
+            if (mounted) {
+              Navigator.pop(context, true);
+            }
+          });
+        },
+      );
+    } on ReservationException catch (e) {
+      if (_isAlreadyUsed(e.message)) {
+        _showResultSheet(
+          rawCode,
+          isValid: false,
+          message:
+              'Ce ticket a déjà été utilisé.\nChaque session nécessite un nouveau ticket.',
+        );
+        return;
+      }
+
+      rethrow;
+    }
   }
 
   // ════════════════════════════════════════════════════════
@@ -486,8 +561,12 @@ class _ScannerScreenState extends State<ScannerScreen>
           Navigator.pop(context);
           // Réinitialiser l'état de soumission pour permettre les scans suivants
           if (mounted) {
-            setState(() => _isSubmitting = false);
+            setState(() {
+              _isSubmitting = false;
+              _isScanning = true;
+            });
           }
+          _scanCtrl.repeat(reverse: true);
           afterClose?.call();
         },
       ),

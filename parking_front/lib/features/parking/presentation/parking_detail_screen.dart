@@ -332,7 +332,6 @@ class ParkingDetailScreen extends StatelessWidget {
 
   Widget _buildBottomButtons(BuildContext context) {
     final String status = (reservationStatus ?? '').toLowerCase();
-    final bool scanMode = hideReserveButton && status == 'in_transit';
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -397,11 +396,6 @@ class ParkingDetailScreen extends StatelessWidget {
             child: ElevatedButton.icon(
               onPressed: () {
                 if (hideReserveButton) {
-                  if (scanMode) {
-                    Navigator.pop(context, 'scan-ticket');
-                    return;
-                  }
-
                   if (status == 'confirmed') {
                     Navigator.pop(context, 'go');
                     return;
@@ -423,9 +417,11 @@ class ParkingDetailScreen extends StatelessWidget {
                   Navigator.pushAndRemoveUntil(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const MainScreen(
+                      builder: (_) => MainScreen(
                         initialIndex: 1, // Onglet Map
                         isAuthenticated: true,
+                        initialMapParking: parking,
+                        initialMapRoute: true,
                       ),
                     ),
                     (route) => false,
@@ -450,15 +446,10 @@ class ParkingDetailScreen extends StatelessWidget {
                 // même si l'utilisateur n'est pas connecté.
                 Navigator.pop(context, 'navigate');
               },
-              icon: Icon(
-                  scanMode
-                      ? Icons.qr_code_scanner_rounded
-                      : Icons.navigation_rounded,
-                  size: 18),
-              label: Text(scanMode ? 'Scanner ticket' : "S'y rendre"),
+              icon: const Icon(Icons.navigation_rounded, size: 18),
+              label: const Text("S'y rendre"),
               style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    scanMode ? const Color(0xFFEF8D22) : AppColors.blue,
+                backgroundColor: AppColors.blue,
                 foregroundColor: Colors.white,
                 elevation: 0,
                 padding: const EdgeInsets.symmetric(vertical: 14),
