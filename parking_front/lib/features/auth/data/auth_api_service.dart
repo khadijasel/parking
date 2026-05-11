@@ -194,6 +194,70 @@ class AuthApiService {
     }
   }
 
+  Future<void> forgotPassword({required String email}) async {
+    try {
+      final Response<dynamic> response = await _dio.post<dynamic>(
+        ApiConstants.userForgotPasswordPath,
+        data: <String, dynamic>{'email': email},
+      );
+
+      final int statusCode = response.statusCode ?? 0;
+      if (statusCode == 429) {
+        final Map<String, dynamic> payload = _normalizePayload(response.data);
+        throw AuthApiException(
+          _extractMessage(payload),
+          statusCode: statusCode,
+        );
+      }
+
+      if (statusCode != 200) {
+        final Map<String, dynamic> payload = _normalizePayload(response.data);
+        final Map<String, String> fieldErrors = _extractFieldErrors(payload);
+        throw AuthApiException(
+          _extractMessage(payload, fieldErrors: fieldErrors),
+          statusCode: statusCode,
+          fieldErrors: fieldErrors,
+          isRetryable: statusCode >= 500,
+        );
+      }
+    } on DioException catch (error) {
+      throw _mapDioException(error);
+    }
+  }
+
+  Future<void> resetPassword({
+    required String email,
+    required String token,
+    required String password,
+    required String passwordConfirmation,
+  }) async {
+    try {
+      final Response<dynamic> response = await _dio.post<dynamic>(
+        ApiConstants.userResetPasswordPath,
+        data: <String, dynamic>{
+          'email': email,
+          'token': token,
+          'password': password,
+          'password_confirmation': passwordConfirmation,
+        },
+      );
+
+      final int statusCode = response.statusCode ?? 0;
+      if (statusCode != 200) {
+        final Map<String, dynamic> payload = _normalizePayload(response.data);
+        final Map<String, String> fieldErrors = _extractFieldErrors(payload);
+        throw AuthApiException(
+          _extractMessage(payload, fieldErrors: fieldErrors),
+          statusCode: statusCode,
+          fieldErrors: fieldErrors,
+          isRetryable: statusCode >= 500,
+        );
+      }
+    } on DioException catch (error) {
+      throw _mapDioException(error);
+    }
+  }
+
   Future<void> logout(String token) async {
     try {
       final Response<dynamic> response = await _dio.post<dynamic>(

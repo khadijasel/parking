@@ -130,6 +130,40 @@ class AuthRepository {
     }
   }
 
+  Future<void> forgotPassword({required String email}) async {
+    try {
+      await _apiService.forgotPassword(email: email);
+    } on AuthApiException catch (error) {
+      throw AuthException(
+        error.message,
+        fieldErrors: error.fieldErrors,
+        isRetryable: error.isRetryable,
+      );
+    }
+  }
+
+  Future<void> resetPassword({
+    required String email,
+    required String token,
+    required String password,
+    required String passwordConfirmation,
+  }) async {
+    try {
+      await _apiService.resetPassword(
+        email: email,
+        token: token,
+        password: password,
+        passwordConfirmation: passwordConfirmation,
+      );
+    } on AuthApiException catch (error) {
+      throw AuthException(
+        error.message,
+        fieldErrors: error.fieldErrors,
+        isRetryable: error.isRetryable,
+      );
+    }
+  }
+
   Future<void> clearSession() => _localStorage.clearSession();
 
   Future<Map<String, dynamic>?> readUser() => _localStorage.readUser();
