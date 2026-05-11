@@ -4,15 +4,16 @@
 //
 //  Matériel :
 //    • 1× LCD 16×2 I2C (0x27)  SDA=GPIO21  SCL=GPIO22
-//    • 6× LED jaune (réservation)
-//        A1=GPIO21 P2=GPIO22 A3=GPIO23
-//        B1=GPIO2  B2=GPIO0  B3=GPIO12
-//    • 6× Capteur IR FC-51
-//        A1=GPIO25 A2=GPIO26 A3=GPIO27
-//        B1=GPIO32 B2=GPIO33 B3=GPIO15
-//    • 2× HC-SR04  TRIG/ECHO avec pont diviseur
-//        Entrée : TRIG=GPIO4  ECHO=GPIO5
-//        Sortie : TRIG=GPIO18 ECHO=GPIO19
+//    • 6× LED jaune (allumée = RÉSERVÉ via API)
+//        A1=GPIO23  A2=GPIO25  A3=GPIO26
+//        B1=GPIO12  B2=GPIO2   B3=GPIO16 (⚠ PSRAM→Disabled dans IDE)
+//    • 6× Capteur IR FC-51 (LOW = voiture présente)
+//        A1=GPIO15  A2=GPIO27  A3=GPIO32
+//        B1=GPIO33  B2=GPIO34  B3=GPIO35
+//    • 2× HC-SR04  TRIG/ECHO avec pont diviseur (ECHO 5V→3.3V)
+//        Entrée : TRIG=GPIO4   ECHO=GPIO5
+//        Sortie : TRIG=GPIO18  ECHO=GPIO19
+//        ⚠️ GPIO 16/17 INTERDITS sur WROVER (PSRAM)
 //    • 2× Servo SG90
 //        Entrée = GPIO13   Sortie = GPIO14
 //
@@ -29,14 +30,14 @@
 //    • ArduinoJson v6    (Benoit Blanchon)
 // ════════════════════════════════════════════════════════════
 
-#include "lib/config/config.h"
-#include "lib/parking/parking_state.h"
-#include "lib/sensors/ir_sensor.h"
-#include "lib/sensors/ultrasonic.h"
-#include "lib/actuators/barrier.h"
-#include "lib/actuators/led_manager.h"
-#include "lib/display/display_manager.h"
-#include "lib/network/api_client.h"
+#include "../lib/config/config.h"
+#include "../lib/parking/parking_state.h"
+#include "../lib/sensors/ir_sensor.h"
+#include "../lib/sensors/ultrasonic.h"
+#include "../lib/actuators/barrier.h"
+#include "../lib/actuators/led_manager.h"
+#include "../lib/display/display_manager.h"
+#include "../lib/network/api_client.h"
 
 // ── Instances globales ────────────────────────────────────────
 ParkingState  state;
@@ -107,19 +108,19 @@ void setup() {
   gateOut.test();
 
   // 4. Écran LCD
-  lcd.begin();
+  // lcd.begin();  // DÉSACTIVÉ TEMPORAIREMENT pour diagnostic
 
   // 5. WiFi + sync API
-  lcd.showWifiWait();
-  state.wifiOk = api.connectWifi();
+  // state.wifiOk = api.connectWifi();  // DÉSACTIVÉ TEMPORAIREMENT
+  state.wifiOk = false;
 
-  if (state.wifiOk) {
-    lcd.showWifiOk(api.ip());
-    api.sendInfraredReadings(state);  // synchroniser l'état IR initial
-  } else {
-    lcd.showWifiErr();
-    delay(1500);
-  }
+  // if (state.wifiOk) {
+  //   api.sendInfraredReadings(state);
+  // } else {
+  //   delay(1500);
+  // }
+
+  Serial.println("[SETUP] WiFi désactivé pour diagnostic");
 
   // 6. Lecture initiale IR + mise à jour LEDs
   ir.update(state);
@@ -135,29 +136,30 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
+  Serial.println("[DEBUG] 1. Début loop");
+
   // ── A. Lecture capteurs ───────────────────────────────────
   if (now - tPoll >= POLL_MS) {
     tPoll = now;
+    Serial.printf("[POLL] Lecture capteurs (toutes les %ld ms)\n", POLL_MS);
     taskSensors();
   }
 
-  // ── B. Synchronisation API ────────────────────────────────
-  if (now - tApi >= API_MS) {
-    tApi = now;
-    taskApi();
-  }
-
-  // ── C. Rafraîchissement LCD ───────────────────────────────
-  if (now - tLcd >= LCD_MS) {
-    tLcd = now;
-    lcd.tick(state);
-  }
+  Serial.println("[DEBUG] 2. Avant gateIn.tick()");
 
   // ── D. Fermeture automatique barrières (continu) ─────────
   gateIn.tick();
+
+  Serial.println("[DEBUG] 3. Avant gateOut.tick()");
+
   gateOut.tick();
+
+  Serial.println("[DEBUG] 4. Avant isOpen()");
+
   state.gateInOpen  = gateIn.isOpen();
   state.gateOutOpen = gateOut.isOpen();
+
+  Serial.println("[DEBUG] 5. Fin loop");
 
   yield(); // laisse le WiFi traiter ses paquets
 }
@@ -174,12 +176,16 @@ void taskSensors() {
 
   // ── Ultrason ENTRÉE ────────────────────────────────────────
   bool nowEntry = usEntry.detect();
+
+  // ── Ultrason SORTIE ────────────────────────────────────────
+  bool nowExit = usExit.detect();
+
+  Serial.printf("[SENSOR] Entry: %s | Exit: %s\n", nowEntry ? "OUI" : "NON", nowExit ? "OUI" : "NON");
+
   if (nowEntry && !prevEntry) onCarEntry();   // front montant
   prevEntry = nowEntry;
   state.carAtEntry = nowEntry;
 
-  // ── Ultrason SORTIE ────────────────────────────────────────
-  bool nowExit = usExit.detect();
   if (nowExit && !prevExit) onCarExit();     // front montant
   prevExit = nowExit;
   state.carAtExit = nowExit;

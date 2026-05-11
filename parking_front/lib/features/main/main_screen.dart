@@ -96,7 +96,10 @@ class _MainScreenState extends State<MainScreen> {
           showRouteToSelected: widget.initialMapRoute,
         );
       case 2:
-        return ScannerScreen(onScanSuccess: _openHomeWithRefresh);
+        return ScannerScreen(
+          onScanSuccess: _openHomeWithRefresh,
+          isActive: _currentIndex == 2,
+        );
       case 3:
         return const ProfileScreen();
       default:

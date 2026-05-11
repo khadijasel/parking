@@ -1,7 +1,7 @@
 #ifndef PARKING_STATE_H
 #define PARKING_STATE_H
 
-#include "config.h"
+#include "../config/config.h"
 
 // ════════════════════════════════════════════════════════════
 //  État global du parking

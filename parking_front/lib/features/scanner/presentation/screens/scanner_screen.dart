@@ -82,11 +82,13 @@ class _TicketPayload {
 class ScannerScreen extends StatefulWidget {
   final VoidCallback? onScanSuccess;
   final ScanMode initialMode;
+  final bool isActive;
 
   const ScannerScreen({
     super.key,
     this.onScanSuccess,
     this.initialMode = ScanMode.entry,
+    this.isActive = true,
   });
 
   @override
@@ -129,6 +131,21 @@ class _ScannerScreenState extends State<ScannerScreen>
     _scanAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _scanCtrl, curve: Curves.easeInOut),
     );
+  }
+
+  @override
+  void didUpdateWidget(ScannerScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive == oldWidget.isActive) return;
+    if (widget.isActive) {
+      _cameraCtrl.start();
+      if (!_isSubmitting) {
+        setState(() => _isScanning = true);
+        if (!_scanCtrl.isAnimating) _scanCtrl.repeat(reverse: true);
+      }
+    } else {
+      _cameraCtrl.stop();
+    }
   }
 
   @override
@@ -315,7 +332,18 @@ class _ScannerScreenState extends State<ScannerScreen>
         return;
       }
 
-      // Session déjà active avec ce ticket → lire seulement
+      // Session active avec un AUTRE ticket → erreur
+      if (_isAnotherSessionActive(e.message)) {
+        _showResultSheet(
+          rawCode,
+          isValid: false,
+          message:
+              'Impossible : une session est déjà active avec un autre ticket.\nTerminez la session en cours avant de scanner un nouveau ticket.',
+        );
+        return;
+      }
+
+      // Session déjà active avec CE ticket → lire seulement
       if (_isAlreadyActive(e.message)) {
         _showResultSheet(
           rawCode,
@@ -408,16 +436,7 @@ class _ScannerScreenState extends State<ScannerScreen>
         isValid: true,
         message: 'Sortie autorisée.\nBonne route !',
         ticketReference: ref,
-        afterClose: () {
-          // Call parent callback first
-          widget.onScanSuccess?.call();
-          // Then auto-close scanner after short delay to show success message
-          Future.delayed(const Duration(milliseconds: 800), () {
-            if (mounted) {
-              Navigator.pop(context, true);
-            }
-          });
-        },
+        afterClose: widget.onScanSuccess,
       );
     } on ReservationException catch (e) {
       if (_isAlreadyUsed(e.message)) {
@@ -490,15 +509,34 @@ class _ScannerScreenState extends State<ScannerScreen>
        msg.toLowerCase().contains('not found') ||
        msg.toLowerCase().contains('invalide'));
 
-  bool _isAlreadyActive(String msg) =>
-      msg.toLowerCase().contains('session') &&
-      (msg.toLowerCase().contains('active') ||
-       msg.toLowerCase().contains('en cours'));
+  // Retourne true uniquement si la session active appartient au MÊME ticket.
+  // "une autre session" (ticket différent) est géré séparément.
+  bool _isAlreadyActive(String msg) {
+    final String lower = msg.toLowerCase();
+    return lower.contains('session') &&
+        (lower.contains('active') || lower.contains('en cours')) &&
+        !lower.contains('autre');
+  }
 
-  bool _isAlreadyUsed(String msg) =>
-      msg.toLowerCase().contains('déjà utilisé') ||
-      msg.toLowerCase().contains('already used') ||
-      msg.toLowerCase().contains('terminée');
+  // Retourne true si c'est une session active avec un AUTRE ticket.
+  bool _isAnotherSessionActive(String msg) {
+    final String lower = msg.toLowerCase();
+    return lower.contains('autre') &&
+        lower.contains('session') &&
+        lower.contains('active');
+  }
+
+  // Ticket déjà fermé/utilisé — backend retourne "deja ferme".
+  bool _isAlreadyUsed(String msg) {
+    final String lower = msg.toLowerCase();
+    return lower.contains('déjà utilisé') ||
+        lower.contains('deja utilise') ||
+        lower.contains('already used') ||
+        lower.contains('terminée') ||
+        lower.contains('ferme') ||
+        lower.contains('fermé') ||
+        lower.contains('closed');
+  }
 
   bool _isTicketNotFound(String msg) =>
       msg.toLowerCase().contains('introuvable') ||

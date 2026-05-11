@@ -18,8 +18,8 @@
 //    Cathode (−, patte courte) → GND
 //
 //  Pins utilisées (toutes OUTPUT-capable sur WROVER) :
-//    A1=GPIO21  A2=GPIO22  A3=GPIO23
-//    B1=GPIO2   B2=GPIO0   B3=GPIO12
+//    A1=GPIO23  A2=GPIO25  A3=GPIO26
+//    B1=GPIO12  B2=GPIO2   B3=GPIO16 (⚠ PSRAM→Disabled dans IDE)
 // ════════════════════════════════════════════════════════════
 
 class LedManager {

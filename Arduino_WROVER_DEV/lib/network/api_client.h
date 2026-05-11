@@ -23,21 +23,25 @@ public:
 
   // ── WiFi ───────────────────────────────────────────────────
   bool connectWifi() {
-    if (DEBUG) Serial.printf("[WIFI] Connexion à '%s'", WIFI_SSID);
+    if (DEBUG) Serial.printf("[WIFI] Connexion à '%s'\n", WIFI_SSID);
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    unsigned long t = millis();
-    while (WiFi.status() != WL_CONNECTED) {
-      if (millis() - t > WIFI_TIMEOUT_MS) {
-        if (DEBUG) Serial.println("\n[WIFI] Timeout — mode hors ligne");
-        return false;
-      }
+
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 30) {
       delay(500);
+      attempts++;
       if (DEBUG) Serial.print(".");
     }
-    if (DEBUG) Serial.printf("\n[WIFI] OK  IP: %s\n",
-      WiFi.localIP().toString().c_str());
-    return true;
+    Serial.println();
+
+    if (WiFi.status() == WL_CONNECTED) {
+      if (DEBUG) Serial.printf("[WIFI] OK  IP: %s\n", WiFi.localIP().toString().c_str());
+      return true;
+    } else {
+      if (DEBUG) Serial.println("[WIFI] Timeout — mode hors ligne");
+      return false;
+    }
   }
 
   bool isUp() const { return WiFi.status() == WL_CONNECTED; }
