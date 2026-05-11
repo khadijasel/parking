@@ -57,6 +57,8 @@ class ApiConstants {
   static const String userLogoutPath = '/user/auth/logout';
   static const String userMePath = '/user/auth/me';
   static const String userProfileUpdatePath = '/user/auth/profile';
+  static const String userForgotPasswordPath = '/user/auth/forgot-password';
+  static const String userResetPasswordPath = '/user/auth/reset-password';
 
   static const String publicParkingsPath = '/parkings';
   static const String publicParkingAvailabilityPath = '/parkings/availability';

@@ -10,6 +10,7 @@ import '../../../theme/app_colors.dart';
 import '../../main/main_screen.dart';
 import '../../parking/presentation/map_home_screen.dart';
 import '../data/auth_repository.dart';
+import 'forgot_password_screen.dart';
 import 'register_screen.dart';
 
 /// Écran de connexion SmartPark
@@ -208,11 +209,10 @@ class _LoginScreenState extends State<LoginScreen> {
       return 'Connexion internet requise pour continuer avec Google.';
     }
 
-    final bool isConfigurationError =
-        code == '10' ||
-            code.contains('sign_in_failed') ||
-            message.contains('developer_error') ||
-            message.contains('12500');
+    final bool isConfigurationError = code == '10' ||
+        code.contains('sign_in_failed') ||
+        message.contains('developer_error') ||
+        message.contains('12500');
 
     if (isConfigurationError) {
       return 'Configuration Google invalide (package Android, SHA-1 ou client OAuth).';
@@ -307,8 +307,16 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _handleForgotPassword() {
-    // TODO: Naviguer vers l'écran de récupération de mot de passe
-    debugPrint('Navigation vers récupération mot de passe');
+    final String email = _emailController.text.trim();
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ForgotPasswordScreen(
+          initialEmail: email.isEmpty ? null : email,
+        ),
+      ),
+    );
   }
 
   @override

@@ -3,17 +3,22 @@
 namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\ForgotPasswordRequest;
 use App\Http\Requests\Auth\GoogleAuthRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterUserRequest;
+use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Http\Requests\Auth\UpdateUserProfileRequest;
+use App\Mail\PasswordResetMail;
+use App\Models\PasswordResetToken;
 use App\Models\User;
 use App\Services\Auth\AuthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -167,6 +172,93 @@ class UserAuthController extends Controller
         return response()->json([
             'message' => 'User profile retrieved successfully.',
             'data' => $this->toProfilePayload($user),
+        ]);
+    }
+
+    public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
+    {
+        $email = strtolower(trim((string) $request->validated('email')));
+
+        /** @var User|null $user */
+        $user = User::query()->where('email', $email)->first();
+
+        if (! $user) {
+            return response()->json([
+                'message' => 'Si cet email existe, un code de réinitialisation vous a été envoyé.',
+            ]);
+        }
+
+        if (PasswordResetToken::isThrottled($email)) {
+            return response()->json([
+                'message' => 'Veuillez patienter 60 secondes avant de demander un nouveau code.',
+            ], 429);
+        }
+
+        PasswordResetToken::query()->where('email', $email)->delete();
+
+        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        PasswordResetToken::createForEmail($email, $code);
+
+        try {
+            Mail::to($user->email)->send(new PasswordResetMail($code, (string) $user->name));
+        } catch (Throwable $exception) {
+            Log::error('Password reset mail failed', [
+                'email'   => $email,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Impossible d\'envoyer l\'email. Réessayez plus tard.',
+            ], 503);
+        }
+
+        return response()->json([
+            'message' => 'Si cet email existe, un code de réinitialisation vous a été envoyé.',
+        ]);
+    }
+
+    public function resetPassword(ResetPasswordRequest $request): JsonResponse
+    {
+        $email    = strtolower(trim((string) $request->validated('email')));
+        $code     = (string) $request->validated('token');
+        $password = (string) $request->validated('password');
+
+        /** @var User|null $user */
+        $user = User::query()->where('email', $email)->first();
+
+        if (! $user) {
+            return response()->json([
+                'message' => 'Aucun compte associé à cet email.',
+                'errors'  => ['email' => ['Aucun compte associé à cet email.']],
+            ], 422);
+        }
+
+        /** @var PasswordResetToken|null $tokenRecord */
+        $tokenRecord = PasswordResetToken::query()
+            ->where('email', $email)
+            ->orderBy('created_at', 'desc')
+            ->first();
+
+        if (! $tokenRecord instanceof PasswordResetToken || $tokenRecord->isExpired()) {
+            return response()->json([
+                'message' => 'Code invalide ou expiré.',
+                'errors'  => ['token' => ['Code invalide ou expiré.']],
+            ], 422);
+        }
+
+        if (! Hash::check($code, (string) $tokenRecord->token)) {
+            return response()->json([
+                'message' => 'Code incorrect.',
+                'errors'  => ['token' => ['Code incorrect.']],
+            ], 422);
+        }
+
+        $user->forceFill(['password' => Hash::make($password)])->save();
+        $user->tokens()->delete();
+        PasswordResetToken::query()->where('email', $email)->delete();
+
+        return response()->json([
+            'message' => 'Mot de passe réinitialisé avec succès.',
         ]);
     }
 

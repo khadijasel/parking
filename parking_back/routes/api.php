@@ -73,6 +73,8 @@ Route::prefix('user/auth')->group(function (): void {
 	Route::post('register', [UserAuthController::class, 'register']);
 	Route::post('login', [UserAuthController::class, 'login']);
 	Route::post('google', [UserAuthController::class, 'google']);
+	Route::post('forgot-password', [UserAuthController::class, 'forgotPassword']);
+	Route::post('reset-password', [UserAuthController::class, 'resetPassword']);
 
 	Route::middleware('auth:user')->group(function (): void {
 		Route::post('logout', [UserAuthController::class, 'logout']);
