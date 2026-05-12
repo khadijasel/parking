@@ -14,6 +14,34 @@ class ParkingCatalogService
             ->get();
     }
 
+    public function findById(string $parkingId): ?Parking
+    {
+        $id = trim($parkingId);
+        if ($id === '') {
+            return null;
+        }
+
+        /** @var Parking|null $parking */
+        $parking = Parking::query()->where('parking_id', $id)->first();
+
+        if (! $parking) {
+            /** @var Parking|null $parking */
+            $parking = Parking::query()->find($id);
+        }
+
+        return $parking;
+    }
+
+    public function spotsPayload(Parking $parking): array
+    {
+        $indoorMap = (array) ($parking->indoor_map ?? []);
+
+        return collect($indoorMap['spots'] ?? [])
+            ->map(fn ($spot): array => (array) $spot)
+            ->values()
+            ->all();
+    }
+
     public function toPublicPayload(Parking $parking): array
     {
         $location = (array) ($parking->location ?? []);

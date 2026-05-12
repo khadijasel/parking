@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('parkings', [ParkingCatalogController::class, 'index']);
 Route::get('parkings/availability', [ParkingAvailabilityController::class, 'index']);
+Route::get('parkings/{parkingId}/spots', [ParkingCatalogController::class, 'spots']);
 Route::post('parkings/arduino/availability', [ParkingAvailabilityController::class, 'updateArduino']);
 Route::post('parkings/infrared/readings', [ParkingAvailabilityController::class, 'updateInfraredReadings']);
 Route::get('routing/driving', function (Request $request) {

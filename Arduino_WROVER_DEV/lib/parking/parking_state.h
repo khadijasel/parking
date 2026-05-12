@@ -37,7 +37,7 @@ struct ParkingState {
 };
 
 // ── Labels et pins ────────────────────────────────────────────
-static const char*   LABELS[NB_PLACES]   = {"A1","A2","A3","B1","B2","B3"};
+static const char*   LABELS[NB_PLACES]   = {"A01","P02","P03","P04","P05","P06"};
 static const uint8_t IR_PINS[NB_PLACES]  = {IR_A1,IR_A2,IR_A3,IR_B1,IR_B2,IR_B3};
 static const uint8_t LED_PINS[NB_PLACES] = {LED_A1,LED_A2,LED_A3,LED_B1,LED_B2,LED_B3};
 

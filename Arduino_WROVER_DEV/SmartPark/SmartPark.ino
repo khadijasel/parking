@@ -110,17 +110,13 @@ void setup() {
   // 4. Écran LCD
   // lcd.begin();  // DÉSACTIVÉ TEMPORAIREMENT pour diagnostic
 
-  // 5. WiFi + sync API
-  // state.wifiOk = api.connectWifi();  // DÉSACTIVÉ TEMPORAIREMENT
-  state.wifiOk = false;
-
-  // if (state.wifiOk) {
-  //   api.sendInfraredReadings(state);
-  // } else {
-  //   delay(1500);
-  // }
-
-  Serial.println("[SETUP] WiFi désactivé pour diagnostic");
+  // 5. WiFi + sync API initiale
+  state.wifiOk = api.connectWifi();
+  if (state.wifiOk) {
+    api.sendInfraredReadings(state);
+  } else {
+    delay(1500);
+  }
 
   // 6. Lecture initiale IR + mise à jour LEDs
   ir.update(state);
@@ -136,30 +132,23 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  Serial.println("[DEBUG] 1. Début loop");
-
-  // ── A. Lecture capteurs ───────────────────────────────────
+  // ── A. Lecture capteurs (IR + Ultrason) ───────────────────
   if (now - tPoll >= POLL_MS) {
     tPoll = now;
-    Serial.printf("[POLL] Lecture capteurs (toutes les %ld ms)\n", POLL_MS);
     taskSensors();
   }
 
-  Serial.println("[DEBUG] 2. Avant gateIn.tick()");
+  // ── B. Synchronisation API (batch IR toutes les API_MS) ───
+  if (now - tApi >= API_MS) {
+    tApi = now;
+    taskApi();
+  }
 
-  // ── D. Fermeture automatique barrières (continu) ─────────
+  // ── C. Fermeture automatique barrières (continu) ─────────
   gateIn.tick();
-
-  Serial.println("[DEBUG] 3. Avant gateOut.tick()");
-
   gateOut.tick();
-
-  Serial.println("[DEBUG] 4. Avant isOpen()");
-
   state.gateInOpen  = gateIn.isOpen();
   state.gateOutOpen = gateOut.isOpen();
-
-  Serial.println("[DEBUG] 5. Fin loop");
 
   yield(); // laisse le WiFi traiter ses paquets
 }
@@ -172,6 +161,9 @@ void taskSensors() {
   // ── IR : état des 6 places ─────────────────────────────────
   if (ir.update(state)) {
     leds.update(state);
+    if (state.wifiOk) {
+      api.sendInfraredReadings(state); // envoi immédiat sur changement
+    }
   }
 
   // ── Ultrason ENTRÉE ────────────────────────────────────────

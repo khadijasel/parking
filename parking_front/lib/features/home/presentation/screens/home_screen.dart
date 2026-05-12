@@ -500,6 +500,15 @@ class _HomeScreenState extends State<HomeScreen> {
     return _resolveParkingByAddress(apiSession.parkingAddress);
   }
 
+  Future<List<ParkingIndoorSpot>> _fetchFreshSpots(_Session session) async {
+    try {
+      await _parkingRepository.fetchParkings(forceRefresh: true);
+    } catch (_) {}
+    final Parking? fresh = _resolveParkingById(session.parkingId) ??
+        _resolveParkingByName(session.parkingName);
+    return fresh?.indoorMap?.spots ?? session.parking?.indoorMap?.spots ?? const <ParkingIndoorSpot>[];
+  }
+
   Parking? _resolveParkingById(String parkingId) {
     final String needle = parkingId.trim().toLowerCase();
     if (needle.isEmpty) {
@@ -785,14 +794,17 @@ class _HomeScreenState extends State<HomeScreen> {
         .read(selectedSpotProvider.notifier)
         .state = session.spotLabel;
 
+    final List<ParkingIndoorSpot> freshSpots = await _fetchFreshSpots(session);
+
+    if (!mounted) return;
+
     final bool parkedConfirmed = await Navigator.push<bool>(
           context,
           MaterialPageRoute(
             builder: (_) => GuidanceToSpotScreen(
               spotLabel: session.spotLabel,
               isGuideToFree: false,
-              spots: session.parking?.indoorMap?.spots ??
-                  const <ParkingIndoorSpot>[],
+              spots: freshSpots,
             ),
           ),
         ) ??
@@ -855,6 +867,10 @@ class _HomeScreenState extends State<HomeScreen> {
         .read(selectedSpotProvider.notifier)
         .state = session.spotLabel;
 
+    final List<ParkingIndoorSpot> freshSpots = await _fetchFreshSpots(session);
+
+    if (!mounted) return;
+
     final bool vehicleFoundConfirmed = await Navigator.push<bool>(
           context,
           MaterialPageRoute(
@@ -863,8 +879,7 @@ class _HomeScreenState extends State<HomeScreen> {
               parkingName: session.parkingName,
               reservationId: session.reservationId,
               durationMinutes: (_elapsedSec / 60).ceil(),
-              spots: session.parking?.indoorMap?.spots ??
-                  const <ParkingIndoorSpot>[],
+              spots: freshSpots,
             ),
           ),
         ) ??
@@ -894,14 +909,17 @@ class _HomeScreenState extends State<HomeScreen> {
       .read(selectedSpotProvider.notifier)
       .state = session.spotLabel;
 
+    final List<ParkingIndoorSpot> freshSpots = await _fetchFreshSpots(session);
+
+    if (!mounted) return;
+
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
         builder: (_) => GuidanceToExitScreen(
           spotLabel: session.spotLabel,
           showMapComingSoon: !guidanceEnabled,
-          spots: session.parking?.indoorMap?.spots ??
-              const <ParkingIndoorSpot>[],
+          spots: freshSpots,
         ),
       ),
     );

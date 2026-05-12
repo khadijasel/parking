@@ -27,7 +27,7 @@ class GuidanceToVehicleScreen extends StatefulWidget {
 
   const GuidanceToVehicleScreen({
     super.key,
-    this.spotLabel = 'B2',
+    this.spotLabel = 'P05',
     this.parkingName = 'Notre parking',
     this.reservationId = '',
     this.durationMinutes = 0,

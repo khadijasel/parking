@@ -180,6 +180,7 @@ class ParkingAvailabilityService
             'matched_readings' => (int) $processed['matched'],
             'unmatched_readings' => $processed['unmatched'],
             'last_sensor_at' => $receivedAt->toIso8601String(),
+            'spots' => $updatedSpots,
             'availability' => $availability,
         ];
     }

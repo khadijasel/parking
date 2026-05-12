@@ -402,7 +402,7 @@ class ParkingTicketController extends Controller
     {
         $normalized = strtolower($parkingName);
         if (str_contains($normalized, 'arduino') || str_contains($normalized, 'notre parking')) {
-            $labels = ['A1', 'A2', 'A3', 'B1', 'B2', 'B3'];
+            $labels = ['A1', 'P3', 'P5', 'P2', 'P4', 'P6'];
             $index = $this->stableIndex($seed, count($labels));
 
             return $labels[$index] ?? 'A1';
@@ -782,9 +782,10 @@ class ParkingTicketController extends Controller
         $now = CarbonImmutable::now()->toIso8601String();
 
         return [
+            // Rangée haute (row 0) : A1, P3, P5
             [
-                'spotId' => 'A3',
-                'label' => 'A3',
+                'spotId' => 'A1',
+                'label' => 'A1',
                 'row' => 0,
                 'col' => 0,
                 'type' => 'STANDARD',
@@ -793,8 +794,8 @@ class ParkingTicketController extends Controller
                 'updatedAt' => $now,
             ],
             [
-                'spotId' => 'A2',
-                'label' => 'A2',
+                'spotId' => 'P3',
+                'label' => 'P3',
                 'row' => 0,
                 'col' => 1,
                 'type' => 'STANDARD',
@@ -803,8 +804,8 @@ class ParkingTicketController extends Controller
                 'updatedAt' => $now,
             ],
             [
-                'spotId' => 'A1',
-                'label' => 'A1',
+                'spotId' => 'P5',
+                'label' => 'P5',
                 'row' => 0,
                 'col' => 2,
                 'type' => 'STANDARD',
@@ -812,9 +813,10 @@ class ParkingTicketController extends Controller
                 'sensor' => ['arduinoId' => 'arduino-sim', 'channel' => '', 'topic' => ''],
                 'updatedAt' => $now,
             ],
+            // Rangée basse (row 2) : P2, P4, P6
             [
-                'spotId' => 'B3',
-                'label' => 'B3',
+                'spotId' => 'P2',
+                'label' => 'P2',
                 'row' => 2,
                 'col' => 0,
                 'type' => 'STANDARD',
@@ -823,8 +825,8 @@ class ParkingTicketController extends Controller
                 'updatedAt' => $now,
             ],
             [
-                'spotId' => 'B2',
-                'label' => 'B2',
+                'spotId' => 'P4',
+                'label' => 'P4',
                 'row' => 2,
                 'col' => 1,
                 'type' => 'STANDARD',
@@ -833,8 +835,8 @@ class ParkingTicketController extends Controller
                 'updatedAt' => $now,
             ],
             [
-                'spotId' => 'B1',
-                'label' => 'B1',
+                'spotId' => 'P6',
+                'label' => 'P6',
                 'row' => 2,
                 'col' => 2,
                 'type' => 'STANDARD',
@@ -859,7 +861,8 @@ class ParkingTicketController extends Controller
             return '';
         }
 
-        if (preg_match('/\b(A[1-3]|B[1-3])\b/', $source, $matches) === 1) {
+        // Match labels P1, P6, P2, P5, P4, A1 (and legacy A1-A3, B1-B3)
+        if (preg_match('/\b(P[0-9]+|[AB][1-9])\b/', $source, $matches) === 1) {
             return (string) ($matches[1] ?? '');
         }
 

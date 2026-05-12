@@ -27,7 +27,7 @@ class GuidanceToExitScreen extends StatefulWidget {
 
   const GuidanceToExitScreen({
     super.key,
-    this.spotLabel = 'B2',
+    this.spotLabel = 'P05',
     this.showMapComingSoon = false,
     this.spots = const <ParkingIndoorSpot>[],
   });

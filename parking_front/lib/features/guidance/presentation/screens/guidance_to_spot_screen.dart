@@ -25,7 +25,7 @@ class GuidanceToSpotScreen extends StatefulWidget {
 
   const GuidanceToSpotScreen({
     super.key,
-    this.spotLabel = 'B2',
+    this.spotLabel = 'A01',
     this.floor = 'Niveau -1',
     this.isGuideToFree = true,
     this.spots = const <ParkingIndoorSpot>[],

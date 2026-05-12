@@ -60,9 +60,10 @@ class ArduinoParkingSeeder extends Seeder
                         'laneRows' => [1],
                     ],
                     'spots' => [
+                        // Rangée haute (row 0) : A1, P3, P5
                         [
-                            'spotId' => 'A3',
-                            'label' => 'A3',
+                            'spotId' => 'A1',
+                            'label' => 'A1',
                             'row' => 0,
                             'col' => 0,
                             'type' => 'STANDARD',
@@ -75,8 +76,8 @@ class ArduinoParkingSeeder extends Seeder
                             'updatedAt' => now()->toIso8601String(),
                         ],
                         [
-                            'spotId' => 'A2',
-                            'label' => 'A2',
+                            'spotId' => 'P3',
+                            'label' => 'P3',
                             'row' => 0,
                             'col' => 1,
                             'type' => 'STANDARD',
@@ -89,8 +90,8 @@ class ArduinoParkingSeeder extends Seeder
                             'updatedAt' => now()->toIso8601String(),
                         ],
                         [
-                            'spotId' => 'A1',
-                            'label' => 'A1',
+                            'spotId' => 'P5',
+                            'label' => 'P5',
                             'row' => 0,
                             'col' => 2,
                             'type' => 'STANDARD',
@@ -102,9 +103,10 @@ class ArduinoParkingSeeder extends Seeder
                             ],
                             'updatedAt' => now()->toIso8601String(),
                         ],
+                        // Rangée basse (row 2) : P2, P4, P6
                         [
-                            'spotId' => 'B3',
-                            'label' => 'B3',
+                            'spotId' => 'P2',
+                            'label' => 'P2',
                             'row' => 2,
                             'col' => 0,
                             'type' => 'STANDARD',
@@ -117,8 +119,8 @@ class ArduinoParkingSeeder extends Seeder
                             'updatedAt' => now()->toIso8601String(),
                         ],
                         [
-                            'spotId' => 'B2',
-                            'label' => 'B2',
+                            'spotId' => 'P4',
+                            'label' => 'P4',
                             'row' => 2,
                             'col' => 1,
                             'type' => 'STANDARD',
@@ -131,8 +133,8 @@ class ArduinoParkingSeeder extends Seeder
                             'updatedAt' => now()->toIso8601String(),
                         ],
                         [
-                            'spotId' => 'B1',
-                            'label' => 'B1',
+                            'spotId' => 'P6',
+                            'label' => 'P6',
                             'row' => 2,
                             'col' => 2,
                             'type' => 'STANDARD',

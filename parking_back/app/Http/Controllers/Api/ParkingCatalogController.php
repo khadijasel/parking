@@ -23,4 +23,18 @@ class ParkingCatalogController extends Controller
             'data' => $items,
         ]);
     }
+
+    public function spots(string $parkingId): JsonResponse
+    {
+        $parking = $this->catalogService->findById($parkingId);
+
+        if (! $parking) {
+            return response()->json(['message' => 'Parking not found.'], 404);
+        }
+
+        return response()->json([
+            'message' => 'Spots retrieved successfully.',
+            'data' => $this->catalogService->spotsPayload($parking),
+        ]);
+    }
 }

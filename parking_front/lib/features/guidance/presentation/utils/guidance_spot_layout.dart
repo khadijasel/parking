@@ -104,19 +104,19 @@ class GuidanceSpotLayout {
 
 const List<GuidanceSpotViewData> _kFallbackTopRow = <GuidanceSpotViewData>[
   GuidanceSpotViewData(
-    label: 'A3',
+    label: 'A01',
     state: GuidanceSpotState.occupied,
     rowIndex: 0,
     colIndex: 0,
   ),
   GuidanceSpotViewData(
-    label: 'A2',
+    label: 'P02',
     state: GuidanceSpotState.available,
     rowIndex: 0,
     colIndex: 1,
   ),
   GuidanceSpotViewData(
-    label: 'A1',
+    label: 'P03',
     state: GuidanceSpotState.available,
     rowIndex: 0,
     colIndex: 2,
@@ -125,19 +125,19 @@ const List<GuidanceSpotViewData> _kFallbackTopRow = <GuidanceSpotViewData>[
 
 const List<GuidanceSpotViewData> _kFallbackBottomRow = <GuidanceSpotViewData>[
   GuidanceSpotViewData(
-    label: 'B3',
+    label: 'P04',
     state: GuidanceSpotState.available,
     rowIndex: 1,
     colIndex: 0,
   ),
   GuidanceSpotViewData(
-    label: 'B2',
+    label: 'P05',
     state: GuidanceSpotState.reserved,
     rowIndex: 1,
     colIndex: 1,
   ),
   GuidanceSpotViewData(
-    label: 'B1',
+    label: 'P06',
     state: GuidanceSpotState.available,
     rowIndex: 1,
     colIndex: 2,
