@@ -247,7 +247,9 @@ class _GuidanceToSpotScreenState extends State<GuidanceToSpotScreen>
         false;
 
     if (!mounted || !parkedConfirmed) return;
-    Navigator.pop(context, true);
+    // Retourne le label de la place réellement choisie par le guidage (ex: P4)
+    // pour que l'écran appelant le mémorise et le réutilise pour exit/find-car.
+    Navigator.pop(context, _targetSpot);
   }
 
   @override

@@ -96,6 +96,20 @@ class _HomeScreenState extends State<HomeScreen> {
   final ParkingRepository _parkingRepository = ParkingRepository();
   final Set<String> _parkedReservationIds = <String>{};
   final Set<String> _vehicleFoundReservationIds = <String>{};
+  // Place réellement choisie par le guidage (peut différer de la place réservée
+  // si l'app a recibré sur une autre libre). Clé = reservationId.
+  final Map<String, String> _actualParkedSpotByReservationId = <String, String>{};
+
+  /// Label de place à utiliser pour les écrans de guidage retour (find-car / exit).
+  /// Priorité: place réellement choisie par le guidage > place réservée de la session.
+  String _effectiveSpotLabel(_Session session) {
+    final String? actual =
+        _actualParkedSpotByReservationId[session.reservationId];
+    if (actual != null && actual.trim().isNotEmpty) {
+      return actual;
+    }
+    return session.spotLabel;
+  }
 
   static const Duration _paymentHistoryCacheDuration = Duration(seconds: 20);
 
@@ -779,7 +793,7 @@ class _HomeScreenState extends State<HomeScreen> {
         context,
         MaterialPageRoute(
           builder: (_) => VehicleParkedConfirmationScreen(
-            spotLabel: session.spotLabel,
+            spotLabel: _effectiveSpotLabel(session),
           ),
         ),
       );
@@ -798,23 +812,37 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (!mounted) return;
 
-    final bool parkedConfirmed = await Navigator.push<bool>(
-          context,
-          MaterialPageRoute(
-            builder: (_) => GuidanceToSpotScreen(
-              spotLabel: session.spotLabel,
-              isGuideToFree: false,
-              spots: freshSpots,
-              parkingId: session.parkingId,
-              parkingName: session.parkingName,
-            ),
-          ),
-        ) ??
-        false;
+    final dynamic guidanceResult = await Navigator.push<dynamic>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GuidanceToSpotScreen(
+          spotLabel: session.spotLabel,
+          isGuideToFree: false,
+          spots: freshSpots,
+          parkingId: session.parkingId,
+          parkingName: session.parkingName,
+        ),
+      ),
+    );
+
+    // L'écran retourne maintenant le label de la place réellement choisie
+    // (String) ou true (legacy). false/null = pas confirmé.
+    String? actualSpotLabel;
+    bool parkedConfirmed = false;
+    if (guidanceResult is String && guidanceResult.trim().isNotEmpty) {
+      actualSpotLabel = guidanceResult.trim();
+      parkedConfirmed = true;
+    } else if (guidanceResult == true) {
+      parkedConfirmed = true;
+    }
 
     if (parkedConfirmed) {
       _parkedReservationIds.add(session.reservationId);
       _vehicleFoundReservationIds.remove(session.reservationId);
+      if (actualSpotLabel != null) {
+        _actualParkedSpotByReservationId[session.reservationId] =
+            actualSpotLabel;
+      }
     }
 
     if (!mounted) {
@@ -846,12 +874,14 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    final String effectiveSpotLabel = _effectiveSpotLabel(session);
+
     if (session.isVehicleFound) {
       await Navigator.push<void>(
         context,
         MaterialPageRoute(
           builder: (_) => VehicleFoundScreen(
-            spotLabel: session.spotLabel,
+            spotLabel: effectiveSpotLabel,
             reservationId: session.reservationId,
             parkingName: session.parkingName,
             dureeMinutes: (_elapsedSec / 60).ceil().clamp(1, 100000),
@@ -867,7 +897,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     ProviderScope.containerOf(context, listen: false)
         .read(selectedSpotProvider.notifier)
-        .state = session.spotLabel;
+        .state = effectiveSpotLabel;
 
     final List<ParkingIndoorSpot> freshSpots = await _fetchFreshSpots(session);
 
@@ -877,7 +907,7 @@ class _HomeScreenState extends State<HomeScreen> {
           context,
           MaterialPageRoute(
             builder: (_) => GuidanceToVehicleScreen(
-              spotLabel: session.spotLabel,
+              spotLabel: effectiveSpotLabel,
               parkingName: session.parkingName,
               reservationId: session.reservationId,
               durationMinutes: (_elapsedSec / 60).ceil(),
@@ -908,9 +938,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final bool guidanceEnabled =
       _isSmartGuidanceEnabled(session.parkingName, session.parking);
 
+    final String effectiveSpotLabel = _effectiveSpotLabel(session);
+
     ProviderScope.containerOf(context, listen: false)
       .read(selectedSpotProvider.notifier)
-      .state = session.spotLabel;
+      .state = effectiveSpotLabel;
 
     final List<ParkingIndoorSpot> freshSpots = await _fetchFreshSpots(session);
 
@@ -920,7 +952,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => GuidanceToExitScreen(
-          spotLabel: session.spotLabel,
+          spotLabel: effectiveSpotLabel,
           showMapComingSoon: !guidanceEnabled,
           spots: freshSpots,
           parkingId: session.parkingId,
@@ -1269,7 +1301,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             style: TextStyle(fontSize: 13, color: _kTextMid)),
                         const SizedBox(height: 3),
                         Text(
-                          _session!.spotLabel,
+                          _effectiveSpotLabel(_session!),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
