@@ -100,13 +100,30 @@ class _HomeScreenState extends State<HomeScreen> {
   // si l'app a recibré sur une autre libre). Clé = reservationId.
   final Map<String, String> _actualParkedSpotByReservationId = <String, String>{};
 
-  /// Label de place à utiliser pour les écrans de guidage retour (find-car / exit).
-  /// Priorité: place réellement choisie par le guidage > place réservée de la session.
+  /// Calcule la place estimée à partir de la carte indoor live: la place libre
+  /// la plus proche de l'ENTRÉE (bottom-row d'abord, ordre col 0→2).
+  /// Retourne null si la carte n'est pas dispo ou si aucune place libre.
+  String? _estimatedSpotFromLiveMap(_Session session) {
+    final List<ParkingIndoorSpot>? spots = session.parking?.indoorMap?.spots;
+    if (spots == null || spots.isEmpty) return null;
+    final GuidanceSpotLayout layout =
+        GuidanceSpotLayout.fromIndoorSpots(spots);
+    final GuidanceSpotViewData? nearest = layout.findNearestAvailable();
+    return nearest?.displayLabel;
+  }
+
+  /// Label de place à utiliser pour les écrans de guidage retour (find-car / exit)
+  /// et pour l'affichage "Place estimée" de l'accueil.
+  /// Priorité: place réellement garée > place estimée (carte live) > place réservée.
   String _effectiveSpotLabel(_Session session) {
     final String? actual =
         _actualParkedSpotByReservationId[session.reservationId];
     if (actual != null && actual.trim().isNotEmpty) {
       return actual;
+    }
+    final String? estimated = _estimatedSpotFromLiveMap(session);
+    if (estimated != null && estimated.trim().isNotEmpty) {
+      return estimated;
     }
     return session.spotLabel;
   }
@@ -115,6 +132,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   _Session? _session;
   Timer? _timer;
+  Timer? _indoorMapRefreshTimer;
+  bool _isRefreshingIndoorMap = false;
   int _elapsedSec = 0;
   bool _isLoadingSession = true;
   String? _sessionError;
@@ -125,6 +144,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _indoorMapRefreshTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _refreshIndoorMap(),
+    );
     _initializeSession().then((_) {
       if (!mounted) {
         return;
@@ -139,7 +162,51 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _indoorMapRefreshTimer?.cancel();
     super.dispose();
+  }
+
+  /// Refresh léger de la carte indoor (sans recharger session/payment) pour
+  /// que la "Place estimée" reflète l'état live du parking.
+  Future<void> _refreshIndoorMap() async {
+    if (!mounted || _isRefreshingIndoorMap) return;
+    final _Session? current = _session;
+    if (current == null) return;
+    _isRefreshingIndoorMap = true;
+    try {
+      await _parkingRepository.fetchParkings(forceRefresh: true);
+      if (!mounted) return;
+      final Parking? fresh = _resolveParkingById(current.parkingId) ??
+          _resolveParkingByName(current.parkingName);
+      if (fresh == null) return;
+      // Reconstruit la session avec la nouvelle carte indoor.
+      setState(() {
+        _session = _Session(
+          reservationId: current.reservationId,
+          parkingId: current.parkingId,
+          parking: fresh,
+          parkingName: current.parkingName,
+          parkingAddress: current.parkingAddress,
+          spotLabel: current.spotLabel,
+          ticketCode: current.ticketCode,
+          entryTime: current.entryTime,
+          tarifActuel: current.tarifActuel,
+          reservationDurationType: current.reservationDurationType,
+          reservationAmount: current.reservationAmount,
+          canGuideToSpot: current.canGuideToSpot,
+          canFindCar: current.canFindCar,
+          canExit: current.canExit,
+          canPay: current.canPay,
+          isPaid: current.isPaid,
+          isVehicleParked: current.isVehicleParked,
+          isVehicleFound: current.isVehicleFound,
+        );
+      });
+    } catch (_) {
+      // Silent: garder la carte précédente jusqu'au prochain tick.
+    } finally {
+      _isRefreshingIndoorMap = false;
+    }
   }
 
   String get _hh => (_elapsedSec ~/ 3600).toString().padLeft(2, '0');
