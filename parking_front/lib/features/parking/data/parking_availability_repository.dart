@@ -2,7 +2,7 @@ import 'models/parking_availability_api_model.dart';
 import 'parking_availability_api_service.dart';
 
 class ParkingAvailabilityRepository {
-  static const Duration _cacheTtl = Duration(seconds: 10);
+  static const Duration _cacheTtl = Duration(seconds: 1);
   static List<ParkingAvailabilityApiModel>? _availabilityCache;
   static DateTime? _availabilityCacheAt;
 

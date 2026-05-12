@@ -805,6 +805,8 @@ class _HomeScreenState extends State<HomeScreen> {
               spotLabel: session.spotLabel,
               isGuideToFree: false,
               spots: freshSpots,
+              parkingId: session.parkingId,
+              parkingName: session.parkingName,
             ),
           ),
         ) ??
@@ -880,6 +882,7 @@ class _HomeScreenState extends State<HomeScreen> {
               reservationId: session.reservationId,
               durationMinutes: (_elapsedSec / 60).ceil(),
               spots: freshSpots,
+              parkingId: session.parkingId,
             ),
           ),
         ) ??
@@ -920,6 +923,8 @@ class _HomeScreenState extends State<HomeScreen> {
           spotLabel: session.spotLabel,
           showMapComingSoon: !guidanceEnabled,
           spots: freshSpots,
+          parkingId: session.parkingId,
+          parkingName: session.parkingName,
         ),
       ),
     );

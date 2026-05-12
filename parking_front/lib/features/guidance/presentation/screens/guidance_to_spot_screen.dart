@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:parking_front/features/guidance/presentation/utils/guidance_spot_layout.dart';
+import 'package:parking_front/features/parking/data/parking_repository.dart';
 import 'package:parking_front/features/parking/models/parking.dart';
 
 import 'vehicle_parked_confirmation_screen.dart';
@@ -22,6 +23,8 @@ class GuidanceToSpotScreen extends StatefulWidget {
   final String floor;
   final bool isGuideToFree;
   final List<ParkingIndoorSpot> spots;
+  final String? parkingId;
+  final String? parkingName;
 
   const GuidanceToSpotScreen({
     super.key,
@@ -29,6 +32,8 @@ class GuidanceToSpotScreen extends StatefulWidget {
     this.floor = 'Niveau -1',
     this.isGuideToFree = true,
     this.spots = const <ParkingIndoorSpot>[],
+    this.parkingId,
+    this.parkingName,
   });
 
   @override
@@ -38,29 +43,33 @@ class GuidanceToSpotScreen extends StatefulWidget {
 class _GuidanceToSpotScreenState extends State<GuidanceToSpotScreen>
     with SingleTickerProviderStateMixin {
   final FlutterTts _tts = FlutterTts();
+  final ParkingRepository _parkingRepository = ParkingRepository();
 
   late final AnimationController _pathController;
-  late final GuidanceSpotLayout _layout;
-  late final GuidanceSpotViewData _targetSpotData;
-  late final bool _resolvedIsTopRow;
-  late final int _resolvedTargetColIndex;
+  GuidanceSpotLayout _layout = const GuidanceSpotLayout(
+    topRow: <GuidanceSpotViewData>[],
+    bottomRow: <GuidanceSpotViewData>[],
+  );
+  GuidanceSpotViewData? _targetSpotData;
+  bool _resolvedIsTopRow = false;
+  int _resolvedTargetColIndex = 0;
   Timer? _timer;
+  Timer? _refreshTimer;
+  bool _isRefreshing = false;
+  List<ParkingIndoorSpot> _spots = const <ParkingIndoorSpot>[];
 
   double _scale = 1.0;
   double _lastScale = 1.0;
   bool _voiceEnabled = true;
   int _distanceMeters = 120;
   String _currentInstruction = '';
-  late final String _targetSpot;
+  String _targetSpot = '';
 
   @override
   void initState() {
     super.initState();
-    _layout = GuidanceSpotLayout.fromIndoorSpots(widget.spots);
-    _targetSpotData = _resolveTargetSpotData();
-    _resolvedIsTopRow = _targetSpotData.rowIndex == 0;
-    _resolvedTargetColIndex = _targetSpotData.colIndex;
-    _targetSpot = _targetSpotData.displayLabel;
+    _spots = widget.spots;
+    _rebuildLayoutAndTarget(forceAnnounce: true);
     _pathController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1300),
@@ -76,14 +85,80 @@ class _GuidanceToSpotScreenState extends State<GuidanceToSpotScreen>
       });
       _updateInstruction();
     });
+
+    // Live refresh des places (couleurs + place cible la plus proche)
+    if ((widget.parkingId ?? '').isNotEmpty ||
+        (widget.parkingName ?? '').isNotEmpty) {
+      _refreshTimer = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => _refreshSpotsFromBackend(),
+      );
+    }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _refreshTimer?.cancel();
     _pathController.dispose();
     _tts.stop();
     super.dispose();
+  }
+
+  Future<void> _refreshSpotsFromBackend() async {
+    if (!mounted || _isRefreshing) return;
+    _isRefreshing = true;
+    try {
+      final List<Parking> parkings =
+          await _parkingRepository.fetchParkings(forceRefresh: true);
+      final String idNeedle = (widget.parkingId ?? '').trim().toLowerCase();
+      final String nameNeedle = (widget.parkingName ?? '').trim().toLowerCase();
+      Parking? match;
+      for (final Parking p in parkings) {
+        if (idNeedle.isNotEmpty && p.id.trim().toLowerCase() == idNeedle) {
+          match = p;
+          break;
+        }
+      }
+      if (match == null && nameNeedle.isNotEmpty) {
+        for (final Parking p in parkings) {
+          if (p.name.trim().toLowerCase() == nameNeedle) {
+            match = p;
+            break;
+          }
+        }
+      }
+      final List<ParkingIndoorSpot> fresh =
+          match?.indoorMap?.spots ?? const <ParkingIndoorSpot>[];
+      if (!mounted || fresh.isEmpty) return;
+      setState(() {
+        _spots = fresh;
+        _rebuildLayoutAndTarget();
+      });
+    } catch (_) {
+      // Silent: keep previous snapshot until next tick.
+    } finally {
+      _isRefreshing = false;
+    }
+  }
+
+  void _rebuildLayoutAndTarget({bool forceAnnounce = false}) {
+    _layout = GuidanceSpotLayout.fromIndoorSpots(_spots);
+    final GuidanceSpotViewData next = _resolveTargetSpotData();
+    final bool changed = _targetSpotData == null ||
+        _targetSpotData!.displayLabel != next.displayLabel ||
+        _targetSpotData!.rowIndex != next.rowIndex ||
+        _targetSpotData!.colIndex != next.colIndex;
+    _targetSpotData = next;
+    _resolvedIsTopRow = next.rowIndex == 0;
+    _resolvedTargetColIndex = next.colIndex;
+    _targetSpot = next.displayLabel;
+    if (changed && !forceAnnounce) {
+      // Recibler vers la nouvelle place: reset progression et annoncer.
+      _distanceMeters = 120;
+      _currentInstruction = '';
+      _updateInstruction(forceSpeak: true);
+    }
   }
 
   Future<void> _configureVoice() async {
@@ -96,27 +171,30 @@ class _GuidanceToSpotScreenState extends State<GuidanceToSpotScreen>
   GuidanceSpotViewData _resolveTargetSpotData() {
     final String resolvedLabel = resolveSpotLabelFromTicketCode(
       widget.spotLabel,
-      widget.spots,
+      _spots,
       fallback: widget.spotLabel,
     );
 
     final GuidanceSpotViewData? resolved = _layout.findByLabel(resolvedLabel);
-    final GuidanceSpotViewData? firstAvailable = _layout.findFirstAvailable();
+    final GuidanceSpotViewData? nearestFree = _layout.findNearestAvailable();
 
     if (widget.isGuideToFree) {
-      if (firstAvailable != null) {
-        return firstAvailable;
-      }
-      return resolved ?? _layout.topRow.first;
+      // Toujours la place la plus proche de l'ENTRÉE (bottom-row d'abord)
+      if (nearestFree != null) return nearestFree;
+      return resolved ?? _layout.bottomRow.firstOrNull ?? _layout.topRow.first;
     }
 
+    // Mode réservation: respecter la place réservée tant qu'elle est valide
     if (resolved != null &&
         (resolved.state == GuidanceSpotState.available ||
             resolved.state == GuidanceSpotState.reserved)) {
       return resolved;
     }
 
-    return firstAvailable ?? resolved ?? _layout.topRow.first;
+    return nearestFree ??
+        resolved ??
+        _layout.bottomRow.firstOrNull ??
+        _layout.topRow.first;
   }
 
   double get _progress => (120 - _distanceMeters) / 120;

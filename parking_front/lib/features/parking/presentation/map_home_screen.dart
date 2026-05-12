@@ -62,7 +62,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
   Timer? _availabilityRefreshTimer;
   bool _isRefreshingAvailability = false;
 
-  static const Duration _availabilityRefreshInterval = Duration(seconds: 15);
+  static const Duration _availabilityRefreshInterval = Duration(seconds: 1);
 
   LatLng get _routeStartPoint => _userLocation ?? const LatLng(36.7650, 3.0570);
 

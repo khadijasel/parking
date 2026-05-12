@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:parking_front/core/widgets/app_feedback.dart';
 import 'package:parking_front/features/guidance/presentation/utils/guidance_spot_layout.dart';
+import 'package:parking_front/features/parking/data/parking_repository.dart';
 import 'package:parking_front/features/parking/models/parking.dart';
 import 'package:parking_front/features/reservation/data/reservation_repository.dart';
 import 'package:parking_front/features/scanner/presentation/screens/scanner_screen.dart';
@@ -24,12 +25,16 @@ class GuidanceToExitScreen extends StatefulWidget {
   final String spotLabel;
   final bool showMapComingSoon;
   final List<ParkingIndoorSpot> spots;
+  final String? parkingId;
+  final String? parkingName;
 
   const GuidanceToExitScreen({
     super.key,
     this.spotLabel = 'P05',
     this.showMapComingSoon = false,
     this.spots = const <ParkingIndoorSpot>[],
+    this.parkingId,
+    this.parkingName,
   });
 
   @override
@@ -40,11 +45,18 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
     with SingleTickerProviderStateMixin {
   final FlutterTts _tts = FlutterTts();
   final ReservationRepository _reservationRepository = ReservationRepository();
+  final ParkingRepository _parkingRepository = ParkingRepository();
 
   late final AnimationController _pathController;
-  late final GuidanceSpotLayout _layout;
-  late final GuidanceSpotViewData _currentSpotData;
+  GuidanceSpotLayout _layout = const GuidanceSpotLayout(
+    topRow: <GuidanceSpotViewData>[],
+    bottomRow: <GuidanceSpotViewData>[],
+  );
+  GuidanceSpotViewData? _currentSpotData;
   Timer? _timer;
+  Timer? _refreshTimer;
+  bool _isRefreshing = false;
+  List<ParkingIndoorSpot> _spots = const <ParkingIndoorSpot>[];
 
   bool _voiceEnabled = true;
   bool _isCompletingExit = false;
@@ -52,16 +64,17 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
   String _instruction = '';
 
   // Spot column index (0=left, 1=center, 2=right)
-  bool get _isTopRow => _currentSpotData.rowIndex == 0;
+  bool get _isTopRow => _currentSpotData?.rowIndex == 0;
 
-  int get _spotColIndex => _currentSpotData.colIndex;
+  int get _spotColIndex => _currentSpotData?.colIndex ?? 0;
 
-  String get _normalizedSpotLabel => _currentSpotData.displayLabel;
+  String get _normalizedSpotLabel => _currentSpotData?.displayLabel ?? '';
 
   @override
   void initState() {
     super.initState();
-    _layout = GuidanceSpotLayout.fromIndoorSpots(widget.spots);
+    _spots = widget.spots;
+    _layout = GuidanceSpotLayout.fromIndoorSpots(_spots);
     _currentSpotData = _resolveCurrentSpotData();
 
     _pathController = AnimationController(
@@ -87,14 +100,62 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
       });
       _refreshInstruction();
     });
+
+    // Live refresh des couleurs des places autres pendant la sortie.
+    if ((widget.parkingId ?? '').isNotEmpty ||
+        (widget.parkingName ?? '').isNotEmpty) {
+      _refreshTimer = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => _refreshSpotsFromBackend(),
+      );
+    }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _refreshTimer?.cancel();
     _pathController.dispose();
     _tts.stop();
     super.dispose();
+  }
+
+  Future<void> _refreshSpotsFromBackend() async {
+    if (!mounted || _isRefreshing) return;
+    _isRefreshing = true;
+    try {
+      final List<Parking> parkings =
+          await _parkingRepository.fetchParkings(forceRefresh: true);
+      final String idNeedle = (widget.parkingId ?? '').trim().toLowerCase();
+      final String nameNeedle = (widget.parkingName ?? '').trim().toLowerCase();
+      Parking? match;
+      for (final Parking p in parkings) {
+        if (idNeedle.isNotEmpty && p.id.trim().toLowerCase() == idNeedle) {
+          match = p;
+          break;
+        }
+      }
+      if (match == null && nameNeedle.isNotEmpty) {
+        for (final Parking p in parkings) {
+          if (p.name.trim().toLowerCase() == nameNeedle) {
+            match = p;
+            break;
+          }
+        }
+      }
+      final List<ParkingIndoorSpot> fresh =
+          match?.indoorMap?.spots ?? const <ParkingIndoorSpot>[];
+      if (!mounted || fresh.isEmpty) return;
+      setState(() {
+        _spots = fresh;
+        _layout = GuidanceSpotLayout.fromIndoorSpots(_spots);
+        _currentSpotData = _resolveCurrentSpotData();
+      });
+    } catch (_) {
+      // Silent: keep previous snapshot until next tick.
+    } finally {
+      _isRefreshing = false;
+    }
   }
 
   Future<void> _configureVoice() async {
@@ -107,11 +168,13 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
   GuidanceSpotViewData _resolveCurrentSpotData() {
     final String resolvedLabel = resolveSpotLabelFromTicketCode(
       widget.spotLabel,
-      widget.spots,
+      _spots,
       fallback: widget.spotLabel,
     );
 
-    return _layout.findByLabel(resolvedLabel) ?? _layout.topRow.first;
+    return _layout.findByLabel(resolvedLabel) ??
+        _layout.bottomRow.firstOrNull ??
+        _layout.topRow.first;
   }
 
   double get _progress => (70 - _distanceMeters) / 70;

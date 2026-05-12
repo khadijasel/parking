@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:parking_front/features/guidance/presentation/utils/guidance_spot_layout.dart';
+import 'package:parking_front/features/parking/data/parking_repository.dart';
 import 'package:parking_front/features/parking/models/parking.dart';
 
 import 'vehicle_found_screen.dart';
@@ -24,6 +25,7 @@ class GuidanceToVehicleScreen extends StatefulWidget {
   final String reservationId;
   final int durationMinutes;
   final List<ParkingIndoorSpot> spots;
+  final String? parkingId;
 
   const GuidanceToVehicleScreen({
     super.key,
@@ -32,6 +34,7 @@ class GuidanceToVehicleScreen extends StatefulWidget {
     this.reservationId = '',
     this.durationMinutes = 0,
     this.spots = const <ParkingIndoorSpot>[],
+    this.parkingId,
   });
 
   @override
@@ -42,14 +45,20 @@ class GuidanceToVehicleScreen extends StatefulWidget {
 class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
     with SingleTickerProviderStateMixin {
   final FlutterTts _tts = FlutterTts();
+  final ParkingRepository _parkingRepository = ParkingRepository();
 
   late final AnimationController _pathController;
-  late final GuidanceSpotLayout _layout;
-  late final GuidanceSpotViewData _targetSpotData;
-  late final bool _resolvedIsTopRow;
-  late final int _resolvedTargetColIndex;
-  late final String _resolvedTargetLabel;
+  GuidanceSpotLayout _layout = const GuidanceSpotLayout(
+    topRow: <GuidanceSpotViewData>[],
+    bottomRow: <GuidanceSpotViewData>[],
+  );
+  bool _resolvedIsTopRow = false;
+  int _resolvedTargetColIndex = 0;
+  String _resolvedTargetLabel = '';
   Timer? _timer;
+  Timer? _refreshTimer;
+  bool _isRefreshing = false;
+  List<ParkingIndoorSpot> _spots = const <ParkingIndoorSpot>[];
 
   bool _voiceEnabled = true;
   double _scale = 1.0;
@@ -62,21 +71,28 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
   GuidanceSpotViewData _resolveTargetSpotData() {
     final String resolvedLabel = resolveSpotLabelFromTicketCode(
       widget.spotLabel,
-      widget.spots,
+      _spots,
       fallback: widget.spotLabel,
     );
 
-    return _layout.findByLabel(resolvedLabel) ?? _layout.topRow.first;
+    return _layout.findByLabel(resolvedLabel) ??
+        _layout.bottomRow.firstOrNull ??
+        _layout.topRow.first;
+  }
+
+  void _rebuildLayoutAndTarget() {
+    _layout = GuidanceSpotLayout.fromIndoorSpots(_spots);
+    final GuidanceSpotViewData next = _resolveTargetSpotData();
+    _resolvedIsTopRow = next.rowIndex == 0;
+    _resolvedTargetColIndex = next.colIndex;
+    _resolvedTargetLabel = next.displayLabel;
   }
 
   @override
   void initState() {
     super.initState();
-    _layout = GuidanceSpotLayout.fromIndoorSpots(widget.spots);
-    _targetSpotData = _resolveTargetSpotData();
-    _resolvedIsTopRow = _targetSpotData.rowIndex == 0;
-    _resolvedTargetColIndex = _targetSpotData.colIndex;
-    _resolvedTargetLabel = _targetSpotData.displayLabel;
+    _spots = widget.spots;
+    _rebuildLayoutAndTarget();
     _pathController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
@@ -92,14 +108,61 @@ class _GuidanceToVehicleScreenState extends State<GuidanceToVehicleScreen>
       });
       _setInstruction();
     });
+
+    // Live refresh des couleurs des places autres pendant la recherche du véhicule.
+    if ((widget.parkingId ?? '').isNotEmpty ||
+        widget.parkingName.trim().isNotEmpty) {
+      _refreshTimer = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => _refreshSpotsFromBackend(),
+      );
+    }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _refreshTimer?.cancel();
     _pathController.dispose();
     _tts.stop();
     super.dispose();
+  }
+
+  Future<void> _refreshSpotsFromBackend() async {
+    if (!mounted || _isRefreshing) return;
+    _isRefreshing = true;
+    try {
+      final List<Parking> parkings =
+          await _parkingRepository.fetchParkings(forceRefresh: true);
+      final String idNeedle = (widget.parkingId ?? '').trim().toLowerCase();
+      final String nameNeedle = widget.parkingName.trim().toLowerCase();
+      Parking? match;
+      for (final Parking p in parkings) {
+        if (idNeedle.isNotEmpty && p.id.trim().toLowerCase() == idNeedle) {
+          match = p;
+          break;
+        }
+      }
+      if (match == null && nameNeedle.isNotEmpty) {
+        for (final Parking p in parkings) {
+          if (p.name.trim().toLowerCase() == nameNeedle) {
+            match = p;
+            break;
+          }
+        }
+      }
+      final List<ParkingIndoorSpot> fresh =
+          match?.indoorMap?.spots ?? const <ParkingIndoorSpot>[];
+      if (!mounted || fresh.isEmpty) return;
+      setState(() {
+        _spots = fresh;
+        _rebuildLayoutAndTarget();
+      });
+    } catch (_) {
+      // Silent: keep previous snapshot until next tick.
+    } finally {
+      _isRefreshing = false;
+    }
   }
 
   Future<void> _configureVoice() async {

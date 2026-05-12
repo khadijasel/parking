@@ -2,7 +2,7 @@ import '../models/parking.dart';
 import 'parking_api_service.dart';
 
 class ParkingRepository {
-  static const Duration _cacheTtl = Duration(seconds: 20);
+  static const Duration _cacheTtl = Duration(seconds: 1);
   static List<Parking>? _cache;
   static DateTime? _cacheAt;
 

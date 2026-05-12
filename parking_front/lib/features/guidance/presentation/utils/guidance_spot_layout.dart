@@ -100,11 +100,27 @@ class GuidanceSpotLayout {
 
     return null;
   }
+
+  /// Find the spot AVAILABLE the closest to the entry (bottom-left).
+  /// Order: bottom-row left → right, then top-row left → right.
+  GuidanceSpotViewData? findNearestAvailable() {
+    for (final GuidanceSpotViewData spot in bottomRow) {
+      if (spot.state == GuidanceSpotState.available) {
+        return spot;
+      }
+    }
+    for (final GuidanceSpotViewData spot in topRow) {
+      if (spot.state == GuidanceSpotState.available) {
+        return spot;
+      }
+    }
+    return null;
+  }
 }
 
 const List<GuidanceSpotViewData> _kFallbackTopRow = <GuidanceSpotViewData>[
   GuidanceSpotViewData(
-    label: 'A01',
+    label: 'P01',
     state: GuidanceSpotState.occupied,
     rowIndex: 0,
     colIndex: 0,
@@ -196,7 +212,7 @@ List<ParkingIndoorSpot> sortIndoorSpots(List<ParkingIndoorSpot> spots) {
 String resolveSpotLabelFromTicketCode(
   String ticketCode,
   List<ParkingIndoorSpot> spots, {
-  String fallback = 'A1',
+  String fallback = '',
 }) {
   final String source = ticketCode.trim().toUpperCase();
   if (source.isEmpty) {
