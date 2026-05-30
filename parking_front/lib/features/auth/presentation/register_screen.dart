@@ -296,7 +296,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             const AppLogo(showTagline: false),
             const SizedBox(height: AppConstants.paddingMedium),
             const Text(
-              'Créez votre compte SmartPark',
+              'Créez votre compte SpotHna',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey,

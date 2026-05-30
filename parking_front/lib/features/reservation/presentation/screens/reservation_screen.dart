@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:parking_front/core/widgets/app_feedback.dart';
 import 'package:parking_front/features/main/main_screen.dart';
+import 'package:parking_front/features/parking/models/parking.dart';
 import 'package:parking_front/features/payment/presentation/screens/payment_screen.dart';
 import 'package:parking_front/features/profile/presentation/screens/my_reservations_screen.dart';
 import 'package:parking_front/features/reservation/data/reservation_repository.dart';
@@ -21,6 +22,7 @@ class ReservationScreen extends StatefulWidget {
   final String parkingAddress;
   final List<String> equipments;
   final bool returnHomeOnBack;
+  final Parking? parking;
 
   const ReservationScreen({
     super.key,
@@ -29,6 +31,7 @@ class ReservationScreen extends StatefulWidget {
     this.parkingAddress = 'Adresse du parking',
     this.equipments = const ['GPL', 'SÉCURITÉ', 'HANDI'],
     this.returnHomeOnBack = false,
+    this.parking,
   });
 
   @override
@@ -42,40 +45,53 @@ class _ReservationScreenState extends State<ReservationScreen> {
 
   bool get _isCourte => _selected == _DurationType.courte;
 
-  final List<_DurationOption> _options = const [
-    _DurationOption(
-      type: _DurationType.courte,
-      icon: Icons.access_time_rounded,
-      label: 'Courte durée',
-      sublabel: 'Facturation horaire',
-      price: '100 DA',
-      unit: '/ HEURE',
-    ),
-    _DurationOption(
-      type: _DurationType.journee,
-      icon: Icons.calendar_today_rounded,
-      label: 'Journée',
-      sublabel: 'Forfait complet',
-      price: '800 DA',
-      unit: '/ JOUR',
-    ),
-    _DurationOption(
-      type: _DurationType.semaine,
-      icon: Icons.date_range_rounded,
-      label: 'Semaine',
-      sublabel: 'Pass hebdomadaire',
-      price: '4,500 DA',
-      unit: '/ SEMAINE',
-    ),
-    _DurationOption(
-      type: _DurationType.mois,
-      icon: Icons.calendar_month_rounded,
-      label: 'Mois',
-      sublabel: 'Abonnement',
-      price: '15,000 DA',
-      unit: '/ MOIS',
-    ),
-  ];
+  String _formatPrice(double? price) {
+    if (price == null || price <= 0) return '--';
+    final int rounded = price.round();
+    if (rounded >= 1000) {
+      final String s = rounded.toString();
+      return '${s.substring(0, s.length - 3)},${s.substring(s.length - 3)} DA';
+    }
+    return '$rounded DA';
+  }
+
+  List<_DurationOption> get _options {
+    final Parking? p = widget.parking;
+    return [
+      _DurationOption(
+        type: _DurationType.courte,
+        icon: Icons.access_time_rounded,
+        label: 'Courte durée',
+        sublabel: 'Facturation horaire',
+        price: _formatPrice(p?.pricePerHour),
+        unit: '/ HEURE',
+      ),
+      _DurationOption(
+        type: _DurationType.journee,
+        icon: Icons.calendar_today_rounded,
+        label: 'Journée',
+        sublabel: 'Forfait complet',
+        price: _formatPrice(p?.priceJournee),
+        unit: '/ JOUR',
+      ),
+      _DurationOption(
+        type: _DurationType.semaine,
+        icon: Icons.date_range_rounded,
+        label: 'Semaine',
+        sublabel: 'Pass hebdomadaire',
+        price: _formatPrice(p?.priceSemaine),
+        unit: '/ SEMAINE',
+      ),
+      _DurationOption(
+        type: _DurationType.mois,
+        icon: Icons.calendar_month_rounded,
+        label: 'Mois',
+        sublabel: 'Abonnement',
+        price: _formatPrice(p?.priceMois),
+        unit: '/ MOIS',
+      ),
+    ];
+  }
 
   Future<void> _handleConfirm() async {
     if (_isSubmitting) {
@@ -179,15 +195,16 @@ class _ReservationScreenState extends State<ReservationScreen> {
   }
 
   double _amountFor(_DurationType type) {
+    final Parking? p = widget.parking;
     switch (type) {
       case _DurationType.courte:
         return 0;
       case _DurationType.journee:
-        return 800;
+        return (p?.priceJournee != null && p!.priceJournee! > 0) ? p.priceJournee! : 800;
       case _DurationType.semaine:
-        return 4500;
+        return (p?.priceSemaine != null && p!.priceSemaine! > 0) ? p.priceSemaine! : 4500;
       case _DurationType.mois:
-        return 15000;
+        return (p?.priceMois != null && p!.priceMois! > 0) ? p.priceMois! : 15000;
     }
   }
 

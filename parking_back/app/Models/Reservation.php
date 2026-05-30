@@ -27,6 +27,7 @@ class Reservation extends Model
         'expires_at',
         'cancelled_at',
         'spot_locked',
+        'source',
     ];
 
     protected $casts = [

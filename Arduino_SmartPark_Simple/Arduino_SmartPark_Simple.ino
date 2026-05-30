@@ -7,17 +7,17 @@
 //    • HC-SR04 ENTREE  : TRIG=GPIO4   ECHO=GPIO5
 //    • HC-SR04 SORTIE  : TRIG=GPIO18  ECHO=GPIO19
 //    • Servos          : SERVO_IN=13  SERVO_OUT=14
-//    • IR x6           : 15, 27, 32, 33, 34, 35  → A1, A2, A3, B1, B2, B3
+//    • IR x6           : 15, 27, 32, 33, 34, 35  → places chargées depuis DB
 //    • LEDs (1/place)  : 23, 25, 26, 12, 2, 16   (LED ON = place occupée)
 //    • LCD I2C 0x27    : SDA=GPIO21   SCL=GPIO22
 //
 //  WiFi : SSID="khadija"  Pass="khadija17"
 //
-//  Endpoints Laravel utilisés :
-//    POST /api/parkings/infrared/readings    → état des 6 IR
-//    POST /api/parkings/arduino/availability → compteur global
-//    POST /api/iot/tickets                   → ticket à l'entrée
-//  Header IoT : X-Sensor-Key / X-Arduino-Key / X-IoT-Key
+//  Endpoints Laravel :
+//    GET  /api/parkings/{id}/spots        → labels des places depuis DB
+//    POST /api/parkings/infrared/readings → état des IR + réponse avec spots
+//    POST /api/iot/tickets                → ticket à l'entrée
+//  Header IoT : X-Sensor-Key / X-Arduino-Key
 //
 //  Bibliothèques :
 //    ESP32Servo · LiquidCrystal I2C · ArduinoJson v6
@@ -27,7 +27,6 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <ESP32Servo.h>
-#include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
 /* ===================== CONFIG ===================== */
@@ -44,16 +43,15 @@
 #define SERVO_OUT 14
 #define SERVO_OPEN_DEG  90
 #define SERVO_CLOSE_DEG 0
-#define BARRIER_OPEN_MS 3500   // durée d'ouverture des barrières
+#define BARRIER_OPEN_MS 3500
 
-// IR (LOW = place occupée) + labels backend
-const int   IR_PINS[6]     = {15, 27, 32, 33, 34, 35};
-const char* SPOT_LABELS[6] = {"A1", "A2", "A3", "B1", "B2", "B3"};
+// IR pins (LOW = place occupée)
+const int IR_PINS[6] = {15, 27, 32, 33, 34, 35};
 
 // LEDs (1 LED par place, ON = occupée)
-// ⚠ GPIO 16 = PSRAM sur ESP32 WROVER → mettre -1 si crash au boot
-// ⚠ GPIO 12 = strap-pin (HIGH au boot empêche le démarrage) → si crash, mettre -1
-const int LED_PINS[6] = {23, 25, 26, 12, 2, -1};   // ⬅ test : GPIO 16 désactivé
+// ⚠ GPIO 16 = PSRAM sur ESP32 WROVER → -1 si crash au boot
+// ⚠ GPIO 12 = strap-pin → -1 si crash
+const int LED_PINS[6] = {23, 25, 26, 12, 2, -1};
 
 // LCD
 #define LCD_SDA  21
@@ -65,20 +63,29 @@ const int LED_PINS[6] = {23, 25, 26, 12, 2, -1};   // ⬅ test : GPIO 16 désact
 #define WIFI_PASSWORD   "khadija17"
 #define WIFI_TIMEOUT_MS 15000
 
-// Backend Laravel — REMPLACER L'IP par celle du PC qui héberge `php artisan serve --host=0.0.0.0`
-#define API_BASE_URL    "http://10.133.226.168:8000/api"
+// Backend Laravel
+#define API_BASE_URL    "http://10.133.226.121:8000/api"
 #define ARDUINO_API_KEY "smartpark_iot_secret_key_2024"
 #define PARKING_ID      "arduino-sim"
 #define PARKING_NAME    "Notre Parking"
 #define DEVICE_ID       "ESP32-SmartPark"
-#define API_TIMEOUT_MS  8000
+#define API_TIMEOUT_MS  3000   // réduit de 8s → 3s pour une réponse rapide
 
 // Cadences (non-bloquantes)
 #define POLL_MS          300
-#define SYNC_MS         5000
+#define SYNC_MS         1000   // refresh chaque 1 seconde
 #define LCD_MS          1000
 #define ENTRY_DEBOUNCE  4000
 #define WIFI_RETRY_MS  10000
+
+/* ===================== PLACES DYNAMIQUES ===================== */
+
+#define MAX_SPOTS 12
+// Labels dans l'ordre physique des pins IR : ir[0]..ir[5]
+//   ir[0]=GPIO15 → P5   ir[1]=GPIO27 → P6   ir[2]=GPIO32 → P3
+//   ir[3]=GPIO33 → P4   ir[4]=GPIO34 → A1   ir[5]=GPIO35 → P2
+char  spotLabels[MAX_SPOTS][16] = {"P5","P6","P3","P4","A1","P2"};
+int   numSpots = 6;
 
 /* ===================== ÉTAT GLOBAL ===================== */
 
@@ -86,8 +93,8 @@ Servo servoIn;
 Servo servoOut;
 LiquidCrystal_I2C lcd(LCD_ADDR, 16, 2);
 
-bool occupied[6] = {false};
-bool occSent[6]  = {false};
+bool occupied[MAX_SPOTS] = {};
+bool occSent[MAX_SPOTS]  = {};
 
 bool carIn = false,  carOut = false;
 bool prevIn = false, prevOut = false;
@@ -101,6 +108,9 @@ unsigned long tPoll = 0, tSync = 0, tLcd = 0;
 unsigned long tLastEntryPost = 0;
 unsigned long tLastWifiRetry = 0;
 bool firstSync = true;
+
+// Première place libre confirmée par le backend après chaque sync
+char backendFirstFreeSpot[16] = "";
 
 /* ===================== HELPERS ===================== */
 
@@ -116,13 +126,14 @@ float readDistance(int trig, int echo) {
 
 int countOccupied() {
   int n = 0;
-  for (int i = 0; i < 6; i++) if (occupied[i]) n++;
+  for (int i = 0; i < numSpots; i++) if (occupied[i]) n++;
   return n;
 }
 
-int firstFreeIndex() {
-  for (int i = 0; i < 6; i++) if (!occupied[i]) return i;
-  return -1;
+// Fallback local si le backend n'a pas encore répondu
+const char* firstFreeLocal() {
+  for (int i = 0; i < numSpots; i++) if (!occupied[i]) return spotLabels[i];
+  return nullptr;
 }
 
 /* ===================== WIFI ===================== */
@@ -154,9 +165,10 @@ bool ensureWifi() {
   return wifiOk;
 }
 
-/* ===================== HTTP ===================== */
+/* ===================== HTTP POST ===================== */
 
-int httpPostJson(const char* path, const String& body) {
+// Retourne le code HTTP. Si responseOut != nullptr et code 2xx, stocke le body.
+int httpPostJson(const char* path, const String& body, String* responseOut = nullptr) {
   if (WiFi.status() != WL_CONNECTED) return -1;
   HTTPClient http;
   http.begin(String(API_BASE_URL) + path);
@@ -168,46 +180,121 @@ int httpPostJson(const char* path, const String& body) {
   http.addHeader("X-IoT-Key",     ARDUINO_API_KEY);
   int code = http.POST(body);
   if (code <= 0) {
-    Serial.printf("[HTTP] %s ERR %s\n", path, http.errorToString(code).c_str());
+    Serial.printf("[HTTP] POST %s ERR %s\n", path, http.errorToString(code).c_str());
   } else {
-    Serial.printf("[HTTP] %s -> %d\n", path, code);
+    Serial.printf("[HTTP] POST %s -> %d\n", path, code);
+    if (responseOut && (code == 200 || code == 201)) {
+      *responseOut = http.getString();
+    }
   }
   http.end();
   return code;
 }
 
-bool postInfrared() {
-  StaticJsonDocument<768> doc;
-  doc["parking_id"] = PARKING_ID;
-  doc["device_id"]  = DEVICE_ID;
-  JsonArray arr = doc.createNestedArray("readings");
-  for (int i = 0; i < 6; i++) {
-    JsonObject r = arr.createNestedObject();
-    r["spot_label"] = SPOT_LABELS[i];
-    r["occupied"]   = occupied[i];
+/* ===================== VÉRIFICATION PLACES DEPUIS LA DB ===================== */
+
+// Appel au démarrage : GET /api/parkings/{PARKING_ID}/spots
+// N'écrase PAS spotLabels[] — l'ordre physique des câblage IR est fixé par
+// le matériel et doit rester intact. On affiche juste le nombre de places
+// retournées par la DB pour vérification en console.
+bool fetchSpotsFromBackend() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  HTTPClient http;
+  String url = String(API_BASE_URL) + "/parkings/" + PARKING_ID + "/spots";
+  http.begin(url);
+  http.setTimeout(API_TIMEOUT_MS);
+  http.addHeader("Accept", "application/json");
+  int code = http.GET();
+
+  if (code != 200) {
+    Serial.printf("[Spots] GET %s -> %d\n", url.c_str(), code);
+    http.end();
+    return false;
   }
-  String body; serializeJson(doc, body);
-  int code = httpPostJson("/parkings/infrared/readings", body);
-  bool ok = (code == 200 || code == 201);
-  if (ok) for (int i = 0; i < 6; i++) occSent[i] = occupied[i];
-  return ok;
+
+  String payload = http.getString();
+  http.end();
+
+  DynamicJsonDocument doc(2048);
+  if (deserializeJson(doc, payload) != DeserializationError::Ok) {
+    Serial.println("[Spots] Erreur parse JSON");
+    return false;
+  }
+
+  JsonArray spots = doc["data"];
+  int count = spots.isNull() ? 0 : (int)spots.size();
+  Serial.printf("[Spots] DB contient %d places (câblage physique garde)\n", count);
+  Serial.print("[Spots] Ordre physique IR: ");
+  for (int i = 0; i < numSpots; i++) Serial.printf("ir[%d]=%s ", i, spotLabels[i]);
+  Serial.println();
+  return count > 0;
 }
 
-bool postAvailability(int freePlaces) {
-  StaticJsonDocument<128> doc;
-  doc["available_spots"] = freePlaces;
-  doc["total_spots"]     = 6;
-  String body; serializeJson(doc, body);
-  int code = httpPostJson("/parkings/arduino/availability", body);
-  return (code == 200 || code == 201);
+/* ===================== SYNC BACKEND (IR + PREMIERE PLACE LIBRE) ===================== */
+
+// Envoie l'état IR, lit la réponse pour obtenir la première place AVAILABLE
+// selon la DB (pas seulement le capteur local).
+bool syncWithBackend() {
+  // Construction du payload IR
+  StaticJsonDocument<512> req;
+  req["parking_id"] = PARKING_ID;
+  req["device_id"]  = DEVICE_ID;
+  JsonArray arr = req.createNestedArray("readings");
+  for (int i = 0; i < numSpots; i++) {
+    JsonObject r = arr.createNestedObject();
+    r["spot_label"] = spotLabels[i];
+    r["occupied"]   = occupied[i];
+  }
+  String body;
+  serializeJson(req, body);
+
+  String responseBody;
+  int code = httpPostJson("/parkings/infrared/readings", body, &responseBody);
+
+  if (code != 200 && code != 201) return false;
+
+  // Marquer comme envoyé
+  for (int i = 0; i < numSpots; i++) occSent[i] = occupied[i];
+
+  // Parser la réponse pour trouver la première place AVAILABLE côté backend
+  backendFirstFreeSpot[0] = '\0';
+
+  if (responseBody.length() > 0) {
+    DynamicJsonDocument resp(4096);
+    if (deserializeJson(resp, responseBody) == DeserializationError::Ok) {
+      // La réponse contient data.spots[] avec le champ state mis à jour
+      JsonArray spots = resp["data"]["spots"];
+      if (!spots.isNull()) {
+        for (JsonObject spot : spots) {
+          const char* state = spot["state"] | "";
+          // Comparaison insensible à la casse
+          if (strcasecmp(state, "AVAILABLE") == 0) {
+            const char* lbl = spot["label"] | "";
+            if (strlen(lbl) > 0) {
+              strlcpy(backendFirstFreeSpot, lbl, sizeof(backendFirstFreeSpot));
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  Serial.printf("[Sync] OK  firstFree=%s\n",
+    backendFirstFreeSpot[0] ? backendFirstFreeSpot : "(none)");
+  return true;
 }
+
+/* ===================== TICKET D'ENTREE ===================== */
 
 bool postEntryTicket(const char* spotLabel) {
   StaticJsonDocument<256> doc;
   doc["parking_id"]   = PARKING_ID;
   doc["parking_name"] = PARKING_NAME;
   if (spotLabel && spotLabel[0] != '\0') doc["spot_label"] = spotLabel;
-  String body; serializeJson(doc, body);
+  String body;
+  serializeJson(doc, body);
   int code = httpPostJson("/iot/tickets", body);
   return (code == 200 || code == 201);
 }
@@ -215,13 +302,13 @@ bool postEntryTicket(const char* spotLabel) {
 /* ===================== HARDWARE ===================== */
 
 void readIrSensors() {
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < numSpots; i++) {
     occupied[i] = (digitalRead(IR_PINS[i]) == LOW);
   }
 }
 
 void updateSpotLeds() {
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < numSpots && i < 6; i++) {
     if (LED_PINS[i] < 0) continue;
     digitalWrite(LED_PINS[i], occupied[i] ? HIGH : LOW);
   }
@@ -255,11 +342,13 @@ void renderLcd(int nOccupied, int nFree) {
   lcd.setCursor(0, 1);
   lcd.print("                ");
   lcd.setCursor(0, 1);
-  if (nOccupied >= 6) {
+  if (nOccupied >= numSpots) {
     lcd.print("Parking plein");
   } else {
     lcd.print(nOccupied);
-    lcd.print("/6 Lib:");
+    lcd.print("/");
+    lcd.print(numSpots);
+    lcd.print(" Lib:");
     lcd.print(nFree);
   }
 }
@@ -267,7 +356,7 @@ void renderLcd(int nOccupied, int nFree) {
 /* ===================== ÉVÉNEMENTS ===================== */
 
 void onCarEntry() {
-  int nFree = 6 - countOccupied();
+  int nFree = numSpots - countOccupied();
   Serial.printf("[EVENT] Voiture ENTREE  (libre=%d)\n", nFree);
 
   if (nFree <= 0) {
@@ -279,8 +368,17 @@ void onCarEntry() {
 
   openEntryGate();
 
-  int fi = firstFreeIndex();
-  const char* suggested = (fi >= 0) ? SPOT_LABELS[fi] : nullptr;
+  // Utiliser la place libre confirmée par la DB (dernière sync)
+  // Si la DB n'a pas encore répondu, fallback sur l'état IR local
+  const char* suggested = nullptr;
+  if (backendFirstFreeSpot[0] != '\0') {
+    suggested = backendFirstFreeSpot;
+    Serial.printf("[EVENT] Place suggérée (DB): %s\n", suggested);
+  } else {
+    suggested = firstFreeLocal();
+    Serial.printf("[EVENT] Place suggérée (IR local): %s\n",
+      suggested ? suggested : "aucune");
+  }
 
   lcd.setCursor(0, 0);
   lcd.print("  Bienvenue !   ");
@@ -316,7 +414,7 @@ void setup() {
   // IR
   for (int i = 0; i < 6; i++) pinMode(IR_PINS[i], INPUT);
 
-  // LEDs (1 par place) — ignore LED_PINS[i] < 0
+  // LEDs
   for (int i = 0; i < 6; i++) {
     if (LED_PINS[i] < 0) continue;
     pinMode(LED_PINS[i], OUTPUT);
@@ -342,12 +440,18 @@ void setup() {
   lcd.print(wifiOk ? "WiFi OK         " : "WiFi off-line   ");
   delay(800);
 
-  // Lecture initiale + premier sync
-  readIrSensors();
-  updateSpotLeds();
   if (wifiOk) {
-    postInfrared();
-    postAvailability(6 - countOccupied());
+    // 1. Charger les noms des places depuis la base de données
+    lcd.setCursor(0, 1);
+    lcd.print("Chargement DB...");
+    if (!fetchSpotsFromBackend()) {
+      Serial.println("[Setup] Utilisation des labels par defaut (A1-B3)");
+    }
+
+    // 2. Lecture initiale + premier sync
+    readIrSensors();
+    updateSpotLeds();
+    syncWithBackend();
     firstSync = false;
   }
 }
@@ -368,7 +472,7 @@ void loop() {
     carOut = (dOut > 0 && dOut < DIST_TRIGGER_CM);
 
     int nOcc  = countOccupied();
-    int nFree = 6 - nOcc;
+    int nFree = numSpots - nOcc;
 
     // Front montant entrée → ticket
     if (carIn && !prevIn && (now - tLastEntryPost > ENTRY_DEBOUNCE)) {
@@ -377,24 +481,27 @@ void loop() {
     }
     prevIn = carIn;
 
-    // Front montant sortie → barrière + log
+    // Front montant sortie → barrière
     if (carOut && !prevOut) onCarExit();
     prevOut = carOut;
 
-    Serial.printf("IR=[%d%d%d%d%d%d] IN=%.1fcm OUT=%.1fcm Occ=%d Lib=%d\n",
-                  occupied[0], occupied[1], occupied[2],
-                  occupied[3], occupied[4], occupied[5],
-                  dIn, dOut, nOcc, nFree);
+    // Log compact
+    Serial.print("IR=[");
+    for (int i = 0; i < numSpots; i++) Serial.print(occupied[i] ? "1" : "0");
+    Serial.printf("] IN=%.1fcm OUT=%.1fcm Occ=%d/%d firstFree=%s\n",
+                  dIn, dOut, nOcc, numSpots,
+                  backendFirstFreeSpot[0] ? backendFirstFreeSpot : "-");
   }
 
-  // ── B. Sync backend (changement IR ou heartbeat 5 s) ────
+  // ── B. Sync backend chaque 1 seconde ou si changement IR ─
   bool changed = false;
-  for (int i = 0; i < 6; i++) if (occupied[i] != occSent[i]) { changed = true; break; }
+  for (int i = 0; i < numSpots; i++) {
+    if (occupied[i] != occSent[i]) { changed = true; break; }
+  }
 
   if (firstSync || changed || (now - tSync >= SYNC_MS)) {
     if (ensureWifi()) {
-      postInfrared();
-      postAvailability(6 - countOccupied());
+      syncWithBackend();
       firstSync = false;
       tSync = now;
     }
@@ -403,7 +510,7 @@ void loop() {
   // ── C. LCD ──────────────────────────────────────────────
   if (now - tLcd >= LCD_MS) {
     tLcd = now;
-    renderLcd(countOccupied(), 6 - countOccupied());
+    renderLcd(countOccupied(), numSpots - countOccupied());
   }
 
   // ── D. Fermeture auto des barrières ─────────────────────

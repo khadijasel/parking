@@ -219,7 +219,7 @@ class _SplashScreenState extends State<SplashScreen>
               shaderCallback: (bounds) =>
                   _SplashColors.logoGradient.createShader(bounds),
               blendMode: BlendMode.srcIn,
-              child: const Text('SmartPark',
+              child: const Text('SpotHna',
                   style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.w700,

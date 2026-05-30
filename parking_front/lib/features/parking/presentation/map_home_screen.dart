@@ -61,8 +61,9 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
   Map<String, int> _dynamicSpotsByName = const <String, int>{};
   Timer? _availabilityRefreshTimer;
   bool _isRefreshingAvailability = false;
+  final Set<String> _notifiedFullParkings = <String>{};
 
-  static const Duration _availabilityRefreshInterval = Duration(seconds: 15);
+  static const Duration _availabilityRefreshInterval = Duration(seconds: 30);
 
   LatLng get _routeStartPoint => _userLocation ?? const LatLng(36.7650, 3.0570);
 
@@ -197,6 +198,37 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
         _dynamicSpotsById = byId;
         _dynamicSpotsByName = mapped;
       });
+
+      for (final item in availability) {
+        final String parkingName = item.parkingName.trim();
+        if (parkingName.isEmpty) continue;
+        if (item.availableSpots == 0) {
+          if (!_notifiedFullParkings.contains(parkingName)) {
+            _notifiedFullParkings.add(parkingName);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Row(children: [
+                    const Icon(Icons.local_parking, color: Colors.white, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        '$parkingName est complet — aucune place disponible.',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ]),
+                  backgroundColor: const Color(0xFFE53935),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+            }
+          }
+        } else {
+          _notifiedFullParkings.remove(parkingName);
+        }
+      }
     } catch (_) {
       // Keep static data if server availability is temporarily unreachable.
     } finally {
@@ -299,6 +331,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
 
   final List<Map<String, dynamic>> _filters = [
     {'label': 'Électrique', 'icon': Icons.bolt},
+    {'label': 'GPL', 'icon': Icons.local_gas_station},
     {'label': 'Tramway', 'icon': Icons.tram},
     {'label': 'Téléphérique', 'icon': Icons.cable_rounded},
     {'label': '24h/7j', 'icon': Icons.access_time},
@@ -329,6 +362,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
             tags.contains('borne') ||
             equipments.contains('élec') ||
             equipments.contains('elec');
+      case 'GPL':
+        return equipments.contains('gpl') || tags.contains('gpl');
       case 'Tramway':
         return tags.contains('tram') || nameAndAddress.contains('tram');
       case 'Téléphérique':
@@ -691,8 +726,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     }
 
     final Parking target = matches.first;
+    _moveMap(target.location, 15.5);
     _selectParking(target);
-    await _activateNavigation(target);
   }
 
   void _centerOnUserLocation() {

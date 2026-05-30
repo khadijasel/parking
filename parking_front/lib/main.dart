@@ -12,16 +12,16 @@ Future<void> main() async {
   await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
     DeviceOrientation.portraitUp,
   ]);
-  runApp(const ProviderScope(child: SmartParkApp()));
+  runApp(const ProviderScope(child: SpotHnaApp()));
 }
 
-class SmartParkApp extends StatelessWidget {
-  const SmartParkApp({super.key});
+class SpotHnaApp extends StatelessWidget {
+  const SpotHnaApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'smartpark',
+      title: 'SpotHna',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       builder: (BuildContext context, Widget? child) {

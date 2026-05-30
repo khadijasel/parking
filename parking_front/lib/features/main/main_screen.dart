@@ -70,9 +70,10 @@ class _MainScreenState extends State<MainScreen> {
       return;
     }
 
+    // Refresh home in background but stay on scanner tab so user
+    // can keep scanning multiple tickets without the camera closing.
     setState(() {
       _homeRefreshTick++;
-      _currentIndex = 0;
     });
   }
 

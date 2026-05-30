@@ -42,6 +42,8 @@ class _Session {
   final double tarifActuel;
   final String reservationDurationType;
   final double reservationAmount;
+  final double depositAmount;
+  final bool isAdvanceReservation;
   final bool canGuideToSpot;
   final bool canFindCar;
   final bool canExit;
@@ -62,6 +64,8 @@ class _Session {
     required this.tarifActuel,
     required this.reservationDurationType,
     required this.reservationAmount,
+    required this.depositAmount,
+    required this.isAdvanceReservation,
     required this.canGuideToSpot,
     required this.canFindCar,
     required this.canExit,
@@ -107,6 +111,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _didUseInitialSession = false;
   List<PaymentTransaction>? _cachedPaymentHistory;
   DateTime? _paymentHistoryFetchedAt;
+
+  // Spot locked on first detection — stays constant for the whole session.
+  String? _confirmedSpotLabel;
+  String? _confirmedReservationId;
 
   @override
   void initState() {
@@ -174,29 +182,35 @@ class _HomeScreenState extends State<HomeScreen> {
         forceRefresh: forcePaymentHistoryRefresh,
       );
       
-      // Recharger les parkings pour avoir les données à jour
       try {
         await _parkingRepository.fetchParkings(forceRefresh: true);
-      } catch (_) {
-        // Keep the best local fallback when the catalog is temporarily unavailable.
-      }
-      
+      } catch (_) {}
       Parking? matchedParking = _resolveParking(apiSession);
-      if (matchedParking?.indoorMap?.spots.isEmpty ?? true) {
-        try {
-          await _parkingRepository.fetchParkings(forceRefresh: true);
-        } catch (_) {
-          // Keep the best local fallback when the catalog is temporarily unavailable.
-        }
-        matchedParking = _resolveParking(apiSession);
-      }
       final bool isVehicleParked =
           _parkedReservationIds.contains(apiSession.reservationId);
       final bool isVehicleFound = isVehicleParked &&
           _vehicleFoundReservationIds.contains(apiSession.reservationId);
-        final String normalizedSpotLabel = apiSession.spotLabel.trim().isNotEmpty
+      final String backendSpotLabel = apiSession.spotLabel.trim().isNotEmpty
           ? apiSession.spotLabel.trim()
           : _resolveSpotLabel(apiSession.ticketCode, matchedParking);
+
+      // Si la place renvoyée par le backend est physiquement OCCUPÉE
+      // (capteur IR), basculer vers une vraie place libre et la sauvegarder
+      // pour toute la durée de la session.
+      final String normalizedSpotLabel = _pickFreeSpotIfBackendSpotOccupied(
+        backendSpotLabel,
+        matchedParking,
+      );
+
+      // Lock the spot the first time this reservation is seen; keep it for
+      // the entire session so all 3 guidance buttons stay consistent.
+      // (Une fois choisie, on ne change plus — sinon dès que l'utilisateur
+      // se gare et que le capteur passe la place en OCCUPIED, on basculerait
+      // vers une autre place, désynchronisant les écrans.)
+      if (_confirmedReservationId != apiSession.reservationId) {
+        _confirmedReservationId = apiSession.reservationId;
+        _confirmedSpotLabel = normalizedSpotLabel;
+      }
 
       setState(() {
         _session = _Session(
@@ -214,6 +228,8 @@ class _HomeScreenState extends State<HomeScreen> {
           tarifActuel: _resolveParkingRate(matchedParking, apiSession),
           reservationDurationType: apiSession.reservationDurationType,
           reservationAmount: apiSession.reservationAmount,
+          depositAmount: apiSession.depositAmount,
+          isAdvanceReservation: apiSession.isAdvanceReservation,
           canGuideToSpot: !isPaid && !isVehicleParked,
           canFindCar: !isPaid && isVehicleParked && !isVehicleFound,
           canExit: isPaid,
@@ -415,6 +431,8 @@ class _HomeScreenState extends State<HomeScreen> {
         tarifActuel: currentSession.tarifActuel,
         reservationDurationType: currentSession.reservationDurationType,
         reservationAmount: currentSession.reservationAmount,
+        depositAmount: currentSession.depositAmount,
+        isAdvanceReservation: currentSession.isAdvanceReservation,
         canGuideToSpot: false,
         canFindCar: false,
         canExit: true,
@@ -453,10 +471,71 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Returns true if the spot identified by [label] is physically occupied
+  /// (state OCCUPIED or OFFLINE in the latest backend layout).
+  bool _isSpotPhysicallyOccupied(String label, Parking? parking) {
+    final String needle = label.trim().toUpperCase();
+    if (needle.isEmpty) return false;
+
+    final List<ParkingIndoorSpot> spots =
+        parking?.indoorMap?.spots ?? const <ParkingIndoorSpot>[];
+
+    for (final ParkingIndoorSpot spot in spots) {
+      if (spot.label.trim().toUpperCase() == needle) {
+        final String state = spot.state.trim().toUpperCase();
+        return state == 'OCCUPIED' || state == 'OFFLINE';
+      }
+    }
+    return false;
+  }
+
+  /// If the backend-assigned spot is physically OCCUPIED, picks the first
+  /// truly AVAILABLE spot in the layout instead. Otherwise returns the
+  /// backend value unchanged.
+  String _pickFreeSpotIfBackendSpotOccupied(
+      String backendSpotLabel, Parking? parking) {
+    if (!_isSpotPhysicallyOccupied(backendSpotLabel, parking)) {
+      return backendSpotLabel;
+    }
+
+    final List<ParkingIndoorSpot> spots =
+        parking?.indoorMap?.spots ?? const <ParkingIndoorSpot>[];
+
+    for (final ParkingIndoorSpot spot in spots) {
+      if (spot.state.trim().toUpperCase() == 'AVAILABLE' &&
+          spot.label.trim().isNotEmpty) {
+        return spot.label.trim();
+      }
+    }
+    // Aucune place libre détectée → garder l'assignation backend.
+    return backendSpotLabel;
+  }
+
   String _resolveSpotLabel(String rawTicketCode, Parking? parking) {
+    final List<ParkingIndoorSpot> spots =
+        parking?.indoorMap?.spots ?? const <ParkingIndoorSpot>[];
+
+    // Préférer la place RESERVED (= assignée à cette session par le backend).
+    for (final ParkingIndoorSpot spot in spots) {
+      if (spot.state.trim().toUpperCase() == 'RESERVED' &&
+          spot.label.trim().isNotEmpty) {
+        return spot.label.trim();
+      }
+    }
+
+    // Sinon, tenter d'extraire du ticket code, fallback sur première place libre.
+    final String firstAvailable = spots.firstWhere(
+      (ParkingIndoorSpot s) => s.state.trim().toUpperCase() == 'AVAILABLE',
+      orElse: () => spots.isNotEmpty
+          ? spots.first
+          : const ParkingIndoorSpot(
+              spotId: '', label: '', row: 0, col: 0, type: '', state: ''),
+    ).label.trim();
+
     return resolveSpotLabelFromTicketCode(
       rawTicketCode,
-      parking?.indoorMap?.spots ?? const <ParkingIndoorSpot>[],
+      spots,
+      fallback: firstAvailable.isNotEmpty ? firstAvailable : 'A1',
     );
   }
 
@@ -569,18 +648,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return durationType.trim().toLowerCase() == 'courte';
   }
 
-  double _resolveLongDurationFallbackAmount(String durationType) {
-    switch (durationType.trim().toLowerCase()) {
-      case 'journee':
-        return 800.0;
-      case 'semaine':
-        return 4500.0;
-      case 'mois':
-        return 15000.0;
-      default:
-        return 0.0;
-    }
-  }
 
   bool _isSmartGuidanceEnabled(String parkingName, Parking? parking) {
     final Parking? resolved = parking ?? _resolveParkingByName(parkingName);
@@ -620,29 +687,54 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// Décompose un nombre de secondes en coût hiérarchique :
+  /// semaines × prixSem + jours × prixJour + heures × prixHeure
+  double _hierarchicalCost(int seconds, double prixHeure, double prixJour, double prixSem) {
+    if (seconds <= 0) return 0.0;
+    final int weeks = seconds ~/ (7 * 24 * 3600);
+    int rem = seconds % (7 * 24 * 3600);
+    final int days = rem ~/ (24 * 3600);
+    rem = rem % (24 * 3600);
+    final double hours = rem / 3600.0;
+    return weeks * prixSem + days * prixJour + hours * prixHeure;
+  }
+
   double _computeCurrentTotal() {
     final _Session? session = _session;
-    if (session == null) {
-      return 0.0;
-    }
-
-    if (!_isShortDurationType(session.reservationDurationType)) {
-      if (session.reservationAmount > 0) {
-        return session.reservationAmount;
-      }
-
-      final double fallbackAmount =
-          _resolveLongDurationFallbackAmount(session.reservationDurationType);
-      return fallbackAmount < 0 ? 0.0 : fallbackAmount;
-    }
+    if (session == null) return 0.0;
 
     final int safeElapsed = _elapsedSec < 0 ? 0 : _elapsedSec;
-    if (safeElapsed == 0) {
-      return 0.0;
+
+    // Courte durée : tarif horaire × heures
+    if (_isShortDurationType(session.reservationDurationType)) {
+      if (safeElapsed == 0) return 0.0;
+      return (session.tarifActuel * (safeElapsed / 3600.0)).clamp(0.0, double.infinity);
     }
 
-    final double total = session.tarifActuel * (safeElapsed / 3600.0);
-    return total < 0 ? 0.0 : total;
+    // Prix unitaires depuis le parking ou fallback
+    final Parking? p = session.parking;
+    final double prixHeure = session.tarifActuel > 0 ? session.tarifActuel : 100.0;
+    final double prixJour  = (p?.priceJournee ?? 0) > 0 ? p!.priceJournee! : 800.0;
+    final double prixSem   = (p?.priceSemaine ?? 0) > 0 ? p!.priceSemaine! : 4500.0;
+
+    // Durée réservée en secondes
+    final int dureeType = switch (session.reservationDurationType.trim().toLowerCase()) {
+      'journee' => 1 * 24 * 3600,
+      'semaine' => 7 * 24 * 3600,
+      'mois'    => 30 * 24 * 3600,
+      _         => 0,
+    };
+
+    final double remaining = (session.reservationAmount - session.depositAmount).clamp(0.0, double.infinity);
+
+    if (safeElapsed <= dureeType) {
+      // Durée réelle ≤ durée réservée → facturation sur temps réel
+      return _hierarchicalCost(safeElapsed, prixHeure, prixJour, prixSem);
+    } else {
+      // Dépassement → remaining + coût du temps extra
+      final int extraSeconds = safeElapsed - dureeType;
+      return remaining + _hierarchicalCost(extraSeconds, prixHeure, prixJour, prixSem);
+    }
   }
 
   String _formatTime(DateTime dt) =>
@@ -725,7 +817,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 6),
                 Text('Ticket: $ticketKey'),
                 const SizedBox(height: 6),
-                Text('Reservation: ${session.reservationId}'),
+                Text('Réservation : ${session.isAdvanceReservation ? 'Oui' : 'Non'}'),
                 const SizedBox(height: 6),
                 Text('Entree: ${_formatTime(session.entryTime)}'),
               ],
@@ -765,12 +857,14 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    final String effectiveSpot = _confirmedSpotLabel ?? session.spotLabel;
+
     if (_parkedReservationIds.contains(session.reservationId)) {
       await Navigator.push<void>(
         context,
         MaterialPageRoute(
           builder: (_) => VehicleParkedConfirmationScreen(
-            spotLabel: session.spotLabel,
+            spotLabel: effectiveSpot,
           ),
         ),
       );
@@ -783,16 +877,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
     ProviderScope.containerOf(context, listen: false)
         .read(selectedSpotProvider.notifier)
-        .state = session.spotLabel;
+        .state = effectiveSpot;
 
     final bool parkedConfirmed = await Navigator.push<bool>(
           context,
           MaterialPageRoute(
             builder: (_) => GuidanceToSpotScreen(
-              spotLabel: session.spotLabel,
+              spotLabel: effectiveSpot,
               isGuideToFree: false,
               spots: session.parking?.indoorMap?.spots ??
                   const <ParkingIndoorSpot>[],
+              parkingId: session.parkingId,
             ),
           ),
         ) ??
@@ -832,12 +927,14 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    final String effectiveSpot = _confirmedSpotLabel ?? session.spotLabel;
+
     if (session.isVehicleFound) {
       await Navigator.push<void>(
         context,
         MaterialPageRoute(
           builder: (_) => VehicleFoundScreen(
-            spotLabel: session.spotLabel,
+            spotLabel: effectiveSpot,
             reservationId: session.reservationId,
             parkingName: session.parkingName,
             dureeMinutes: (_elapsedSec / 60).ceil().clamp(1, 100000),
@@ -853,18 +950,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
     ProviderScope.containerOf(context, listen: false)
         .read(selectedSpotProvider.notifier)
-        .state = session.spotLabel;
+        .state = effectiveSpot;
 
     final bool vehicleFoundConfirmed = await Navigator.push<bool>(
           context,
           MaterialPageRoute(
             builder: (_) => GuidanceToVehicleScreen(
-              spotLabel: session.spotLabel,
+              spotLabel: effectiveSpot,
               parkingName: session.parkingName,
               reservationId: session.reservationId,
               durationMinutes: (_elapsedSec / 60).ceil(),
               spots: session.parking?.indoorMap?.spots ??
                   const <ParkingIndoorSpot>[],
+              parkingId: session.parkingId,
             ),
           ),
         ) ??
@@ -890,18 +988,21 @@ class _HomeScreenState extends State<HomeScreen> {
     final bool guidanceEnabled =
       _isSmartGuidanceEnabled(session.parkingName, session.parking);
 
+    final String effectiveSpot = _confirmedSpotLabel ?? session.spotLabel;
+
     ProviderScope.containerOf(context, listen: false)
       .read(selectedSpotProvider.notifier)
-      .state = session.spotLabel;
+      .state = effectiveSpot;
 
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
         builder: (_) => GuidanceToExitScreen(
-          spotLabel: session.spotLabel,
+          spotLabel: effectiveSpot,
           showMapComingSoon: !guidanceEnabled,
           spots: session.parking?.indoorMap?.spots ??
               const <ParkingIndoorSpot>[],
+          parkingId: session.parkingId,
         ),
       ),
     );
@@ -1246,7 +1347,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             style: TextStyle(fontSize: 13, color: _kTextMid)),
                         const SizedBox(height: 3),
                         Text(
-                          _session!.spotLabel,
+                          _confirmedSpotLabel ?? _session!.spotLabel,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(

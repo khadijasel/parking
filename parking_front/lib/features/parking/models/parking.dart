@@ -86,6 +86,8 @@ class ParkingIndoorMap {
   }
 }
 
+const Object _kSentinel = Object();
+
 class Parking {
   final String id;
   final String name;
@@ -104,6 +106,9 @@ class Parking {
   final List<String> supportedVehicleTypes;
   final bool nearTelepherique;
   final ParkingIndoorMap? indoorMap;
+  final double? priceJournee;
+  final double? priceSemaine;
+  final double? priceMois;
 
   const Parking({
     required this.id,
@@ -123,6 +128,9 @@ class Parking {
     this.supportedVehicleTypes = const <String>['car', 'moto'],
     this.nearTelepherique = false,
     this.indoorMap,
+    this.priceJournee,
+    this.priceSemaine,
+    this.priceMois,
   });
 
   factory Parking.fromApi(Map<String, dynamic> json) {
@@ -162,6 +170,9 @@ class Parking {
       nearTelepherique: json['nearTelepherique'] == true,
       indoorMap:
           indoorMapRaw.isEmpty ? null : ParkingIndoorMap.fromJson(indoorMapRaw),
+      priceJournee: json['priceJournee'] != null ? _toDouble(json['priceJournee'], 0.0) : null,
+      priceSemaine: json['priceSemaine'] != null ? _toDouble(json['priceSemaine'], 0.0) : null,
+      priceMois: json['priceMois'] != null ? _toDouble(json['priceMois'], 0.0) : null,
     );
   }
 
@@ -271,6 +282,9 @@ class Parking {
     List<String>? supportedVehicleTypes,
     bool? nearTelepherique,
     ParkingIndoorMap? indoorMap,
+    Object? priceJournee = _kSentinel,
+    Object? priceSemaine = _kSentinel,
+    Object? priceMois = _kSentinel,
   }) {
     return Parking(
       id: id ?? this.id,
@@ -292,6 +306,9 @@ class Parking {
           supportedVehicleTypes ?? this.supportedVehicleTypes,
       nearTelepherique: nearTelepherique ?? this.nearTelepherique,
       indoorMap: indoorMap ?? this.indoorMap,
+      priceJournee: priceJournee == _kSentinel ? this.priceJournee : priceJournee as double?,
+      priceSemaine: priceSemaine == _kSentinel ? this.priceSemaine : priceSemaine as double?,
+      priceMois: priceMois == _kSentinel ? this.priceMois : priceMois as double?,
     );
   }
 }

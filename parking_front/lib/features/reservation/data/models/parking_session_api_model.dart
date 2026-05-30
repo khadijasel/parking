@@ -12,6 +12,8 @@ class ParkingSessionApiModel {
   final String reservationPaymentStatus;
   final String reservationDurationType;
   final double reservationAmount;
+  final double depositAmount;
+  final bool isAdvanceReservation;
   final String sessionPaymentStatus;
   final int? durationSeconds;
   final DateTime? startedAt;
@@ -33,6 +35,8 @@ class ParkingSessionApiModel {
     required this.reservationPaymentStatus,
     required this.reservationDurationType,
     required this.reservationAmount,
+    required this.depositAmount,
+    required this.isAdvanceReservation,
     required this.sessionPaymentStatus,
     this.durationSeconds,
     this.startedAt,
@@ -62,6 +66,8 @@ class ParkingSessionApiModel {
       reservationAmount: (json['reservation_amount'] is num)
           ? (json['reservation_amount'] as num).toDouble()
           : 0,
+      depositAmount: (json['deposit_amount'] is num) ? (json['deposit_amount'] as num).toDouble() : 0.0,
+      isAdvanceReservation: json['is_advance_reservation'] == true,
       sessionPaymentStatus: (json['session_payment_status'] ?? '').toString(),
       durationSeconds: (json['duration_seconds'] is num)
           ? (json['duration_seconds'] as num).toInt()

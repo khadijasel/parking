@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:parking_front/core/widgets/app_feedback.dart';
 import 'package:parking_front/features/guidance/presentation/utils/guidance_spot_layout.dart';
+import 'package:parking_front/features/parking/data/parking_repository.dart';
 import 'package:parking_front/features/parking/models/parking.dart';
 import 'package:parking_front/features/reservation/data/reservation_repository.dart';
 import 'package:parking_front/features/scanner/presentation/screens/scanner_screen.dart';
@@ -24,12 +25,14 @@ class GuidanceToExitScreen extends StatefulWidget {
   final String spotLabel;
   final bool showMapComingSoon;
   final List<ParkingIndoorSpot> spots;
+  final String parkingId;
 
   const GuidanceToExitScreen({
     super.key,
     this.spotLabel = 'B2',
     this.showMapComingSoon = false,
     this.spots = const <ParkingIndoorSpot>[],
+    this.parkingId = '',
   });
 
   @override
@@ -40,28 +43,37 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
     with SingleTickerProviderStateMixin {
   final FlutterTts _tts = FlutterTts();
   final ReservationRepository _reservationRepository = ReservationRepository();
+  final ParkingRepository _parkingRepository = ParkingRepository();
 
   late final AnimationController _pathController;
-  late final GuidanceSpotLayout _layout;
-  late final GuidanceSpotViewData _currentSpotData;
+  GuidanceSpotLayout _layout = const GuidanceSpotLayout(
+    topRow: <GuidanceSpotViewData>[],
+    bottomRow: <GuidanceSpotViewData>[],
+  );
+  GuidanceSpotViewData _currentSpotData = const GuidanceSpotViewData(
+    label: 'A1',
+    state: GuidanceSpotState.reserved,
+    rowIndex: 0,
+    colIndex: 0,
+  );
   Timer? _timer;
+  Timer? _spotsRefreshTimer;
+  List<ParkingIndoorSpot> _spots = const <ParkingIndoorSpot>[];
 
   bool _voiceEnabled = true;
   bool _isCompletingExit = false;
   int _distanceMeters = 70;
   String _instruction = '';
 
-  // Spot column index (0=left, 1=center, 2=right)
   bool get _isTopRow => _currentSpotData.rowIndex == 0;
-
   int get _spotColIndex => _currentSpotData.colIndex;
-
   String get _normalizedSpotLabel => _currentSpotData.displayLabel;
 
   @override
   void initState() {
     super.initState();
-    _layout = GuidanceSpotLayout.fromIndoorSpots(widget.spots);
+    _spots = widget.spots;
+    _layout = GuidanceSpotLayout.fromIndoorSpots(_spots);
     _currentSpotData = _resolveCurrentSpotData();
 
     _pathController = AnimationController(
@@ -87,11 +99,63 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
       });
       _refreshInstruction();
     });
+
+    if (widget.parkingId.trim().isNotEmpty) {
+      _spotsRefreshTimer = Timer.periodic(
+        const Duration(seconds: 4),
+        (_) => _refreshSpotsFromBackend(),
+      );
+      _refreshSpotsFromBackend();
+    }
+  }
+
+  Future<void> _refreshSpotsFromBackend() async {
+    try {
+      final List<Parking> parkings = await _parkingRepository
+          .fetchParkings(forceRefresh: true)
+          .timeout(const Duration(seconds: 6));
+      if (!mounted) return;
+
+      final String targetId = widget.parkingId.trim().toLowerCase();
+      Parking? match;
+      for (final Parking p in parkings) {
+        if (p.id.trim().toLowerCase() == targetId) {
+          match = p;
+          break;
+        }
+      }
+
+      final List<ParkingIndoorSpot> freshSpots =
+          match?.indoorMap?.spots ?? const <ParkingIndoorSpot>[];
+      if (freshSpots.isEmpty) return;
+
+      bool changed = freshSpots.length != _spots.length;
+      if (!changed) {
+        for (int i = 0; i < freshSpots.length; i++) {
+          if (freshSpots[i].label != _spots[i].label ||
+              freshSpots[i].state != _spots[i].state) {
+            changed = true;
+            break;
+          }
+        }
+      }
+      if (!changed) return;
+
+      // Met à jour uniquement le layout visuel (couleurs des places).
+      // Le target reste verrouillé sur la place sauvegardée.
+      setState(() {
+        _spots = freshSpots;
+        _layout = GuidanceSpotLayout.fromIndoorSpots(_spots);
+      });
+    } catch (_) {
+      // Réseau indisponible : garder l'état précédent.
+    }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _spotsRefreshTimer?.cancel();
     _pathController.dispose();
     _tts.stop();
     super.dispose();

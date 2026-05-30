@@ -26,6 +26,7 @@ class ParkingCatalogService
 
         $availableSpots = $this->resolveAvailableSpots($parking, $spots);
         $pricePerHour = $this->resolvePricePerHour($parking);
+        $tieredPricing = $this->resolveTieredPricing($parking);
 
         return [
             'parkingId' => $this->resolveParkingId($parking),
@@ -35,6 +36,9 @@ class ParkingCatalogService
             'walkingTime' => (string) ($parking->walking_time ?? ''),
             'rating' => (float) ($parking->rating ?? 0),
             'pricePerHour' => $pricePerHour,
+            'priceJournee' => $tieredPricing['daily'],
+            'priceSemaine' => $tieredPricing['weekly'],
+            'priceMois' => $tieredPricing['monthly'],
             'availableSpots' => $availableSpots,
             'lastUpdate' => (string) ($parking->last_update ?? ''),
             'isOpen24h' => (bool) ($parking->is_open_24h ?? false),
@@ -73,6 +77,30 @@ class ParkingCatalogService
         }
 
         return (string) $parking->getKey();
+    }
+
+    private function resolveTieredPricing(Parking $parking): array
+    {
+        $businessSettings = (array) ($parking->business_settings ?? []);
+        $pricing = (array) ($businessSettings['pricing'] ?? ($parking->pricing ?? []));
+
+        $daily = array_key_exists('dailyRateDzd', $pricing)
+            ? (float) $pricing['dailyRateDzd']
+            : (array_key_exists('daily_rate_dzd', $pricing) ? (float) $pricing['daily_rate_dzd'] : null);
+
+        $weekly = array_key_exists('weeklyRateDzd', $pricing)
+            ? (float) $pricing['weeklyRateDzd']
+            : (array_key_exists('weekly_rate_dzd', $pricing) ? (float) $pricing['weekly_rate_dzd'] : null);
+
+        $monthly = array_key_exists('monthlyRateDzd', $pricing)
+            ? (float) $pricing['monthlyRateDzd']
+            : (array_key_exists('monthly_rate_dzd', $pricing) ? (float) $pricing['monthly_rate_dzd'] : null);
+
+        return [
+            'daily' => $daily,
+            'weekly' => $weekly,
+            'monthly' => $monthly,
+        ];
     }
 
     private function resolvePricePerHour(Parking $parking): float

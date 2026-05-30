@@ -8,7 +8,10 @@ from typing import Any, Dict, Optional, Tuple
 
 import qrcode
 import requests
+from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 
 @dataclass(frozen=True)

@@ -3,7 +3,7 @@ class AppConstants {
   AppConstants._();
 
   // App info
-  static const String appName = 'SmartPark';
+  static const String appName = 'SpotHna';
   static const String appTagline = 'Accédez à votre espace stationnement urbain';
 
   // Validation patterns

@@ -1,12 +1,10 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-import '../../../reservation/data/models/parking_session_api_model.dart';
 import '../../../reservation/data/models/reservation_api_model.dart';
 import '../../../reservation/data/reservation_repository.dart';
 
@@ -245,47 +243,8 @@ class _ScannerScreenState extends State<ScannerScreen>
   Future<void> _handleEntry(
       String rawCode, _TicketPayload payload) async {
 
-    final String scannedRef =
-        (payload.ticketCode ?? payload.ticketId ?? '').trim();
-
-    // Règles locales :
-    //  1) Si une session est déjà active avec CE ticket → lecture uniquement.
-    //  2) Si une session est active avec un AUTRE ticket → refuser le scan.
-    try {
-      final ParkingSessionApiModel? currentSession =
-          await _repo.fetchCurrentParkingSession();
-
-      if (currentSession != null && currentSession.isActive) {
-        final String activeTicket = currentSession.ticketCode.trim();
-        if (scannedRef.isNotEmpty && activeTicket.isNotEmpty) {
-          if (scannedRef.toLowerCase() == activeTicket.toLowerCase()) {
-            _showResultSheet(
-              rawCode,
-              isValid: true,
-              message: 'Session déjà en cours.\nInformations du ticket lues.',
-              ticketReference: scannedRef,
-              afterClose: widget.onScanSuccess,
-            );
-            return;
-          }
-
-          _showResultSheet(
-            rawCode,
-            isValid: false,
-            message:
-                'Impossible : une session est déjà active.\nTerminez la session en cours avant de scanner un autre ticket.',
-          );
-          return;
-        }
-      }
-    } catch (_) {
-      // Ignore (auth/réseau). Le backend gère les cas restants.
-    }
-
-    // Règle 1 : parking_id doit appartenir à l'application
-    // → le backend le vérifie — si invalide → ReservationException
-    // Règle 2 : si session déjà active avec ce ticket → lit juste les données
-    // Règle 3 : si ticket déjà utilisé (session closed) → erreur
+    // Pas de pré-vérification locale : le backend valide tout en un seul
+    // appel (session active, ticket déjà utilisé, parking inconnu, etc.).
 
     try {
       final Map<String, dynamic> result = await _repo.scanParkingTicket(
@@ -362,28 +321,8 @@ class _ScannerScreenState extends State<ScannerScreen>
     final String ticketId = (payload.ticketId ?? '').trim();
     final String? ticketCode = payload.ticketCode?.trim();
 
-    // Si une session est active, on n'autorise la sortie que pour le même ticket.
-    try {
-      final ParkingSessionApiModel? currentSession =
-          await _repo.fetchCurrentParkingSession();
-      if (currentSession != null && currentSession.isActive) {
-        final String activeTicket = currentSession.ticketCode.trim();
-        final String scannedRef = (ticketCode ?? ticketId).trim();
-        if (activeTicket.isNotEmpty &&
-            scannedRef.isNotEmpty &&
-            scannedRef.toLowerCase() != activeTicket.toLowerCase()) {
-          _showResultSheet(
-            rawCode,
-            isValid: false,
-            message:
-                'Impossible : une session est déjà active avec un autre ticket.',
-          );
-          return;
-        }
-      }
-    } catch (_) {
-      // Ignore (auth/réseau).
-    }
+    // Pas de pré-vérification locale : le backend valide la session/ticket
+    // dans exitParkingTicket directement.
 
     if (ticketId.isEmpty) {
       _showResultSheet(
@@ -556,10 +495,10 @@ class _ScannerScreenState extends State<ScannerScreen>
           Navigator.pop(context);
           setState(() => _isScanning = true);
           _scanCtrl.repeat(reverse: true);
+          _cameraCtrl.start();
         },
         onClose: () {
           Navigator.pop(context);
-          // Réinitialiser l'état de soumission pour permettre les scans suivants
           if (mounted) {
             setState(() {
               _isSubmitting = false;
@@ -567,6 +506,7 @@ class _ScannerScreenState extends State<ScannerScreen>
             });
           }
           _scanCtrl.repeat(reverse: true);
+          _cameraCtrl.start();
           afterClose?.call();
         },
       ),
@@ -688,17 +628,13 @@ class _ScannerScreenState extends State<ScannerScreen>
           ]),
         ),
 
-        // ── BARRE HAUT : Fermer + Torche ───────────────────
+        // ── BARRE HAUT : Torche ────────────────────────────
         SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                _circleBtn(
-                  icon: Icons.close_rounded,
-                  onTap: () => Navigator.pop(context),
-                ),
                 _circleBtn(
                   icon: _torchOn
                       ? Icons.flashlight_on_rounded
@@ -711,7 +647,7 @@ class _ScannerScreenState extends State<ScannerScreen>
           ),
         ),
 
-        // ── BARRE BAS : Galerie · Scan · Historique ────────
+        // ── BARRE BAS : Galerie · Scan ─────────────────────
         Positioned(
           bottom: MediaQuery.of(context).padding.bottom + 24,
           left:   0,
@@ -763,15 +699,8 @@ class _ScannerScreenState extends State<ScannerScreen>
                           color: Colors.white, size: 30),
                 ),
               ),
-              // Torche (raccourci bas)
-              _bottomBtn(
-                icon: _torchOn
-                    ? Icons.flashlight_on_rounded
-                    : Icons.flashlight_off_rounded,
-                onTap: _toggleTorch,
-                label: 'Lampe',
-                active: _torchOn,
-              ),
+              // Placeholder pour centrer le bouton scan
+              const SizedBox(width: 50, height: 50),
             ],
           ),
         ),
@@ -1071,58 +1000,6 @@ class _ScanResultSheet extends StatelessWidget {
               fontSize: 14, color: _kMid, height: 1.5),
         ),
 
-        // Référence ticket + aperçu QR image (si disponible)
-        if (isValid) ...[
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEAF1FB),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(children: [
-              // Miniature du ticket .png si disponible
-              if (qrImagePath != null) ...[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.file(
-                    File(qrImagePath!),
-                    width: 56,
-                    height: 56,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const Icon(
-                      Icons.qr_code_2_rounded,
-                      color: _kBlue,
-                      size: 40,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-              ] else ...[
-                const Icon(Icons.confirmation_number_outlined,
-                    color: _kBlue, size: 22),
-                const SizedBox(width: 10),
-              ],
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                  const Text('Référence ticket',
-                      style: TextStyle(fontSize: 11, color: _kMid)),
-                  const SizedBox(height: 4),
-                  Text(
-                    ticketReference ?? code,
-                    style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: _kDark),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ]),
-              ),
-            ]),
-          ),
-        ],
 
         const SizedBox(height: 22),
 

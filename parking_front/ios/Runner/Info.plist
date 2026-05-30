@@ -5,7 +5,7 @@
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<key>CFBundleDisplayName</key>
-		<string>smartpark</string>
+		<string>SpotHna</string>
 		<key>CFBundleExecutable</key>
 		<string>$(EXECUTABLE_NAME)</string>
 		<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 		<key>CFBundleInfoDictionaryVersion</key>
 		<string>6.0</string>
 		<key>CFBundleName</key>
-		<string>smartpark</string>
+		<string>SpotHna</string>
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>
@@ -46,15 +46,15 @@
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true />
 		<key>NSCameraUsageDescription</key>
-		<string>SmartPark a besoin de la camera pour scanner votre ticket QR.</string>
+		<string>SpotHna a besoin de la camera pour scanner votre ticket QR.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
-		<string>SmartPark a besoin d acceder a vos photos pour scanner un ticket depuis la galerie.</string>
+		<string>SpotHna a besoin d acceder a vos photos pour scanner un ticket depuis la galerie.</string>
 		<key>NSLocationWhenInUseUsageDescription</key>
-		<string>SmartPark utilise votre localisation pour proposer les parkings les plus proches et
+		<string>SpotHna utilise votre localisation pour proposer les parkings les plus proches et
 			afficher l itineraire.</string>
 		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-		<string>SmartPark utilise votre localisation pour guider vers le parking selectionne.</string>
+		<string>SpotHna utilise votre localisation pour guider vers le parking selectionne.</string>
 		<key>NSLocationAlwaysUsageDescription</key>
-		<string>SmartPark utilise votre localisation pour guider vers le parking selectionne.</string>
+		<string>SpotHna utilise votre localisation pour guider vers le parking selectionne.</string>
 	</dict>
 </plist>

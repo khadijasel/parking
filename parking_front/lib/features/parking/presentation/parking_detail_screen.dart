@@ -1,15 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import '../../../theme/app_colors.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../../reservation/presentation/screens/reservation_screen.dart';
 import '../../main/main_screen.dart';
+import '../data/parking_availability_repository.dart';
 import '../models/parking.dart';
 
 const String kParkingPreviewImageUrl =
     'https://images.unsplash.com/photo-1590674899484-d5640e854abe?w=800';
 
-class ParkingDetailScreen extends StatelessWidget {
+class ParkingDetailScreen extends StatefulWidget {
   final Parking parking;
   final bool isAuthenticated;
   final LatLng? userLocation;
@@ -27,6 +30,68 @@ class ParkingDetailScreen extends StatelessWidget {
     this.hideReserveButton = false, // false par défaut = comportement normal
     this.reservationStatus,
   });
+
+  @override
+  State<ParkingDetailScreen> createState() => _ParkingDetailScreenState();
+}
+
+class _ParkingDetailScreenState extends State<ParkingDetailScreen> {
+  final ParkingAvailabilityRepository _availabilityRepo =
+      ParkingAvailabilityRepository();
+  Timer? _refreshTimer;
+  int? _liveAvailableSpots;
+
+  Parking get parking => widget.parking;
+  bool get isAuthenticated => widget.isAuthenticated;
+  LatLng? get userLocation => widget.userLocation;
+  bool get directReservation => widget.directReservation;
+  bool get hideReserveButton => widget.hideReserveButton;
+  String? get reservationStatus => widget.reservationStatus;
+
+  int get _displayedAvailableSpots =>
+      _liveAvailableSpots ?? parking.availableSpots;
+
+  bool get _isFull => _displayedAvailableSpots <= 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshAvailability();
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 8),
+      (_) => _refreshAvailability(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refreshAvailability() async {
+    try {
+      final list = await _availabilityRepo
+          .fetchAvailability(forceRefresh: true)
+          .timeout(const Duration(seconds: 6));
+      if (!mounted) return;
+
+      final String normalizedName = parking.name.trim().toLowerCase();
+      final String normalizedId = parking.id.trim().toLowerCase();
+
+      for (final item in list) {
+        final bool matchesId = item.parkingId.trim().toLowerCase() == normalizedId;
+        final bool matchesName =
+            item.parkingName.trim().toLowerCase() == normalizedName;
+        if (matchesId || matchesName) {
+          setState(() => _liveAvailableSpots = item.availableSpots);
+          return;
+        }
+      }
+    } catch (_) {
+      // Réseau indisponible : on garde la valeur précédente.
+    }
+  }
 
   void _navigateToLogin(BuildContext context,
       {required Widget postLoginRoute}) {
@@ -46,6 +111,7 @@ class ParkingDetailScreen extends StatelessWidget {
           parkingName: parking.name,
           parkingAddress: parking.address,
           equipments: parking.equipments,
+          parking: parking,
         ),
       ),
     );
@@ -206,11 +272,20 @@ class ParkingDetailScreen extends StatelessWidget {
   }
 
   Widget _buildAvailabilityCard() {
+    final int count = _displayedAvailableSpots;
+    final bool isFull = _isFull;
+    final Color statusColor = isFull ? const Color(0xFFE53935) : AppColors.green;
+    final Color cardColor =
+        isFull ? const Color(0xFFFDECEA) : const Color(0xFFF0F7FF);
+    final String label = isFull
+        ? 'Parking complet'
+        : '$count place${count > 1 ? 's' : ''} disponible${count > 1 ? 's' : ''}';
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F7FF),
+        color: cardColor,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -220,18 +295,18 @@ class ParkingDetailScreen extends StatelessWidget {
               Container(
                 width: 10,
                 height: 10,
-                decoration: const BoxDecoration(
-                  color: AppColors.green,
+                decoration: BoxDecoration(
+                  color: statusColor,
                   shape: BoxShape.circle,
                 ),
               ),
               const SizedBox(width: 8),
               Text(
-                '${parking.availableSpots} places disponibles',
-                style: const TextStyle(
+                label,
+                style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.green,
+                  color: statusColor,
                 ),
               ),
             ],
@@ -352,28 +427,31 @@ class ParkingDetailScreen extends StatelessWidget {
             Expanded(
               flex: 1,
               child: OutlinedButton.icon(
-                onPressed: () {
-                  if (directReservation) {
-                    _navigateToReservation(context);
-                    return;
-                  }
-                  if (isAuthenticated) {
-                    _navigateToReservation(context);
-                    return;
-                  }
-                  _navigateToLogin(
-                    context,
-                    postLoginRoute: ReservationScreen(
-                      parkingId: parking.id,
-                      parkingName: parking.name,
-                      parkingAddress: parking.address,
-                      equipments: parking.equipments,
-                      returnHomeOnBack: true,
-                    ),
-                  );
-                },
+                onPressed: _isFull
+                    ? null
+                    : () {
+                        if (directReservation) {
+                          _navigateToReservation(context);
+                          return;
+                        }
+                        if (isAuthenticated) {
+                          _navigateToReservation(context);
+                          return;
+                        }
+                        _navigateToLogin(
+                          context,
+                          postLoginRoute: ReservationScreen(
+                            parkingId: parking.id,
+                            parkingName: parking.name,
+                            parkingAddress: parking.address,
+                            equipments: parking.equipments,
+                            returnHomeOnBack: true,
+                            parking: parking,
+                          ),
+                        );
+                      },
                 icon: const Icon(Icons.calendar_today_outlined, size: 18),
-                label: const Text('Réserver'),
+                label: Text(_isFull ? 'Complet' : 'Réserver'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.blue,
                   side: const BorderSide(color: AppColors.blue, width: 1.5),

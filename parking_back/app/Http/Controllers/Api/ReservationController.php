@@ -949,6 +949,7 @@ class ReservationController extends Controller
         $reservationPaymentStatus = '';
         $reservationDurationType = '';
         $reservationAmount = 0.0;
+        $depositAmount = 0.0;
         $sessionPaymentStatus = 'unpaid';
         $spotLabel = trim((string) ($session->spot_label ?? ''));
 
@@ -957,6 +958,7 @@ class ReservationController extends Controller
             $durationSeconds = max(0, $rawDuration);
         }
 
+        $isAdvanceReservation = false;
         $reservationId = (string) ($session->reservation_id ?? '');
         if ($reservationId !== '') {
             $reservation = Reservation::query()->find($reservationId);
@@ -966,6 +968,8 @@ class ReservationController extends Controller
                 $reservationPaymentStatus = (string) ($reservation->payment_status ?? '');
                 $reservationDurationType = (string) ($reservation->duration_type ?? '');
                 $reservationAmount = (float) ($reservation->amount ?? 0);
+                $depositAmount = (float) ($reservation->deposit_amount ?? 0);
+                $isAdvanceReservation = (string) ($reservation->source ?? '') !== 'walk_in';
 
                 if ($spotLabel === '') {
                     $spotLabel = trim((string) ($reservation->spot_label ?? ''));
@@ -1004,6 +1008,8 @@ class ReservationController extends Controller
             'reservation_payment_status' => $reservationPaymentStatus,
             'reservation_duration_type' => $reservationDurationType,
             'reservation_amount' => $reservationAmount,
+            'deposit_amount' => $depositAmount,
+            'is_advance_reservation' => $isAdvanceReservation,
             'session_payment_status' => $sessionPaymentStatus,
             'started_at' => $session->started_at?->toIso8601String(),
             'ended_at' => $session->ended_at?->toIso8601String(),

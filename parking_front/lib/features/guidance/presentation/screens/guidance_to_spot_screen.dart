@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:parking_front/features/guidance/presentation/utils/guidance_spot_layout.dart';
+import 'package:parking_front/features/parking/data/parking_repository.dart';
 import 'package:parking_front/features/parking/models/parking.dart';
 
 import 'vehicle_parked_confirmation_screen.dart';
@@ -12,7 +13,7 @@ import 'vehicle_parked_confirmation_screen.dart';
 const _kBg = Color(0xFFF0F4FA);
 const _kBlue = Color(0xFF4A90E2);
 const _kGreen = Color(0xFF2ECC71);
-const _kOrange = Color(0xFFF5A623);
+const _kYellow = Color(0xFFFFD600);
 const _kRed = Color(0xFFE53935);
 const _kDark = Color(0xFF1A1A2E);
 const _kMid = Color(0xFF8A9BB5);
@@ -22,6 +23,7 @@ class GuidanceToSpotScreen extends StatefulWidget {
   final String floor;
   final bool isGuideToFree;
   final List<ParkingIndoorSpot> spots;
+  final String parkingId;
 
   const GuidanceToSpotScreen({
     super.key,
@@ -29,6 +31,7 @@ class GuidanceToSpotScreen extends StatefulWidget {
     this.floor = 'Niveau -1',
     this.isGuideToFree = true,
     this.spots = const <ParkingIndoorSpot>[],
+    this.parkingId = '',
   });
 
   @override
@@ -38,29 +41,37 @@ class GuidanceToSpotScreen extends StatefulWidget {
 class _GuidanceToSpotScreenState extends State<GuidanceToSpotScreen>
     with SingleTickerProviderStateMixin {
   final FlutterTts _tts = FlutterTts();
+  final ParkingRepository _parkingRepository = ParkingRepository();
 
   late final AnimationController _pathController;
-  late final GuidanceSpotLayout _layout;
-  late final GuidanceSpotViewData _targetSpotData;
-  late final bool _resolvedIsTopRow;
-  late final int _resolvedTargetColIndex;
+  GuidanceSpotLayout _layout = const GuidanceSpotLayout(
+    topRow: <GuidanceSpotViewData>[],
+    bottomRow: <GuidanceSpotViewData>[],
+  );
+  GuidanceSpotViewData _targetSpotData = const GuidanceSpotViewData(
+    label: 'A1',
+    state: GuidanceSpotState.reserved,
+    rowIndex: 0,
+    colIndex: 0,
+  );
+  bool _resolvedIsTopRow = false;
+  int _resolvedTargetColIndex = 0;
   Timer? _timer;
+  Timer? _spotsRefreshTimer;
+  List<ParkingIndoorSpot> _spots = const <ParkingIndoorSpot>[];
 
   double _scale = 1.0;
   double _lastScale = 1.0;
   bool _voiceEnabled = true;
   int _distanceMeters = 120;
   String _currentInstruction = '';
-  late final String _targetSpot;
+  String _targetSpot = '';
 
   @override
   void initState() {
     super.initState();
-    _layout = GuidanceSpotLayout.fromIndoorSpots(widget.spots);
-    _targetSpotData = _resolveTargetSpotData();
-    _resolvedIsTopRow = _targetSpotData.rowIndex == 0;
-    _resolvedTargetColIndex = _targetSpotData.colIndex;
-    _targetSpot = _targetSpotData.displayLabel;
+    _spots = widget.spots;
+    _rebuildLayoutAndTarget();
     _pathController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1300),
@@ -76,11 +87,71 @@ class _GuidanceToSpotScreenState extends State<GuidanceToSpotScreen>
       });
       _updateInstruction();
     });
+
+    if (widget.parkingId.trim().isNotEmpty) {
+      _spotsRefreshTimer = Timer.periodic(
+        const Duration(seconds: 4),
+        (_) => _refreshSpotsFromBackend(),
+      );
+      _refreshSpotsFromBackend();
+    }
+  }
+
+  void _rebuildLayoutAndTarget() {
+    _layout = GuidanceSpotLayout.fromIndoorSpots(_spots);
+    _targetSpotData = _resolveTargetSpotData();
+    _resolvedIsTopRow = _targetSpotData.rowIndex == 0;
+    _resolvedTargetColIndex = _targetSpotData.colIndex;
+    _targetSpot = _targetSpotData.displayLabel;
+  }
+
+  Future<void> _refreshSpotsFromBackend() async {
+    try {
+      final List<Parking> parkings = await _parkingRepository
+          .fetchParkings(forceRefresh: true)
+          .timeout(const Duration(seconds: 6));
+      if (!mounted) return;
+
+      final String targetId = widget.parkingId.trim().toLowerCase();
+      Parking? match;
+      for (final Parking p in parkings) {
+        if (p.id.trim().toLowerCase() == targetId) {
+          match = p;
+          break;
+        }
+      }
+
+      final List<ParkingIndoorSpot> freshSpots =
+          match?.indoorMap?.spots ?? const <ParkingIndoorSpot>[];
+      if (freshSpots.isEmpty) return;
+
+      if (_spotsEqual(_spots, freshSpots)) return;
+
+      // Met à jour uniquement le layout visuel (couleurs des places).
+      // Le target reste verrouillé sur la place sauvegardée — sinon
+      // dès que l'utilisateur se gare et que sa place passe en OCCUPIED,
+      // on basculerait vers une autre place, désynchronisant l'UI.
+      setState(() {
+        _spots = freshSpots;
+        _layout = GuidanceSpotLayout.fromIndoorSpots(_spots);
+      });
+    } catch (_) {
+      // Réseau indisponible : garder l'état précédent.
+    }
+  }
+
+  bool _spotsEqual(List<ParkingIndoorSpot> a, List<ParkingIndoorSpot> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].label != b[i].label || a[i].state != b[i].state) return false;
+    }
+    return true;
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _spotsRefreshTimer?.cancel();
     _pathController.dispose();
     _tts.stop();
     super.dispose();
@@ -104,19 +175,35 @@ class _GuidanceToSpotScreenState extends State<GuidanceToSpotScreen>
     final GuidanceSpotViewData? firstAvailable = _layout.findFirstAvailable();
 
     if (widget.isGuideToFree) {
-      if (firstAvailable != null) {
-        return firstAvailable;
-      }
+      if (firstAvailable != null) return firstAvailable;
       return resolved ?? _layout.topRow.first;
     }
 
-    if (resolved != null &&
-        (resolved.state == GuidanceSpotState.available ||
-            resolved.state == GuidanceSpotState.reserved)) {
+    // Mode guidage vers place assignée.
+    if (resolved != null) {
+      // Si la place assignée est physiquement OCCUPÉE (capteur IR),
+      // basculer automatiquement vers une vraie place libre.
+      if (resolved.state == GuidanceSpotState.occupied &&
+          firstAvailable != null) {
+        return firstAvailable;
+      }
       return resolved;
     }
 
-    return firstAvailable ?? resolved ?? _layout.topRow.first;
+    // Place introuvable dans le layout (parking sans carte indoor).
+    // Préférer une place libre détectée plutôt qu'un fallback aveugle.
+    if (firstAvailable != null) return firstAvailable;
+
+    final String label = widget.spotLabel.trim().isNotEmpty
+        ? widget.spotLabel.trim()
+        : resolvedLabel;
+
+    return GuidanceSpotViewData(
+      label: label.isNotEmpty ? label : 'A1',
+      state: GuidanceSpotState.reserved,
+      rowIndex: 0,
+      colIndex: 0,
+    );
   }
 
   double get _progress => (120 - _distanceMeters) / 120;
@@ -356,7 +443,7 @@ class _GuidanceToSpotScreenState extends State<GuidanceToSpotScreen>
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    '🔵 Destination · 🟢 Libre · 🟠 Réservé · 🔴 Occupé',
+                    '🔵 Destination · 🟢 Libre · 🟡 Réservé · 🔴 Occupé',
                     style: TextStyle(
                       fontSize: 12,
                       color: _kMid,
@@ -566,7 +653,7 @@ class _SpotFinderTopViewPainter extends CustomPainter {
         case GuidanceSpotState.available:
           fillColor = _kGreen;
         case GuidanceSpotState.reserved:
-          fillColor = _kOrange;
+          fillColor = _kYellow;
         case GuidanceSpotState.occupied:
           fillColor = _kRed;
       }

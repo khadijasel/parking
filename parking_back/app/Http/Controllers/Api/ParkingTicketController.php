@@ -577,6 +577,7 @@ class ParkingTicketController extends Controller
                 'expires_at' => null,
                 'cancelled_at' => null,
                 'spot_locked' => true,
+                'source' => 'walk_in',
             ]);
         } catch (\Throwable $e) {
             if ($parking instanceof Parking && is_string($reservedSpotLabel) && $reservedSpotLabel !== '') {
