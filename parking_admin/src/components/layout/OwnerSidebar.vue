@@ -27,6 +27,11 @@ const navItems = [
     icon: 'map',
     to: '/owner/live-map',
   },
+  {
+    name: 'Statistiques',
+    icon: 'monitoring',
+    to: '/owner/stats',
+  },
 ]
 
 const sidebarClass = computed(() => {
@@ -72,7 +77,7 @@ const onLogout = async () => {
     :class="sidebarClass"
   >
     <div class="mb-10 px-2">
-      <h1 class="font-headline text-xl font-extrabold tracking-tight text-primary">Owner Space</h1>
+      <h1 class="font-headline text-xl font-extrabold tracking-tight text-primary">Espace proprietaire</h1>
       <p class="mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-outline">Console proprietaire</p>
     </div>
 

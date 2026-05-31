@@ -224,6 +224,80 @@ export const useAuthStore = defineStore('auth', () => {
     return merged
   }
 
+  const refreshProfile = async () => {
+    const currentRole = role.value
+    const hasToken = Boolean(token.value)
+
+    if (!currentRole || !hasToken) {
+      return {
+        ok: false,
+        message: 'Session non disponible.',
+      }
+    }
+
+    try {
+      const response = await fetch(toApiUrl(`${currentRole}/auth/me`), {
+        method: 'GET',
+        headers: authHeaders({
+          Accept: 'application/json',
+        }),
+      })
+
+      const payload = await parseResponseBody(response)
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          message: extractApiErrorMessage(payload, 'Actualisation du profil impossible.'),
+        }
+      }
+
+      const profile = payload?.data ?? null
+
+      if (!profile || typeof profile !== 'object') {
+        return {
+          ok: false,
+          message: 'Reponse profil invalide.',
+        }
+      }
+
+      const session = toStoredSession({
+        role: currentRole,
+        email: profile.email ?? email.value,
+        displayName: profile.name ?? displayName.value,
+        token: token.value,
+        tokenType: tokenType.value,
+        actor: profile,
+        lastLoginAt: lastLoginAt.value || new Date().toISOString(),
+      })
+
+      if (!session) {
+        return {
+          ok: false,
+          message: 'Session de profil invalide.',
+        }
+      }
+
+      email.value = session.email
+      displayName.value = session.displayName
+      tokenType.value = session.tokenType
+      actor.value = session.actor
+      lastLoginAt.value = session.lastLoginAt
+
+      writeSession(session)
+
+      return {
+        ok: true,
+        profile,
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        message: `Actualisation du profil echouee: ${String(error?.message ?? error)}`,
+      }
+    }
+  }
+
   const hasAccount = () => {
     // Local duplicate checks are no longer authoritative with backend auth.
     return false
@@ -408,6 +482,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     hydrate,
     authHeaders,
+    refreshProfile,
     hasAccount,
     login,
     registerOwnerAccount,

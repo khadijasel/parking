@@ -50,7 +50,7 @@ const onSubmit = async () => {
   <section class="grid min-h-screen bg-[radial-gradient(circle_at_20%_10%,rgba(16,185,129,0.16),transparent_34%),radial-gradient(circle_at_84%_25%,rgba(26,115,232,0.16),transparent_30%)] lg:grid-cols-2">
     <div class="flex items-center justify-center px-5 py-10 sm:px-10">
       <article class="w-full max-w-md rounded-3xl bg-surface-container-lowest p-7 shadow-xl dark:bg-slate-900">
-        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-outline">Espace Owner</p>
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-outline">Espace proprietaire</p>
         <h1 class="mt-2 font-headline text-3xl font-extrabold text-on-surface">Connexion proprietaire</h1>
         <p class="mt-2 text-sm text-on-surface-variant">Suivez uniquement votre parking, vos voies et vos places.</p>
 
@@ -60,7 +60,7 @@ const onSubmit = async () => {
             <input
               v-model.trim="form.email"
               type="email"
-              placeholder="owner@parking.local"
+              placeholder="proprietaire@parking.local"
               class="mt-1 w-full rounded-xl bg-surface-container px-3 py-2.5 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </label>
@@ -80,7 +80,7 @@ const onSubmit = async () => {
           </p>
 
           <button type="submit" class="primary-cta w-full" :disabled="isLoading">
-            {{ isLoading ? 'Connexion...' : 'Se connecter en owner' }}
+            {{ isLoading ? 'Connexion...' : 'Se connecter en proprietaire' }}
           </button>
         </form>
 
@@ -95,7 +95,7 @@ const onSubmit = async () => {
 
     <div class="hidden items-center justify-center px-10 py-10 lg:flex">
       <div class="max-w-lg space-y-4 rounded-3xl border border-outline-variant/30 bg-surface-container-lowest/80 p-8 dark:bg-slate-900/80">
-        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Role Owner</p>
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Role proprietaire</p>
         <h2 class="font-headline text-3xl font-extrabold text-on-surface">Gestion dediee a votre parking</h2>
         <ul class="space-y-3 text-sm text-on-surface-variant">
           <li>Visualisation de votre capacite et de vos places dessinees.</li>

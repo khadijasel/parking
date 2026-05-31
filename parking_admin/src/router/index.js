@@ -10,6 +10,7 @@ import AdminLoginView from '@/views/auth/AdminLoginView.vue'
 import OwnerLoginView from '@/views/auth/OwnerLoginView.vue'
 import OwnerLiveMapView from '@/views/owner/OwnerLiveMapView.vue'
 import OwnParkingAdminView from '@/views/owner/OwnParkingAdminView.vue'
+import OwnerStatsView from '@/views/owner/OwnerStatsView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -69,6 +70,11 @@ const router = createRouter({
           path: 'live-map',
           name: 'owner-live-map',
           component: OwnerLiveMapView,
+        },
+        {
+          path: 'stats',
+          name: 'owner-stats',
+          component: OwnerStatsView,
         },
       ],
     },

@@ -85,11 +85,11 @@ const onToggleDark = () => {
       <div class="h-8 w-px bg-outline-variant/40" />
 
       <div class="text-right">
-        <p class="font-headline text-xs font-bold text-on-surface">Owner User</p>
+        <p class="font-headline text-xs font-bold text-on-surface">Proprietaire</p>
         <p class="text-[11px] text-outline">Proprietaire de parking</p>
       </div>
       <div class="flex h-9 w-9 items-center justify-center rounded-full bg-primary-fixed text-xs font-bold text-primary">
-        OW
+        PR
       </div>
     </div>
   </header>

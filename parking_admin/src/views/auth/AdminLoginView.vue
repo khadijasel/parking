@@ -87,7 +87,7 @@ const onSubmit = async () => {
         <p class="mt-5 text-sm text-on-surface-variant">
           Vous etes proprietaire ?
           <RouterLink to="/auth/owner" class="font-semibold text-primary hover:underline">
-            Aller a la connexion owner
+            Aller a la connexion proprietaire
           </RouterLink>
         </p>
       </article>
