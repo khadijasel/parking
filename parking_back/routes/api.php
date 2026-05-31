@@ -115,6 +115,7 @@ Route::prefix('admin')->middleware(['auth:admin', 'admin'])->group(function (): 
 Route::prefix('owner')->middleware(['auth:owner', 'owner'])->group(function (): void {
 	Route::get('parkings', [OwnerParkingSettingsController::class, 'index']);
 	Route::patch('parkings/{parkingId}/business-settings', [OwnerParkingSettingsController::class, 'updateBusinessSettings']);
+	Route::post('parkings/layout', [OwnerParkingSettingsController::class, 'upsertLayout']);
 });
 
 Route::prefix('user')->middleware('auth:user')->group(function (): void {
