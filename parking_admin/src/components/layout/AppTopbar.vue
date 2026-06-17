@@ -1,12 +1,33 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useDark, useToggle } from '@vueuse/core'
+import { storeToRefs } from 'pinia'
+import { useAuthStore } from '@/stores/auth'
 
 const emit = defineEmits(['toggle-sidebar'])
 
 const search = ref('')
 const isDark = useDark({ selector: 'html' })
 const toggleDark = useToggle(isDark)
+const authStore = useAuthStore()
+const { displayName, actor } = storeToRefs(authStore)
+
+const adminName = computed(() => {
+  return String(displayName.value || actor.value?.name || 'Administrateur').trim() || 'Administrateur'
+})
+
+const adminInitials = computed(() => {
+  const parts = adminName.value.split(/\s+/).filter(Boolean)
+
+  if (!parts.length) {
+    return 'AD'
+  }
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('')
+})
 
 const darkIcon = computed(() => {
   if (isDark.value) {
@@ -85,11 +106,11 @@ const onToggleDark = () => {
       <div class="h-8 w-px bg-outline-variant/40" />
 
       <div class="text-right">
-        <p class="font-headline text-xs font-bold text-on-surface">Alex Rivera</p>
-        <p class="text-[11px] text-outline">Super administrateur</p>
+        <p class="font-headline text-xs font-bold text-on-surface">{{ adminName }}</p>
+        <p class="text-[11px] text-outline">Administrateur connecte</p>
       </div>
       <div class="flex h-9 w-9 items-center justify-center rounded-full bg-primary-fixed text-xs font-bold text-primary">
-        AR
+        {{ adminInitials }}
       </div>
     </div>
   </header>

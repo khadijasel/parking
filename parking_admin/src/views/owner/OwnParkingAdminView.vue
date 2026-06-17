@@ -13,6 +13,7 @@ const authStore = useAuthStore()
 
 const ownerParkings = ref([])
 const selectedParkingId = ref('')
+const parkingImageInputRef = ref(null)
 
 const loading = ref(false)
 const saving = ref(false)
@@ -30,6 +31,26 @@ const dayOptions = [
   { key: 'SATURDAY', label: 'Samedi' },
   { key: 'SUNDAY', label: 'Dimanche' },
 ]
+
+const equipmentOptions = [
+  'GPL Autorise',
+  'Securite 24/7',
+  'Videosurveillance',
+  'Accessible Handi',
+  'Borne Elec',
+]
+
+const tagOptions = [
+  'Proche Tram',
+  'Proche Metro',
+  'Proche Bus',
+  'Centre Ville',
+  'Couvert',
+]
+
+const vehicleTypeOptions = ['car', 'moto', 'truck']
+
+const maxParkingImageSizeBytes = 5 * 1024 * 1024
 
 const typeLabelMap = {
   STANDARD: 'Standard',
@@ -73,9 +94,14 @@ const parkingForm = reactive({
   cols: 3,
   laneRows: '',
   laneCols: '',
-  walkingTime: '',
   pricePerHour: 0,
   imageUrl: '',
+  imageFileName: '',
+  isOpen24h: false,
+  equipments: [],
+  tags: [],
+  supportedVehicleTypes: [],
+  nearTelepherique: false,
 })
 
 const normalizeParking = (payload = {}) => {
@@ -96,6 +122,11 @@ const normalizeParking = (payload = {}) => {
     },
     capacity: Number(payload?.capacity ?? 0),
     imageUrl: String(payload?.imageUrl ?? '').trim(),
+    isOpen24h: Boolean(payload?.isOpen24h),
+    equipments: normalizeOptionsFromList(payload?.equipments ?? [], equipmentOptionMap),
+    tags: normalizeOptionsFromList(payload?.tags ?? [], tagOptionMap),
+    supportedVehicleTypes: normalizeStringArray(payload?.supportedVehicleTypes ?? [], { lowercase: true }),
+    nearTelepherique: Boolean(payload?.nearTelepherique),
     indoorMap: {
       floor: String(indoorMap?.floor ?? 'B1'),
       zone: String(indoorMap?.zone ?? 'Zone A'),
@@ -130,6 +161,113 @@ const parseLaneInput = (value, maxCount) => {
     .filter((item) => Number.isInteger(item) && item >= 0 && item < maxCount)
     .filter((item, index, array) => array.indexOf(item) === index)
     .sort((a, b) => a - b)
+}
+
+const normalizeStringArray = (value, { lowercase = false } = {}) => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const normalized = value
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean)
+    .map((item) => (lowercase ? item.toLowerCase() : item))
+
+  return Array.from(new Set(normalized))
+}
+
+const normalizeOptionKey = (value) => {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+const normalizeOptionsFromList = (value, optionMap) => {
+  const normalized = normalizeStringArray(value)
+  const resolved = normalized.map((item) => optionMap.get(normalizeOptionKey(item)) ?? item)
+
+  return Array.from(new Set(resolved))
+}
+
+const equipmentOptionMap = new Map(
+  equipmentOptions.map((option) => [normalizeOptionKey(option), option]),
+)
+const tagOptionMap = new Map(
+  tagOptions.map((option) => [normalizeOptionKey(option), option]),
+)
+
+const getImageFileNameFromUrl = (value) => {
+  const raw = String(value ?? '').trim()
+  if (!raw) {
+    return ''
+  }
+
+  if (raw.startsWith('data:image/')) {
+    return 'image-importee'
+  }
+
+  try {
+    const url = new URL(raw)
+    const pieces = url.pathname.split('/').filter(Boolean)
+    const filename = pieces.length ? decodeURIComponent(pieces[pieces.length - 1]) : ''
+    return filename || 'image-distance'
+  } catch {
+    const pieces = raw.split('/').filter(Boolean)
+    return pieces.length ? pieces[pieces.length - 1] : 'image-distance'
+  }
+}
+
+const onParkingImageSelected = (event) => {
+  saveError.value = ''
+
+  const input = event?.target
+  const file = input?.files?.[0]
+
+  if (!file) {
+    return
+  }
+
+  if (!String(file.type ?? '').startsWith('image/')) {
+    saveError.value = 'Selectionnez un fichier image valide (png, jpg, webp...).'
+    if (input) {
+      input.value = ''
+    }
+    return
+  }
+
+  if (file.size > maxParkingImageSizeBytes) {
+    saveError.value = 'Image trop grande. Taille maximale: 5 MB.'
+    if (input) {
+      input.value = ''
+    }
+    return
+  }
+
+  const reader = new FileReader()
+
+  reader.onload = () => {
+    parkingForm.imageUrl = String(reader.result ?? '')
+    parkingForm.imageFileName = file.name
+  }
+
+  reader.onerror = () => {
+    saveError.value = 'Impossible de lire l image selectionnee.'
+  }
+
+  reader.readAsDataURL(file)
+}
+
+const clearParkingImageSelection = () => {
+  parkingForm.imageUrl = ''
+  parkingForm.imageFileName = ''
+
+  if (parkingImageInputRef.value) {
+    parkingImageInputRef.value.value = ''
+  }
 }
 
 const selectedParking = computed(() => {
@@ -349,9 +487,14 @@ const syncFormFromSelectedParking = () => {
     parkingForm.cols = 3
     parkingForm.laneRows = ''
     parkingForm.laneCols = ''
-    parkingForm.walkingTime = ''
     parkingForm.pricePerHour = 0
     parkingForm.imageUrl = ''
+    parkingForm.imageFileName = ''
+    parkingForm.isOpen24h = false
+    parkingForm.equipments = []
+    parkingForm.tags = []
+    parkingForm.supportedVehicleTypes = []
+    parkingForm.nearTelepherique = false
     settingsForm.workingDays = []
     settingsForm.openingTime = '08:00'
     settingsForm.closingTime = '20:00'
@@ -378,9 +521,16 @@ const syncFormFromSelectedParking = () => {
   parkingForm.laneCols = Array.isArray(parking.indoorMap?.grid?.laneCols)
     ? parking.indoorMap.grid.laneCols.join(', ')
     : ''
-  parkingForm.walkingTime = String(parking.walkingTime ?? '')
   parkingForm.pricePerHour = Number(settings.pricing?.hourlyRateDzd ?? 0)
   parkingForm.imageUrl = String(parking.imageUrl ?? '')
+  parkingForm.imageFileName = getImageFileNameFromUrl(parking.imageUrl)
+  parkingForm.isOpen24h = Boolean(parking.isOpen24h)
+  parkingForm.equipments = normalizeOptionsFromList(parking.equipments ?? [], equipmentOptionMap)
+  parkingForm.tags = normalizeOptionsFromList(parking.tags ?? [], tagOptionMap)
+  parkingForm.supportedVehicleTypes = Array.isArray(parking.supportedVehicleTypes)
+    ? [...parking.supportedVehicleTypes]
+    : []
+  parkingForm.nearTelepherique = Boolean(parking.nearTelepherique)
   settingsForm.workingDays = Array.isArray(settings.workingDays) ? [...settings.workingDays] : []
   settingsForm.openingTime = String(settings.openingTime ?? '08:00')
   settingsForm.closingTime = String(settings.closingTime ?? '20:00')
@@ -405,6 +555,11 @@ const saveParkingLayout = async () => {
 
   const rows = Math.max(1, Math.round(Number(parkingForm.rows) || 1))
   const cols = Math.max(1, Math.round(Number(parkingForm.cols) || 1))
+  const equipments = normalizeOptionsFromList(parkingForm.equipments, equipmentOptionMap)
+  const tags = normalizeOptionsFromList(parkingForm.tags, tagOptionMap)
+  const supportedVehicleTypes = normalizeStringArray(parkingForm.supportedVehicleTypes, { lowercase: true })
+  const isOpen24h = Boolean(parkingForm.isOpen24h)
+  const nearTelepherique = Boolean(parkingForm.nearTelepherique)
 
   const payload = {
     parkingId: String(parkingForm.parkingId).trim(),
@@ -415,9 +570,13 @@ const saveParkingLayout = async () => {
       lng: Number(parkingForm.longitude) || 0,
     },
     capacity: Math.max(1, Math.round(Number(parkingForm.capacity) || 1)),
-    walkingTime: String(parkingForm.walkingTime ?? '').trim(),
     pricePerHour: Math.max(0, Number(parkingForm.pricePerHour) || 0),
     imageUrl: String(parkingForm.imageUrl ?? '').trim(),
+    isOpen24h,
+    equipments,
+    tags,
+    supportedVehicleTypes,
+    nearTelepherique,
     indoorMap: {
       floor: String(parkingForm.floor ?? 'B1').trim() || 'B1',
       zone: String(parkingForm.zone ?? 'Zone A').trim() || 'Zone A',
@@ -455,7 +614,7 @@ const saveParkingLayout = async () => {
     }
 
     selectedParkingId.value = updatedParking.id
-    saveSuccess.value = result.message || 'Carte du parking enregistree.'
+    saveSuccess.value = result.message || 'Informations du parking enregistrees.'
   } finally {
     saving.value = false
   }
@@ -486,6 +645,8 @@ const loadOwnerParkings = async () => {
     if (!exists) {
       selectedParkingId.value = ownerParkings.value[0].id
     }
+
+    syncFormFromSelectedParking()
   } finally {
     loading.value = false
   }
@@ -528,7 +689,7 @@ const saveBusinessSettings = async () => {
   saveSuccess.value = ''
 
   if (!selectedParking.value) {
-    saveError.value = 'Selectionnez un parking owner.'
+    saveError.value = 'Selectionnez un parking proprietaire.'
     return
   }
 
@@ -614,7 +775,7 @@ onMounted(async () => {
     <div>
       <h2 class="font-headline text-2xl font-extrabold text-on-surface">Mon parking admin</h2>
       <p class="mt-1 text-sm text-on-surface-variant">
-        Espace owner: modifiez vos jours/heures de travail et vos prix en dinar algerien (DZD).
+        Espace proprietaire: modifiez vos jours/heures de travail et vos prix en dinar algerien (DZD).
       </p>
     </div>
 
@@ -646,7 +807,7 @@ onMounted(async () => {
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 class="font-headline text-lg font-bold text-on-surface">
-              {{ selectedParking ? 'Modifier la carte de votre parking' : 'Creer votre parking' }}
+              {{ selectedParking ? 'Modifier les informations de votre parking' : 'Creer votre parking' }}
             </h3>
             <p class="mt-1 text-xs text-on-surface-variant">
               Remplissez les informations de base et la grille intérieure. Les places seront generees automatiquement si elles sont absentes.
@@ -659,7 +820,7 @@ onMounted(async () => {
             :disabled="saving"
             @click="saveParkingLayout"
           >
-            {{ saving ? 'Enregistrement...' : selectedParking ? 'Mettre a jour la carte' : 'Creer mon parking' }}
+            {{ saving ? 'Enregistrement...' : selectedParking ? 'Mettre a jour les informations' : 'Creer mon parking' }}
           </button>
         </div>
 
@@ -773,7 +934,7 @@ onMounted(async () => {
           </label>
         </div>
 
-        <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div class="mt-4 grid gap-3 md:grid-cols-2">
           <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
             Voies par lignes
             <input
@@ -792,26 +953,101 @@ onMounted(async () => {
               class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </label>
-          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
-            URL image
-            <input
-              v-model.trim="parkingForm.imageUrl"
-              type="text"
-              placeholder="https://..."
-              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </label>
         </div>
 
-        <label class="mt-4 block text-xs font-semibold uppercase tracking-[0.08em] text-outline">
-          Temps de marche
-          <input
-            v-model.trim="parkingForm.walkingTime"
-            type="text"
-            placeholder="5 mins de marche"
-            class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
+        <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div class="space-y-2 rounded-xl bg-surface-container-low p-3">
+            <p class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">Equipements</p>
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label
+                v-for="option in equipmentOptions"
+                :key="`equipment-${option}`"
+                class="inline-flex items-center gap-2 rounded-lg bg-surface-container px-3 py-2 text-xs text-on-surface"
+              >
+                <input v-model="parkingForm.equipments" type="checkbox" :value="option" class="h-4 w-4" />
+                {{ option }}
+              </label>
+            </div>
+          </div>
+
+          <div class="space-y-2 rounded-xl bg-surface-container-low p-3">
+            <p class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">Tags</p>
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label
+                v-for="option in tagOptions"
+                :key="`tag-${option}`"
+                class="inline-flex items-center gap-2 rounded-lg bg-surface-container px-3 py-2 text-xs text-on-surface"
+              >
+                <input v-model="parkingForm.tags" type="checkbox" :value="option" class="h-4 w-4" />
+                {{ option }}
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div class="space-y-2 rounded-xl bg-surface-container-low p-3">
+            <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+              Photo du parking
+              <input
+                ref="parkingImageInputRef"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/jpg"
+                class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface file:mr-3 file:rounded-md file:border-0 file:bg-primary/15 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-primary"
+                @change="onParkingImageSelected"
+              />
+            </label>
+            <p class="text-xs text-on-surface-variant">
+              {{ parkingForm.imageFileName || 'Aucun fichier selectionne' }}
+            </p>
+            <img
+              v-if="parkingForm.imageUrl"
+              :src="parkingForm.imageUrl"
+              alt="Apercu photo parking"
+              class="h-32 w-full rounded-xl border border-outline-variant/40 object-cover"
+            />
+            <button
+              v-if="parkingForm.imageUrl"
+              type="button"
+              class="rounded-lg bg-surface-container px-3 py-2 text-xs font-semibold text-on-surface hover:bg-surface-container-high"
+              @click="clearParkingImageSelection"
+            >
+              Supprimer la photo
+            </button>
+          </div>
+
+          <div class="space-y-2 rounded-xl bg-surface-container-low p-3">
+            <p class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">Types vehicules</p>
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <label
+                v-for="option in vehicleTypeOptions"
+                :key="`vehicle-${option}`"
+                class="inline-flex items-center gap-2 rounded-lg bg-surface-container px-3 py-2 text-xs text-on-surface"
+              >
+                <input
+                  v-model="parkingForm.supportedVehicleTypes"
+                  type="checkbox"
+                  :value="option"
+                  class="h-4 w-4"
+                />
+                {{ option }}
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div class="flex items-center gap-3 rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface">
+            <label class="inline-flex items-center gap-2">
+              <input v-model="parkingForm.isOpen24h" type="checkbox" class="h-4 w-4" />
+              Ouvert 24h
+            </label>
+            <label class="inline-flex items-center gap-2">
+              <input v-model="parkingForm.nearTelepherique" type="checkbox" class="h-4 w-4" />
+              Proche telepherique
+            </label>
+          </div>
+        </div>
       </div>
 
       <p v-if="loading" class="mt-4 rounded-lg bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface-variant">
@@ -822,34 +1058,6 @@ onMounted(async () => {
       </p>
 
       <div v-if="selectedParking" class="mt-5 space-y-5">
-        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-xl bg-surface-container-low p-4">
-            <p class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">Capacite cible</p>
-            <p class="mt-1 text-2xl font-extrabold text-on-surface">{{ selectedParking.capacity }}</p>
-          </div>
-          <div class="rounded-xl bg-surface-container-low p-4">
-            <p class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">Places dessinees</p>
-            <p class="mt-1 text-2xl font-extrabold text-on-surface">{{ selectedStats.total }}</p>
-          </div>
-          <div class="rounded-xl bg-surface-container-low p-4">
-            <p class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">Ecart places</p>
-            <p class="mt-1 text-2xl font-extrabold" :class="spotCountDelta === 0 ? 'text-emerald-600' : 'text-amber-600'">
-              {{ spotCountDelta }}
-            </p>
-          </div>
-          <div class="rounded-xl bg-surface-container-low p-4">
-            <p class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">Occupation</p>
-            <p class="mt-1 text-2xl font-extrabold text-on-surface">{{ selectedStats.occupancyPercent }}%</p>
-          </div>
-        </div>
-
-        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4 text-sm">
-          <p class="rounded-lg bg-emerald-100 px-3 py-2 font-semibold text-emerald-700">Libres: {{ selectedStats.available }}</p>
-          <p class="rounded-lg bg-red-100 px-3 py-2 font-semibold text-red-700">Occupees: {{ selectedStats.occupied }}</p>
-          <p class="rounded-lg bg-amber-100 px-3 py-2 font-semibold text-amber-700">Reservees: {{ selectedStats.reserved }}</p>
-          <p class="rounded-lg bg-slate-200 px-3 py-2 font-semibold text-slate-700">Offline: {{ selectedStats.offline }}</p>
-        </div>
-
         <div class="rounded-xl bg-surface-container-low p-4 text-sm text-on-surface-variant">
           <p><span class="font-semibold text-on-surface">Adresse:</span> {{ selectedParking.address }}</p>
           <p class="mt-1"><span class="font-semibold text-on-surface">Etage:</span> {{ selectedParking.indoorMap.floor }}</p>
@@ -987,43 +1195,10 @@ onMounted(async () => {
           <p v-if="saveSuccess" class="mt-3 rounded-lg bg-emerald-100 px-3 py-2 text-sm font-semibold text-emerald-700">{{ saveSuccess }}</p>
         </article>
 
-        <div class="flex items-center justify-between gap-3">
-          <h3 class="font-headline text-lg font-bold text-on-surface">Liste des places</h3>
-        </div>
-
-        <div class="overflow-x-auto">
-          <table class="min-w-full text-left text-sm">
-            <thead>
-              <tr class="text-xs uppercase tracking-[0.08em] text-outline">
-                <th class="px-3 py-2">Place</th>
-                <th class="px-3 py-2">Cellule</th>
-                <th class="px-3 py-2">Type</th>
-                <th class="px-3 py-2">Etat</th>
-                <th class="px-3 py-2">Arduino</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="spot in selectedSpots" :key="spot.spotId" class="odd:bg-surface-container-low">
-                <td class="px-3 py-2 font-semibold text-on-surface">{{ spot.label }}</td>
-                <td class="px-3 py-2 text-on-surface-variant">L{{ Number(spot.row) + 1 }} / C{{ Number(spot.col) + 1 }}</td>
-                <td class="px-3 py-2 text-on-surface-variant">{{ typeLabelMap[String(spot.type).toUpperCase()] || spot.type }}</td>
-                <td class="px-3 py-2 text-on-surface-variant">{{ stateLabelMap[String(spot.state).toUpperCase()] || spot.state }}</td>
-                <td class="px-3 py-2 text-on-surface-variant">
-                  {{ spot.sensor?.arduinoId || '-' }} | {{ spot.sensor?.channel || '-' }}
-                </td>
-              </tr>
-              <tr v-if="!selectedSpots.length">
-                <td colspan="5" class="px-3 py-3 text-center text-sm font-semibold text-on-surface-variant">
-                  Aucune place dessinee pour ce parking.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
       </div>
 
       <p v-else-if="!loading" class="mt-4 rounded-lg bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface-variant">
-        Aucun parking disponible pour ce compte owner. Creez-en un via le formulaire ci-dessus.
+        Aucun parking disponible pour ce compte proprietaire. Creez-en un via le formulaire ci-dessus.
       </p>
     </article>
   </section>

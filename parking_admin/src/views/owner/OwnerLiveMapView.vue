@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -7,7 +7,7 @@ import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
 import markerIcon from 'leaflet/dist/images/marker-icon.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import { mapConfig } from '@/config/map'
-import { listOwnerParkings } from '@/services/owner/parkingSettingsApi'
+import { listOwnerParkings, upsertOwnerParkingLayout } from '@/services/owner/parkingSettingsApi'
 import { useAuthStore } from '@/stores/auth'
 
 L.Icon.Default.mergeOptions({
@@ -28,11 +28,42 @@ const loading = ref(false)
 const loadError = ref('')
 const mapNotice = ref('')
 const mapFatalError = ref('')
+const gridError = ref('')
+const gridSuccess = ref('')
+const savingLayout = ref(false)
 
 const mapContainer = ref(null)
 const mapInstance = ref(null)
 const markersLayer = ref(null)
 const markerByParkingId = new Map()
+const relocatingLocation = ref(false)
+
+const gridConfigForm = reactive({
+  rows: 0,
+  cols: 0,
+  floor: 'B1',
+  zone: 'Zone A',
+  laneRows: '',
+  laneCols: '',
+})
+
+const spotForm = reactive({
+  label: '',
+  type: 'STANDARD',
+  state: 'AVAILABLE',
+  arduinoId: '',
+  channel: '',
+  topic: 'parking/spots',
+})
+
+const selectedSpotForm = reactive({
+  label: '',
+  type: 'STANDARD',
+  state: 'AVAILABLE',
+  arduinoId: '',
+  channel: '',
+  topic: '',
+})
 
 const dayLabelMap = {
   MONDAY: 'Lundi',
@@ -50,12 +81,16 @@ const typeLabelMap = {
   VIP: 'VIP',
 }
 
+const spotTypeOptions = ['STANDARD', 'PMR', 'VIP']
+
 const stateLabelMap = {
   AVAILABLE: 'Disponible',
   OCCUPIED: 'Occupee',
   RESERVED: 'Reservee',
   OFFLINE: 'Hors service',
 }
+
+const spotStateOptions = ['AVAILABLE', 'OCCUPIED', 'RESERVED', 'OFFLINE']
 
 const toNumber = (value, fallback) => {
   const parsed = Number(value)
@@ -67,8 +102,93 @@ const toNumber = (value, fallback) => {
   return fallback
 }
 
+const parseLaneInput = (value, maxCount) => {
+  const tokens = String(value ?? '')
+    .split(/[\s,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+  const uniq = new Set()
+
+  tokens.forEach((token) => {
+    const parsed = Math.round(toNumber(token, -1))
+    if (parsed >= 0 && parsed < maxCount) {
+      uniq.add(parsed)
+    }
+  })
+
+  return Array.from(uniq).sort((a, b) => a - b)
+}
+
 const isValidCoordinatePair = (lat, lng) => {
   return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180
+}
+
+const updateParkingRecord = (updatedParking) => {
+  ownerParkings.value = ownerParkings.value.map((parking) => {
+    return parking.id === updatedParking.id ? updatedParking : parking
+  })
+}
+
+const generateSpotLabel = () => {
+  const existing = new Set(selectedSpots.value.map((spot) => spot.label.toUpperCase()))
+  let index = selectedSpots.value.length + 1
+
+  while (index < 10000) {
+    const label = `P${String(index).padStart(2, '0')}`
+    if (!existing.has(label.toUpperCase())) {
+      return label
+    }
+    index += 1
+  }
+
+  return `P${Date.now()}`
+}
+
+const buildOwnerPayload = (parking) => {
+  if (!parking?.location?.valid) {
+    return null
+  }
+
+  const grid = parking.indoorMap?.grid ?? { rows: 0, cols: 0, laneRows: [], laneCols: [] }
+  const spots = Array.isArray(parking.indoorMap?.spots) ? parking.indoorMap.spots : []
+
+  return {
+    parkingId: String(parking.id ?? '').trim(),
+    name: String(parking.name ?? '').trim(),
+    address: String(parking.address ?? '').trim(),
+    location: {
+      lat: Number(parking.location.lat) || 0,
+      lng: Number(parking.location.lng) || 0,
+    },
+    capacity: Math.max(1, Math.round(toNumber(parking.capacity, 1))),
+    indoorMap: {
+      floor: String(parking.indoorMap?.floor ?? 'B1').trim() || 'B1',
+      zone: String(parking.indoorMap?.zone ?? 'Zone A').trim() || 'Zone A',
+      grid: {
+        rows: Math.max(1, Math.round(toNumber(grid.rows, 1))),
+        cols: Math.max(1, Math.round(toNumber(grid.cols, 1))),
+        laneRows: Array.isArray(grid.laneRows) ? grid.laneRows : [],
+        laneCols: Array.isArray(grid.laneCols) ? grid.laneCols : [],
+      },
+      spots: spots.map((spot) => {
+        return {
+          spotId: String(spot.id ?? '').trim(),
+          label: String(spot.label ?? '').trim(),
+          row: Math.max(0, Math.round(toNumber(spot.row, 0))),
+          col: Math.max(0, Math.round(toNumber(spot.col, 0))),
+          type: String(spot.type ?? 'STANDARD').trim().toUpperCase(),
+          state: String(spot.state ?? 'AVAILABLE').trim().toUpperCase(),
+          sensor: {
+            arduinoId: String(spot.sensor?.arduinoId ?? '').trim(),
+            channel: String(spot.sensor?.channel ?? '').trim(),
+            topic: String(spot.sensor?.topic ?? '').trim(),
+          },
+          updatedAt: String(spot.updatedAt ?? new Date().toISOString()),
+        }
+      }),
+    },
+  }
 }
 
 const normalizeSpot = (spot = {}) => {
@@ -87,6 +207,7 @@ const normalizeSpot = (spot = {}) => {
       channel: String(spot?.sensor?.channel ?? '').trim(),
       topic: String(spot?.sensor?.topic ?? '').trim(),
     },
+    updatedAt: String(spot?.updatedAt ?? ''),
   }
 }
 
@@ -129,6 +250,11 @@ const normalizeParking = (payload = {}) => {
           ? grid.laneRows
               .map((row) => Math.max(0, Math.round(toNumber(row, -1))))
               .filter((row) => row >= 0)
+          : [],
+        laneCols: Array.isArray(grid?.laneCols)
+          ? grid.laneCols
+              .map((col) => Math.max(0, Math.round(toNumber(col, -1))))
+              .filter((col) => col >= 0)
           : [],
       },
       spots,
@@ -206,7 +332,7 @@ const selectedParking = computed(() => {
 })
 
 const selectedGrid = computed(() => {
-  return selectedParking.value?.indoorMap?.grid ?? { rows: 0, cols: 0, laneRows: [] }
+  return selectedParking.value?.indoorMap?.grid ?? { rows: 0, cols: 0, laneRows: [], laneCols: [] }
 })
 
 const selectedSpots = computed(() => {
@@ -215,10 +341,6 @@ const selectedSpots = computed(() => {
 
 const selectedSpot = computed(() => {
   return selectedSpots.value.find((spot) => spot.id === selectedSpotId.value) ?? null
-})
-
-const selectedParkingStats = computed(() => {
-  return parkingStats(selectedParking.value)
 })
 
 const selectedLocationLabel = computed(() => {
@@ -286,6 +408,278 @@ const spotMapByCell = computed(() => {
   return map
 })
 
+const syncGridConfigFromParking = () => {
+  const grid = selectedParking.value?.indoorMap?.grid
+
+  if (!grid) {
+    gridConfigForm.rows = 0
+    gridConfigForm.cols = 0
+    gridConfigForm.floor = 'B1'
+    gridConfigForm.zone = 'Zone A'
+    gridConfigForm.laneRows = ''
+    gridConfigForm.laneCols = ''
+    return
+  }
+
+  gridConfigForm.rows = grid.rows
+  gridConfigForm.cols = grid.cols
+  gridConfigForm.floor = selectedParking.value?.indoorMap?.floor ?? 'B1'
+  gridConfigForm.zone = selectedParking.value?.indoorMap?.zone ?? 'Zone A'
+  gridConfigForm.laneRows = Array.isArray(grid.laneRows) ? grid.laneRows.join(',') : ''
+  gridConfigForm.laneCols = Array.isArray(grid.laneCols) ? grid.laneCols.join(',') : ''
+}
+
+const persistSelectedParkingLayout = async ({ successMessage = '', errorPrefix = 'Sauvegarde echouee' } = {}) => {
+  if (savingLayout.value) {
+    return false
+  }
+
+  if (!selectedParking.value) {
+    gridError.value = 'Selectionnez un parking.'
+    return false
+  }
+
+  const payload = buildOwnerPayload(selectedParking.value)
+  if (!payload) {
+    gridError.value = 'Coordonnees parking invalides.'
+    return false
+  }
+
+  savingLayout.value = true
+  gridError.value = ''
+  gridSuccess.value = ''
+
+  try {
+    const result = await upsertOwnerParkingLayout({
+      payload,
+      authHeaders: authStore.authHeaders,
+    })
+
+    if (!result.ok) {
+      gridError.value = `${errorPrefix}: ${result.message}`
+      return false
+    }
+
+    const updatedParking = normalizeParking(result.data)
+    updateParkingRecord(updatedParking)
+    selectedParkingId.value = updatedParking.id
+    gridSuccess.value = successMessage
+    return true
+  } finally {
+    savingLayout.value = false
+  }
+}
+
+const toggleLocationRelocation = () => {
+  if (!selectedParking.value || savingLayout.value) {
+    return
+  }
+
+  relocatingLocation.value = !relocatingLocation.value
+
+  if (relocatingLocation.value) {
+    gridError.value = ''
+    gridSuccess.value = 'Mode deplacement actif: cliquez sur la carte pour definir le nouvel emplacement.'
+    return
+  }
+
+  gridSuccess.value = 'Mode deplacement desactive.'
+}
+
+const relocateSelectedParking = async (lat, lng) => {
+  if (!selectedParking.value) {
+    gridError.value = 'Selectionnez un parking.'
+    return
+  }
+
+  const nextParking = {
+    ...selectedParking.value,
+    location: {
+      lat,
+      lng,
+      valid: true,
+    },
+  }
+
+  updateParkingRecord(nextParking)
+  renderParkingMarkers()
+  focusOnSelectedParking()
+
+  const success = await persistSelectedParkingLayout({
+    successMessage: 'Emplacement parking mis a jour et enregistre.',
+    errorPrefix: 'Enregistrement de l emplacement impossible',
+  })
+
+  if (success) {
+    relocatingLocation.value = false
+  }
+}
+
+const applyGridConfig = async () => {
+  if (!selectedParking.value) {
+    gridError.value = 'Selectionnez un parking.'
+    return
+  }
+
+  const rows = Math.max(1, Math.round(toNumber(gridConfigForm.rows, 1)))
+  const cols = Math.max(1, Math.round(toNumber(gridConfigForm.cols, 1)))
+  const laneRows = parseLaneInput(gridConfigForm.laneRows, rows)
+  const laneCols = parseLaneInput(gridConfigForm.laneCols, cols)
+
+  const nextGrid = {
+    rows,
+    cols,
+    laneRows,
+    laneCols,
+  }
+
+  const nextParking = {
+    ...selectedParking.value,
+    indoorMap: {
+      ...selectedParking.value.indoorMap,
+      floor: String(gridConfigForm.floor ?? 'B1').trim() || 'B1',
+      zone: String(gridConfigForm.zone ?? 'Zone A').trim() || 'Zone A',
+      grid: nextGrid,
+    },
+  }
+
+  updateParkingRecord(nextParking)
+
+  await persistSelectedParkingLayout({
+    successMessage: 'Grille mise a jour et enregistree.',
+    errorPrefix: 'Enregistrement de la grille impossible',
+  })
+}
+
+const addSpotAt = async (row, col) => {
+  if (!selectedParking.value) {
+    gridError.value = 'Selectionnez un parking.'
+    return
+  }
+
+  const spotId = `R${row + 1}C${col + 1}`
+  const label = spotForm.label.trim() || generateSpotLabel()
+
+  const duplicate = selectedSpots.value.some((spot) => spot.label.toUpperCase() === label.toUpperCase())
+  if (duplicate) {
+    gridError.value = 'ID de place deja utilise.'
+    return
+  }
+
+  const nextSpot = {
+    id: spotId,
+    label,
+    row,
+    col,
+    type: spotForm.type,
+    state: spotForm.state,
+    sensor: {
+      arduinoId: spotForm.arduinoId.trim(),
+      channel: spotForm.channel.trim(),
+      topic: spotForm.topic.trim(),
+    },
+    updatedAt: new Date().toISOString(),
+  }
+
+  const nextSpots = [...selectedSpots.value, nextSpot]
+  const nextParking = {
+    ...selectedParking.value,
+    indoorMap: {
+      ...selectedParking.value.indoorMap,
+      spots: nextSpots,
+    },
+  }
+
+  updateParkingRecord(nextParking)
+  selectedSpotId.value = nextSpot.id
+  spotForm.label = ''
+
+  await persistSelectedParkingLayout({
+    successMessage: `Place ${nextSpot.label} ajoutee et enregistree.`,
+    errorPrefix: 'Enregistrement de la place impossible',
+  })
+}
+
+const saveSelectedSpot = async () => {
+  if (!selectedParking.value || !selectedSpot.value) {
+    gridError.value = 'Selectionnez une place a modifier.'
+    return
+  }
+
+  const label = selectedSpotForm.label.trim()
+  if (!label) {
+    gridError.value = 'Le code de place est obligatoire.'
+    return
+  }
+
+  const duplicate = selectedSpots.value.some((spot) => {
+    return spot.id !== selectedSpot.value.id && spot.label.toUpperCase() === label.toUpperCase()
+  })
+
+  if (duplicate) {
+    gridError.value = 'Un autre spot utilise deja ce code.'
+    return
+  }
+
+  const nextSpots = selectedSpots.value.map((spot) => {
+    if (spot.id !== selectedSpot.value.id) {
+      return spot
+    }
+
+    return {
+      ...spot,
+      label,
+      type: selectedSpotForm.type,
+      state: selectedSpotForm.state,
+      sensor: {
+        arduinoId: selectedSpotForm.arduinoId.trim(),
+        channel: selectedSpotForm.channel.trim(),
+        topic: selectedSpotForm.topic.trim(),
+      },
+      updatedAt: new Date().toISOString(),
+    }
+  })
+
+  const nextParking = {
+    ...selectedParking.value,
+    indoorMap: {
+      ...selectedParking.value.indoorMap,
+      spots: nextSpots,
+    },
+  }
+
+  updateParkingRecord(nextParking)
+
+  await persistSelectedParkingLayout({
+    successMessage: 'Place mise a jour et enregistree.',
+    errorPrefix: 'Enregistrement de la place impossible',
+  })
+}
+
+const removeSelectedSpot = async () => {
+  if (!selectedParking.value || !selectedSpot.value) {
+    gridError.value = 'Selectionnez une place a supprimer.'
+    return
+  }
+
+  const nextSpots = selectedSpots.value.filter((spot) => spot.id !== selectedSpot.value.id)
+  const nextParking = {
+    ...selectedParking.value,
+    indoorMap: {
+      ...selectedParking.value.indoorMap,
+      spots: nextSpots,
+    },
+  }
+
+  updateParkingRecord(nextParking)
+  selectedSpotId.value = ''
+
+  await persistSelectedParkingLayout({
+    successMessage: 'Place supprimee et enregistree.',
+    errorPrefix: 'Suppression de la place impossible',
+  })
+}
+
 const syncSelectionFromRoute = () => {
   if (!ownerParkings.value.length) {
     selectedParkingId.value = ''
@@ -320,7 +714,7 @@ const popupNode = (parking) => {
   container.appendChild(idRow)
 
   const ownerRow = document.createElement('div')
-  ownerRow.textContent = `Owner: ${parking.ownerAccount?.name || '-'} | Tel: ${parking.ownerAccount?.phone || '-'}`
+  ownerRow.textContent = `Proprietaire: ${parking.ownerAccount?.name || '-'} | Tel: ${parking.ownerAccount?.phone || '-'}`
   ownerRow.style.fontSize = '12px'
   container.appendChild(ownerRow)
 
@@ -431,6 +825,16 @@ const initializeMap = () => {
     maxZoom: mapConfig.maxZoom,
   }).addTo(map)
 
+  map.on('click', (event) => {
+    if (!relocatingLocation.value || savingLayout.value || !selectedParking.value) {
+      return
+    }
+
+    const lat = Number(event.latlng.lat.toFixed(6))
+    const lng = Number(event.latlng.lng.toFixed(6))
+    relocateSelectedParking(lat, lng)
+  })
+
   markersLayer.value = L.layerGroup().addTo(map)
   mapFatalError.value = ''
   mapInstance.value = map
@@ -456,6 +860,7 @@ const loadOwnerParkings = async () => {
 
     ownerParkings.value = result.data.map((payload) => normalizeParking(payload))
     syncSelectionFromRoute()
+    syncGridConfigFromParking()
     renderParkingMarkers()
   } finally {
     loading.value = false
@@ -497,14 +902,14 @@ const cellClass = (row, col) => {
   if (isLaneCell(row, col)) {
     const laneType = getLaneType(row, col)
     if (laneType === 'intersection') {
-      return 'cursor-default border-solid border-primary bg-primary/10 text-primary font-bold'
+      return 'cursor-not-allowed border-solid border-primary bg-primary/10 text-primary font-bold'
     }
-    return 'cursor-default border-dashed border-outline-variant bg-surface-container text-outline'
+    return 'cursor-not-allowed border-dashed border-outline-variant bg-surface-container text-outline'
   }
 
   const spot = spotAt(row, col)
   if (!spot) {
-    return 'cursor-default border-outline-variant bg-surface-container-low text-outline'
+    return 'cursor-pointer border-outline-variant bg-surface-container-low text-outline hover:border-primary/50 hover:bg-primary/5'
   }
 
   if (spot.state === 'OCCUPIED') {
@@ -528,7 +933,31 @@ const onGridCellClick = (row, col) => {
   }
 
   const spot = spotAt(row, col)
-  selectedSpotId.value = spot?.id ?? ''
+  if (!spot) {
+    addSpotAt(row, col)
+    return
+  }
+
+  selectedSpotId.value = spot.id
+}
+
+const onGridCellRightClick = (row, col) => {
+  if (isLaneCell(row, col)) {
+    return
+  }
+
+  const spot = spotAt(row, col)
+  if (!spot) {
+    return
+  }
+
+  const confirmed = window.confirm(`Supprimer la place ${spot.label} ?`)
+  if (!confirmed) {
+    return
+  }
+
+  selectedSpotId.value = spot.id
+  removeSelectedSpot()
 }
 
 watch(selectedParkingId, (nextValue) => {
@@ -550,6 +979,10 @@ watch(selectedParkingId, (nextValue) => {
   }
 
   selectedSpotId.value = ''
+  relocatingLocation.value = false
+  gridError.value = ''
+  gridSuccess.value = ''
+  syncGridConfigFromParking()
   focusOnSelectedParking()
 })
 
@@ -575,6 +1008,28 @@ watch(
   },
 )
 
+watch(
+  selectedSpot,
+  (spot) => {
+    if (!spot) {
+      selectedSpotForm.label = ''
+      selectedSpotForm.type = 'STANDARD'
+      selectedSpotForm.state = 'AVAILABLE'
+      selectedSpotForm.arduinoId = ''
+      selectedSpotForm.channel = ''
+      selectedSpotForm.topic = ''
+      return
+    }
+
+    selectedSpotForm.label = spot.label
+    selectedSpotForm.type = spot.type
+    selectedSpotForm.state = spot.state
+    selectedSpotForm.arduinoId = spot.sensor?.arduinoId ?? ''
+    selectedSpotForm.channel = spot.sensor?.channel ?? ''
+    selectedSpotForm.topic = spot.sensor?.topic ?? ''
+  },
+)
+
 onMounted(async () => {
   await nextTick()
   initializeMap()
@@ -596,17 +1051,34 @@ onBeforeUnmount(() => {
     <div>
       <h2 class="font-headline text-2xl font-extrabold text-on-surface">Carte en direct</h2>
       <p class="mt-1 text-sm text-on-surface-variant">
-        Meme experience visuelle que l admin, en mode lecture seule pour owner.
+        Modifiez la carte de votre parking, ajustez la grille et sauvegardez vos changements.
       </p>
       <p class="mt-2 inline-flex rounded-lg bg-primary/10 px-3 py-2 text-xs font-semibold text-primary">
-        Mode lecture seule: le compte owner ne peut pas ajouter ou modifier des parkings.
+        Mode edition active: cliquez une case vide pour ajouter une place, puis sauvegardez.
       </p>
     </div>
 
     <div class="grid gap-6 xl:grid-cols-[1.35fr,1fr]">
       <article class="surface-card p-6">
         <h3 class="font-headline text-lg font-bold text-on-surface">Emplacement global du parking</h3>
-        <p class="mt-1 text-sm text-on-surface-variant">Selectionnez un parking owner pour le centrer sur la carte.</p>
+        <p class="mt-1 text-sm text-on-surface-variant">
+          Selectionnez un parking proprietaire pour le centrer. Activez le mode deplacement puis cliquez sur la carte pour modifier son emplacement.
+        </p>
+
+        <div class="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="rounded-lg px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+            :class="relocatingLocation ? 'bg-primary text-white' : 'bg-surface-container text-on-surface hover:bg-surface-container-high'"
+            :disabled="savingLayout || !selectedParking"
+            @click="toggleLocationRelocation"
+          >
+            {{ relocatingLocation ? 'Mode deplacement actif' : 'Modifier emplacement' }}
+          </button>
+          <p v-if="selectedParking" class="text-xs text-on-surface-variant">
+            Position actuelle: {{ selectedLocationLabel }}
+          </p>
+        </div>
 
         <p v-if="mapNotice" class="mt-3 rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-700">
           {{ mapNotice }}
@@ -623,23 +1095,19 @@ onBeforeUnmount(() => {
         </div>
 
         <article v-if="selectedParking" class="mt-4 rounded-2xl bg-surface-container-low p-4">
-          <div class="flex items-start justify-between gap-3">
+          <div class="flex items-start gap-3">
             <div>
               <h4 class="font-headline text-base font-bold text-on-surface">{{ selectedParking.name }}</h4>
               <p class="text-xs text-on-surface-variant">{{ selectedParking.id }}</p>
             </div>
-            <span class="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">
-              {{ selectedParkingStats.occupancyPercent }}% occupe
-            </span>
           </div>
 
           <div class="mt-3 grid gap-2 text-xs text-on-surface-variant sm:grid-cols-2">
             <p><span class="font-semibold text-on-surface">Adresse:</span> {{ selectedParking.address || '-' }}</p>
-            <p><span class="font-semibold text-on-surface">Owner:</span> {{ selectedParkingOwnerLabel }}</p>
+            <p><span class="font-semibold text-on-surface">Proprietaire:</span> {{ selectedParkingOwnerLabel }}</p>
             <p><span class="font-semibold text-on-surface">Telephone:</span> {{ selectedParking.ownerAccount?.phone || '-' }}</p>
             <p><span class="font-semibold text-on-surface">Position:</span> {{ selectedLocationLabel }}</p>
             <p><span class="font-semibold text-on-surface">Capacite:</span> {{ selectedParking.capacity }}</p>
-            <p><span class="font-semibold text-on-surface">Places dessinees:</span> {{ selectedParkingStats.total }}</p>
             <p><span class="font-semibold text-on-surface">Etage:</span> {{ selectedParking.indoorMap?.floor || '-' }}</p>
             <p><span class="font-semibold text-on-surface">Zone:</span> {{ selectedParking.indoorMap?.zone || '-' }}</p>
           </div>
@@ -660,7 +1128,7 @@ onBeforeUnmount(() => {
           </div>
 
           <label class="mt-4 block text-xs font-semibold uppercase tracking-[0.08em] text-outline">
-            Parking owner
+            Parking proprietaire
             <select
               v-model="selectedParkingId"
               class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
@@ -680,7 +1148,7 @@ onBeforeUnmount(() => {
           </p>
 
           <div v-if="selectedParking" class="mt-4 grid gap-2 text-xs text-on-surface-variant sm:grid-cols-2">
-            <p><span class="font-semibold text-on-surface">Owner:</span> {{ selectedParking.ownerAccount?.name || '-' }}</p>
+            <p><span class="font-semibold text-on-surface">Proprietaire:</span> {{ selectedParking.ownerAccount?.name || '-' }}</p>
             <p><span class="font-semibold text-on-surface">Email:</span> {{ selectedParking.ownerAccount?.email || '-' }}</p>
             <p><span class="font-semibold text-on-surface">Jours:</span> {{ selectedWorkingDaysLabel }}</p>
             <p><span class="font-semibold text-on-surface">Heures:</span> {{ selectedParking.businessSettings.openingTime }} - {{ selectedParking.businessSettings.closingTime }}</p>
@@ -691,16 +1159,211 @@ onBeforeUnmount(() => {
         </article>
 
         <article class="surface-card p-6">
-          <h3 class="font-headline text-lg font-bold text-on-surface">Carte interieure (lecture seule)</h3>
-          <p class="mt-1 text-sm text-on-surface-variant">
-            Visualisation des voies et places. Cliquez une place pour afficher ses details.
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 class="font-headline text-lg font-bold text-on-surface">Carte interieure (edition)</h3>
+              <p class="mt-1 text-sm text-on-surface-variant">
+                Modifiez la grille, ajoutez des places, puis sauvegardez votre carte.
+              </p>
+            </div>
+            <button
+              type="button"
+              class="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="savingLayout || !selectedParking"
+              @click="persistSelectedParkingLayout({ successMessage: 'Carte enregistree.', errorPrefix: 'Enregistrement impossible' })"
+            >
+              {{ savingLayout ? 'Sauvegarde...' : 'Sauvegarder la carte' }}
+            </button>
+          </div>
+
+          <p v-if="gridError" class="mt-3 rounded-lg bg-red-100 px-3 py-2 text-sm font-semibold text-red-700">
+            {{ gridError }}
+          </p>
+          <p v-if="gridSuccess" class="mt-3 rounded-lg bg-emerald-100 px-3 py-2 text-sm font-semibold text-emerald-700">
+            {{ gridSuccess }}
           </p>
 
-          <div class="mt-4 grid grid-cols-6 gap-2 text-xs font-semibold">
-            <span class="rounded-lg bg-emerald-100 px-2 py-1 text-emerald-700">Libres: {{ selectedParkingStats.available }}</span>
-            <span class="rounded-lg bg-red-100 px-2 py-1 text-red-700">Occupees: {{ selectedParkingStats.occupied }}</span>
-            <span class="rounded-lg bg-amber-100 px-2 py-1 text-amber-700">Reservees: {{ selectedParkingStats.reserved }}</span>
-            <span class="rounded-lg bg-slate-200 px-2 py-1 text-slate-700">Offline: {{ selectedParkingStats.offline }}</span>
+          <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+              Lignes
+              <input
+                v-model.number="gridConfigForm.rows"
+                type="number"
+                min="1"
+                class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </label>
+            <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+              Colonnes
+              <input
+                v-model.number="gridConfigForm.cols"
+                type="number"
+                min="1"
+                class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </label>
+            <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+              Etage
+              <input
+                v-model.trim="gridConfigForm.floor"
+                type="text"
+                class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </label>
+            <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+              Zone
+              <input
+                v-model.trim="gridConfigForm.zone"
+                type="text"
+                class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </label>
+            <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+              Voies lignes
+              <input
+                v-model.trim="gridConfigForm.laneRows"
+                type="text"
+                placeholder="2, 4"
+                class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </label>
+            <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
+              Voies colonnes
+              <input
+                v-model.trim="gridConfigForm.laneCols"
+                type="text"
+                placeholder="3"
+                class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </label>
+          </div>
+
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              class="rounded-lg bg-surface-container px-3 py-2 text-xs font-semibold text-on-surface hover:bg-surface-container-high"
+              :disabled="savingLayout || !selectedParking"
+              @click="applyGridConfig"
+            >
+              Appliquer la grille
+            </button>
+            <p class="text-xs text-on-surface-variant">Cliquez une case vide pour ajouter une place.</p>
+          </div>
+
+          <div class="mt-4 grid gap-3 md:grid-cols-2">
+            <div class="rounded-xl bg-surface-container-low p-3">
+              <p class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">Nouvelle place</p>
+              <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                <input
+                  v-model.trim="spotForm.label"
+                  type="text"
+                  placeholder="Code (auto si vide)"
+                  class="w-full rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <select
+                  v-model="spotForm.type"
+                  class="w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  <option v-for="option in spotTypeOptions" :key="option" :value="option">
+                    {{ typeLabelMap[option] || option }}
+                  </option>
+                </select>
+                <select
+                  v-model="spotForm.state"
+                  class="w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  <option v-for="option in spotStateOptions" :key="option" :value="option">
+                    {{ stateLabelMap[option] || option }}
+                  </option>
+                </select>
+                <input
+                  v-model.trim="spotForm.arduinoId"
+                  type="text"
+                  placeholder="Arduino ID"
+                  class="w-full rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <input
+                  v-model.trim="spotForm.channel"
+                  type="text"
+                  placeholder="Canal"
+                  class="w-full rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <input
+                  v-model.trim="spotForm.topic"
+                  type="text"
+                  placeholder="Topic"
+                  class="w-full rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+            </div>
+
+            <div class="rounded-xl bg-surface-container-low p-3">
+              <p class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">Place selectionnee</p>
+              <div v-if="selectedSpot" class="mt-2 grid gap-2 sm:grid-cols-2">
+                <input
+                  v-model.trim="selectedSpotForm.label"
+                  type="text"
+                  placeholder="Code"
+                  class="w-full rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <select
+                  v-model="selectedSpotForm.type"
+                  class="w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  <option v-for="option in spotTypeOptions" :key="option" :value="option">
+                    {{ typeLabelMap[option] || option }}
+                  </option>
+                </select>
+                <select
+                  v-model="selectedSpotForm.state"
+                  class="w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  <option v-for="option in spotStateOptions" :key="option" :value="option">
+                    {{ stateLabelMap[option] || option }}
+                  </option>
+                </select>
+                <input
+                  v-model.trim="selectedSpotForm.arduinoId"
+                  type="text"
+                  placeholder="Arduino ID"
+                  class="w-full rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <input
+                  v-model.trim="selectedSpotForm.channel"
+                  type="text"
+                  placeholder="Canal"
+                  class="w-full rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <input
+                  v-model.trim="selectedSpotForm.topic"
+                  type="text"
+                  placeholder="Topic"
+                  class="w-full rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <div class="flex flex-wrap items-center gap-2 sm:col-span-2">
+                  <button
+                    type="button"
+                    class="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+                    :disabled="savingLayout"
+                    @click="saveSelectedSpot"
+                  >
+                    Enregistrer la place
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    :disabled="savingLayout"
+                    @click="removeSelectedSpot"
+                  >
+                    Supprimer
+                  </button>
+                </div>
+              </div>
+              <p v-else class="mt-2 text-xs text-on-surface-variant">Selectionnez une place pour la modifier.</p>
+            </div>
+          </div>
+
+          <div class="mt-4 grid grid-cols-2 gap-2 text-xs font-semibold">
             <span class="rounded-lg bg-surface-container px-2 py-1 text-outline">— Voie horiz</span>
             <span class="rounded-lg bg-primary/10 px-2 py-1 text-primary font-bold">✕ Croisement</span>
           </div>
@@ -718,6 +1381,7 @@ onBeforeUnmount(() => {
                   class="flex h-16 flex-col items-center justify-center rounded-lg border text-xs font-bold transition"
                   :class="[cellClass(row, col), selectedSpot?.row === row && selectedSpot?.col === col ? 'ring-2 ring-primary/60' : '']"
                   @click="onGridCellClick(row, col)"
+                  @contextmenu.prevent="onGridCellRightClick(row, col)"
                 >
                   <template v-if="isLaneCell(row, col)">
                     <template v-if="getLaneType(row, col) === 'intersection'">
@@ -735,7 +1399,7 @@ onBeforeUnmount(() => {
                     <span class="text-[10px]">{{ typeLabelMap[spotAt(row, col).type] }}</span>
                   </template>
                   <template v-else>
-                    -
+                    +
                   </template>
                 </button>
               </template>
@@ -759,7 +1423,7 @@ onBeforeUnmount(() => {
     </div>
 
     <p v-if="!loading && !ownerParkings.length" class="rounded-lg bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface-variant">
-      Aucun parking disponible pour ce compte owner.
+      Aucun parking disponible pour ce compte proprietaire.
     </p>
   </section>
 </template>
