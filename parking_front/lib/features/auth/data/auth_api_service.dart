@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../../core/constants/api_constants.dart';
+import '../../../core/network/app_http_client.dart';
 
 class AuthApiException implements Exception {
   final String message;
@@ -33,19 +34,7 @@ class AuthApiResult {
 class AuthApiService {
   final Dio _dio;
 
-  AuthApiService({Dio? dio})
-      : _dio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: ApiConstants.baseUrl,
-                headers: <String, String>{
-                  'Accept': 'application/json',
-                  'Content-Type': 'application/json',
-                },
-                connectTimeout: const Duration(seconds: 30),
-                receiveTimeout: const Duration(seconds: 30),
-              ),
-            );
+  AuthApiService({Dio? dio}) : _dio = dio ?? AppHttpClient.instance;
 
   Future<AuthApiResult> login({
     required String email,

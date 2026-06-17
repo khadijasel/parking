@@ -48,6 +48,11 @@ dependencies:
   cupertino_icons: ^1.0.6
   mobile_scanner: ^7.2.0
 
+  # Notifications système (locales) + planification (même app fermée)
+  flutter_local_notifications: ^17.2.3
+  timezone: ^0.9.4
+  flutter_timezone: ^3.0.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

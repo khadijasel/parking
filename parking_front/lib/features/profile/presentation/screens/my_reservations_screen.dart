@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:parking_front/core/services/notification_service.dart';
 import 'package:parking_front/core/widgets/app_feedback.dart';
 import 'package:parking_front/features/main/main_screen.dart';
 import 'package:parking_front/features/scanner/presentation/screens/scanner_screen.dart';
@@ -194,10 +195,6 @@ class MyReservationsScreen extends StatefulWidget {
 }
 
 class _MyReservationsScreenState extends State<MyReservationsScreen> {
-  static const Duration _screenCacheTtl = Duration(seconds: 20);
-  static List<ReservationModel>? _screenCache;
-  static DateTime? _screenCacheAt;
-
   final ReservationRepository _reservationRepository = ReservationRepository();
   final ParkingAvailabilityRepository _availabilityRepository =
       ParkingAvailabilityRepository();
@@ -207,6 +204,7 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   String? _cancellingId;
+  String? _updatingTimerId;
   Map<String, int> _dynamicSpotsById = const <String, int>{};
   Map<String, int> _dynamicSpotsByName = const <String, int>{};
   final Set<String> _expiringNotifiedIds = <String>{};
@@ -214,22 +212,16 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
   @override
   void initState() {
     super.initState();
-    final bool hasFreshScreenCache = _screenCache != null &&
-        _screenCacheAt != null &&
-        DateTime.now().difference(_screenCacheAt!) < _screenCacheTtl;
-
-    if (hasFreshScreenCache) {
-      _reservations = List<ReservationModel>.from(_screenCache!);
-      _isLoading = false;
-    }
-
     _loadReservations();
     _refreshDynamicAvailability();
 
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() {});
+      if (!mounted) {
+        return;
       }
+      setState(() {});
+      // Vérifie à chaque seconde pour déclencher l'alerte au bon moment.
+      _notifyExpiringReservations(_reservations);
     });
   }
 
@@ -275,9 +267,7 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
       });
 
       _notifyExpiringReservations(mapped);
-
-      _screenCache = List<ReservationModel>.from(mapped);
-      _screenCacheAt = DateTime.now();
+      _syncExpiryNotifications(mapped);
     } on ReservationException catch (error) {
       if (!mounted) {
         return;
@@ -340,8 +330,31 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
 
       AppFeedback.showWarning(
         context,
-        'Votre reservation expire bientot (moins de 5 minutes).',
+        'Votre reservation expire bientot : il reste moins de 5 minutes pour arriver au parking.',
       );
+    }
+  }
+
+  /// Planifie une notification SYSTÈME 2 min avant l'expiration de chaque
+  /// réservation active (se déclenche même app fermée). Annule celles qui ne
+  /// sont plus actives pour ne pas notifier à tort.
+  void _syncExpiryNotifications(List<ReservationModel> reservations) {
+    for (final ReservationModel reservation in reservations) {
+      final int notifId = NotificationService.idFor(reservation.id);
+      final DateTime? expiresAt = reservation.expiresAt;
+
+      if (reservation.uiStatus == ReservationUiStatus.active &&
+          expiresAt != null) {
+        NotificationService.instance.scheduleAt(
+          notifId,
+          'Réservation bientôt expirée',
+          'Il reste 5 minutes pour arriver à ${reservation.parkingName}. '
+              'Au-delà, la place sera libérée.',
+          expiresAt.subtract(const Duration(minutes: 5)),
+        );
+      } else {
+        NotificationService.instance.cancel(notifId);
+      }
     }
   }
 
@@ -432,6 +445,58 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
     }
   }
 
+  Future<void> _extendReservation(String reservationId) async {
+    await _updateReservationTimer(
+      reservationId,
+      action: () => _reservationRepository.extendReservation(reservationId),
+      successMessage: 'Reservation prolongee de 15 minutes.',
+      errorMessage: 'Impossible de prolonger la reservation.',
+    );
+  }
+
+  Future<void> _updateReservationTimer(
+    String reservationId, {
+    required Future<void> Function() action,
+    required String successMessage,
+    required String errorMessage,
+  }) async {
+    if (_updatingTimerId != null) {
+      return;
+    }
+
+    setState(() {
+      _updatingTimerId = reservationId;
+    });
+
+    try {
+      await action();
+      // Le minuteur a changé : on autorise à nouveau l'alerte d'expiration.
+      _expiringNotifiedIds.remove(reservationId);
+      await _loadReservations(forceRefresh: true);
+
+      if (!mounted) {
+        return;
+      }
+      AppFeedback.showSuccess(context, successMessage);
+    } on ReservationException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      AppFeedback.showError(context, error.message);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      AppFeedback.showError(context, errorMessage);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _updatingTimerId = null;
+        });
+      }
+    }
+  }
+
   Future<void> _scanTicket(String _reservationId) async {
     if (!mounted) {
       return;
@@ -441,7 +506,7 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => ScannerScreen(
-          onScanSuccess: () async {
+          onScanSuccess: (_) async {
             await _loadReservations(forceRefresh: true);
             if (mounted) {
               Navigator.pop(context);
@@ -670,8 +735,10 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
                             reservation: r,
                             remaining: _remainingFor(r),
                             isCancelling: _cancellingId == r.id,
+                            isUpdatingTimer: _updatingTimerId == r.id,
                             onCancel: () => _cancelReservation(r.id),
                             onDetails: () => _openReservationDetails(r),
+                            onExtend: () => _extendReservation(r.id),
                           )),
                       const SizedBox(height: 20),
                     ],
@@ -773,15 +840,19 @@ class _ActiveCard extends StatelessWidget {
   final ReservationModel reservation;
   final Duration remaining;
   final bool isCancelling;
+  final bool isUpdatingTimer;
   final Future<void> Function() onCancel;
   final VoidCallback onDetails;
+  final VoidCallback onExtend;
 
   const _ActiveCard({
     required this.reservation,
     required this.remaining,
     required this.isCancelling,
+    required this.isUpdatingTimer,
     required this.onCancel,
     required this.onDetails,
+    required this.onExtend,
   });
 
   String _pad(int n) => n.toString().padLeft(2, '0');
@@ -935,6 +1006,39 @@ class _ActiveCard extends StatelessWidget {
                   ),
           ),
         ),
+        // Un seul bouton clair pour gagner du temps (uniquement si délai actif).
+        if (reservation.expiresAt != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: isUpdatingTimer ? null : onExtend,
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: _kBlue),
+                  fixedSize: const Size.fromHeight(46),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: isUpdatingTimer
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: _kBlue),
+                      )
+                    : const Icon(Icons.more_time_rounded,
+                        color: _kBlue, size: 18),
+                label: Text(
+                  isUpdatingTimer ? 'Prolongation...' : 'Prolonger (+15 min)',
+                  style: const TextStyle(
+                      color: _kBlue,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14),
+                ),
+              ),
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           child: Row(children: [

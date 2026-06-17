@@ -5,6 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:parking_front/core/widgets/app_feedback.dart';
 import '../../../core/services/location_service.dart';
+import '../../../core/services/notification_service.dart';
 import '../data/parking_availability_repository.dart';
 import '../data/parking_repository.dart';
 import '../../../theme/app_colors.dart';
@@ -62,8 +63,11 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
   Timer? _availabilityRefreshTimer;
   bool _isRefreshingAvailability = false;
   final Set<String> _notifiedFullParkings = <String>{};
+  // Dernier niveau de remplissage notifié pour le parking guidé
+  // ('full' / 'low' / 'ok') → ne renotifie qu'au changement de niveau.
+  String? _routeNotifLevel;
 
-  static const Duration _availabilityRefreshInterval = Duration(seconds: 30);
+  static const Duration _availabilityRefreshInterval = Duration(seconds: 12);
 
   LatLng get _routeStartPoint => _userLocation ?? const LatLng(36.7650, 3.0570);
 
@@ -199,9 +203,20 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
         _dynamicSpotsByName = mapped;
       });
 
+      // Notification ciblée : seulement quand on suit la route vers un parking
+      // précis et qu'il est presque plein (1 place) ou complet.
+      _maybeNotifyGuidanceParkingFull();
+
       for (final item in availability) {
         final String parkingName = item.parkingName.trim();
         if (parkingName.isEmpty) continue;
+        // Le parking vers lequel on se guide a sa propre notification ciblée.
+        if (_showRouteToSelected &&
+            _selectedParking != null &&
+            _normalizeParkingName(_selectedParking!.name) ==
+                _normalizeParkingName(parkingName)) {
+          continue;
+        }
         if (item.availableSpots == 0) {
           if (!_notifiedFullParkings.contains(parkingName)) {
             _notifiedFullParkings.add(parkingName);
@@ -234,6 +249,87 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     } finally {
       _isRefreshingAvailability = false;
     }
+  }
+
+  /// Notifie l'utilisateur qui suit la route vers un parking lorsqu'il ne reste
+  /// qu'une place (presque plein) ou qu'il est complet. Une seule notification
+  /// par état, réarmée si la disponibilité remonte ou si la route change.
+  void _maybeNotifyGuidanceParkingFull() {
+    final Parking? target = _selectedParking;
+    if (!_showRouteToSelected || target == null) {
+      _routeNotifLevel = null;
+      return;
+    }
+
+    final int spots = _resolveAvailableSpots(target);
+    // Niveau de remplissage : complet / presque plein (1-2) / ok (3+)
+    final String level = spots <= 0 ? 'full' : (spots <= 2 ? 'low' : 'ok');
+    final String? prev = _routeNotifLevel;
+
+    // On ne notifie que lorsque le niveau CHANGE (pas de spam).
+    if (level == prev) {
+      return;
+    }
+    _routeNotifLevel = level;
+
+    if (!mounted) {
+      return;
+    }
+
+    // Cas demandé : le parking ÉTAIT complet et des places se libèrent.
+    if (prev == 'full' && spots > 0) {
+      _pushRouteNotif(
+        'Place disponible',
+        'Une place s\'est libérée à ${target.name} ($spots dispo). Dépêchez-vous !',
+        const Color(0xFF2ECC71),
+        Icons.local_parking,
+      );
+      return;
+    }
+
+    if (level == 'full') {
+      _pushRouteNotif(
+        'Parking complet',
+        '${target.name} est complet. Vous risquez de ne pas trouver de place à l\'arrivée.',
+        const Color(0xFFE53935),
+        Icons.block_rounded,
+      );
+      return;
+    }
+
+    if (level == 'low') {
+      _pushRouteNotif(
+        'Parking presque plein',
+        '${target.name} : il ne reste que $spots place${spots > 1 ? 's' : ''}.',
+        const Color(0xFFEF8D22),
+        Icons.warning_amber_rounded,
+      );
+    }
+    // level == 'ok' : assez de places → niveau mémorisé, aucune notification.
+  }
+
+  // Émet une notification système + une bannière in-app (même contenu).
+  void _pushRouteNotif(
+      String title, String message, Color bg, IconData icon) {
+    NotificationService.instance.show(900001, title, message);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          Icon(icon, color: Colors.white, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ]),
+        backgroundColor: bg,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+      ),
+    );
   }
 
   Future<void> _loadParkings({bool forceRefresh = false}) async {
@@ -333,6 +429,7 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     {'label': 'Électrique', 'icon': Icons.bolt},
     {'label': 'GPL', 'icon': Icons.local_gas_station},
     {'label': 'Tramway', 'icon': Icons.tram},
+    {'label': 'Métro', 'icon': Icons.directions_subway},
     {'label': 'Téléphérique', 'icon': Icons.cable_rounded},
     {'label': '24h/7j', 'icon': Icons.access_time},
     {'label': 'Handicapé', 'icon': Icons.accessible},
@@ -366,6 +463,13 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
         return equipments.contains('gpl') || tags.contains('gpl');
       case 'Tramway':
         return tags.contains('tram') || nameAndAddress.contains('tram');
+      case 'Métro':
+        return tags.contains('métro') ||
+            tags.contains('metro') ||
+            equipments.contains('métro') ||
+            equipments.contains('metro') ||
+            nameAndAddress.contains('métro') ||
+            nameAndAddress.contains('metro');
       case 'Téléphérique':
         return parking.nearTelepherique ||
             tags.contains('téléph') ||
@@ -695,6 +799,8 @@ class _MapHomeScreenState extends State<MapHomeScreen> {
     });
 
     _fitRouteInView();
+    // Alerte immédiate si le parking visé est déjà presque plein/complet.
+    _maybeNotifyGuidanceParkingFull();
   }
 
   void _selectParking(Parking parking) {

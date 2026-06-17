@@ -17,6 +17,10 @@ class ParkingAvailabilityController extends Controller
 
     public function index(): JsonResponse
     {
+        // Libere d'abord les reservations expirees (30 min courte / 1 h longue)
+        // afin que la place reapparaisse comme disponible pour TOUS les comptes.
+        $this->availabilityService->releaseExpiredReservations();
+
         return response()->json([
             'message' => 'Parking availability retrieved successfully.',
             'data' => $this->availabilityService->list(),

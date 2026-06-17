@@ -122,6 +122,8 @@ Route::prefix('user')->middleware('auth:user')->group(function (): void {
 	Route::get('reservations', [ReservationController::class, 'index']);
 	Route::get('reservations/{reservationId}', [ReservationController::class, 'show']);
 	Route::post('reservations/{reservationId}/go', [ReservationController::class, 'go']);
+	Route::post('reservations/{reservationId}/extend', [ReservationController::class, 'extend']);
+	Route::post('reservations/{reservationId}/reset', [ReservationController::class, 'reset']);
 	Route::post('reservations/{reservationId}/scan-ticket', [ReservationController::class, 'scanTicket']);
 	Route::delete('reservations/{reservationId}', [ReservationController::class, 'cancel']);
 	Route::get('parking-sessions/current', [ReservationController::class, 'currentSession']);

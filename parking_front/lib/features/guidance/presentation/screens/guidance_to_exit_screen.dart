@@ -232,7 +232,8 @@ class _GuidanceToExitScreenState extends State<GuidanceToExitScreen>
             MaterialPageRoute(
               builder: (_) => ScannerScreen(
                 initialMode: ScanMode.exit,
-                onScanSuccess: () {
+                autoCloseOnExit: true,
+                onScanSuccess: (_) {
                   // Empty callback - scanner handles exit session closure
                 },
               ),

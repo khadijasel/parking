@@ -65,16 +65,25 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
-  void _openHomeWithRefresh() {
+  void _onScanSuccess(ScanMode mode) {
     if (!mounted) {
       return;
     }
 
-    // Refresh home in background but stay on scanner tab so user
-    // can keep scanning multiple tickets without the camera closing.
-    setState(() {
-      _homeRefreshTick++;
-    });
+    if (mode == ScanMode.entry) {
+      // Après une entrée validée → on bascule sur l'accueil pour afficher
+      // directement la session en cours.
+      setState(() {
+        _currentIndex = 0;
+        _homeRefreshTick++;
+      });
+    } else {
+      // Sortie : on rafraîchit l'accueil mais on reste sur le scanner pour
+      // permettre de scanner un nouveau ticket aussitôt (caméra active).
+      setState(() {
+        _homeRefreshTick++;
+      });
+    }
   }
 
   Widget _buildHomeTab() {
@@ -97,7 +106,10 @@ class _MainScreenState extends State<MainScreen> {
           showRouteToSelected: widget.initialMapRoute,
         );
       case 2:
-        return ScannerScreen(onScanSuccess: _openHomeWithRefresh);
+        return ScannerScreen(
+          isActive: _currentIndex == 2,
+          onScanSuccess: _onScanSuccess,
+        );
       case 3:
         return const ProfileScreen();
       default:

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Voiture du splash en dégradé bleu, sur fond blanc (comme le splash). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:translateX="23"
+        android:translateY="23"
+        android:scaleX="0.62"
+        android:scaleY="0.62">
+        <!-- Carrosserie (dégradé bleu, comme le splash) -->
+        <path
+            android:strokeWidth="6.5"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M30,35 C30,25 70,20 75,35 C78,45 60,50 50,50 C35,50 22,55 25,70 C28,85 70,80 75,70">
+            <aapt:attr name="android:strokeColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="25"
+                    android:startY="25"
+                    android:endX="80"
+                    android:endY="80"
+                    android:startColor="#FF2563EB"
+                    android:endColor="#FF60A5FA" />
+            </aapt:attr>
+        </path>
+        <!-- Prise de recharge -->
+        <path android:strokeColor="#FF2563EB" android:strokeWidth="6.5"
+            android:strokeLineCap="round" android:pathData="M75,70 L85,70" />
+        <path android:strokeColor="#FF2563EB" android:strokeWidth="6.5"
+            android:strokeLineCap="round" android:pathData="M82,65 L82,75" />
+        <path android:strokeColor="#FF2563EB" android:strokeWidth="6.5"
+            android:strokeLineCap="round" android:pathData="M88,65 L88,75" />
+        <!-- Roues -->
+        <path android:fillColor="#FF2563EB"
+            android:pathData="M35,72 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z" />
+        <path android:fillColor="#FF2563EB"
+            android:pathData="M59,72 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z" />
+        <!-- Details prise -->
+        <path android:fillColor="#FF2563EB" android:pathData="M75,64 h2 v2 h-2 z" />
+        <path android:fillColor="#FF2563EB" android:pathData="M79,64 h2 v2 h-2 z" />
+        <path android:fillColor="#FF2563EB" android:pathData="M75,74 h2 v2 h-2 z" />
+    </group>
+</vector>

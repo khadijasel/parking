@@ -4,6 +4,7 @@ namespace App\Services\Parking;
 
 use App\Models\Parking;
 use App\Models\ParkingAvailability;
+use App\Models\Reservation;
 use Carbon\CarbonImmutable;
 
 class ParkingAvailabilityService
@@ -44,6 +45,117 @@ class ParkingAvailabilityService
             ->map(fn (ParkingAvailability $item): array => $this->toPayload($item))
             ->values()
             ->all();
+    }
+
+    /**
+     * Annule globalement les reservations actives expirees et libere leur place.
+     *
+     * La libération etait jusqu'ici "paresseuse" (declenchee seulement quand le
+     * proprietaire de la reservation interrogeait l'API). Resultat : pour les
+     * autres comptes, la place restait reservee indefiniment. Ce balayage,
+     * appele a chaque consultation de la disponibilite, libere la place pour
+     * TOUT le monde des que le delai est depasse :
+     *   - courte duree  → 30 min
+     *   - longue duree  → 1 h
+     * (les deux delais sont fixes dans ReservationController::store via expires_at).
+     *
+     * @return int Nombre de reservations liberees.
+     */
+    public function releaseExpiredReservations(): int
+    {
+        $now = CarbonImmutable::now();
+
+        $expired = Reservation::query()
+            ->whereIn('reservation_status', ['pending_payment', 'confirmed', 'in_transit'])
+            ->whereNotNull('expires_at')
+            ->where('expires_at', '<=', $now)
+            ->get();
+
+        $released = 0;
+        foreach ($expired as $reservation) {
+            $reservation->reservation_status = 'cancelled_timeout';
+            $reservation->cancelled_at = $now;
+            if ((string) ($reservation->payment_status ?? '') !== 'paid') {
+                $reservation->payment_status = 'cancelled';
+            }
+
+            if ((bool) ($reservation->spot_locked ?? false) === true) {
+                $spotLabel = trim((string) ($reservation->spot_label ?? ''));
+                $parking = $this->resolveParkingRecord(
+                    (string) ($reservation->parking_id ?? ''),
+                    (string) ($reservation->parking_name ?? ''),
+                );
+
+                if ($parking instanceof Parking && $spotLabel !== '') {
+                    $this->releaseIndoorSpotLabel($parking, $spotLabel);
+                }
+
+                $this->releaseSpot(
+                    (string) ($reservation->parking_name ?? ''),
+                    (string) ($reservation->parking_id ?? ''),
+                );
+
+                $reservation->spot_locked = false;
+            }
+
+            $reservation->save();
+            $released++;
+        }
+
+        return $released;
+    }
+
+    /**
+     * Repasse une place RESERVED a AVAILABLE dans la carte indoor du parking et
+     * recalcule le nombre de places libres. Miroir de la logique des controllers.
+     */
+    private function releaseIndoorSpotLabel(Parking $parking, string $spotLabel): void
+    {
+        $spotLabel = strtoupper(trim($spotLabel));
+        if ($spotLabel === '') {
+            return;
+        }
+
+        $indoorMap = (array) ($parking->indoor_map ?? []);
+        $spots = collect($indoorMap['spots'] ?? [])
+            ->map(fn ($spot): array => (array) $spot)
+            ->values()
+            ->all();
+
+        if (! count($spots)) {
+            return;
+        }
+
+        $didUpdate = false;
+        foreach ($spots as $index => $spot) {
+            if (strtoupper(trim((string) ($spot['label'] ?? ''))) !== $spotLabel) {
+                continue;
+            }
+
+            if (strtoupper(trim((string) ($spot['state'] ?? ''))) === 'RESERVED') {
+                $spots[$index] = [
+                    ...$spot,
+                    'state' => 'AVAILABLE',
+                    'updatedAt' => CarbonImmutable::now()->toIso8601String(),
+                ];
+                $didUpdate = true;
+            }
+
+            break;
+        }
+
+        if (! $didUpdate) {
+            return;
+        }
+
+        $parking->indoor_map = [
+            ...$indoorMap,
+            'spots' => $spots,
+        ];
+        $parking->available_spots = collect($spots)
+            ->filter(fn (array $spot): bool => strtoupper(trim((string) ($spot['state'] ?? ''))) === 'AVAILABLE')
+            ->count();
+        $parking->save();
     }
 
     public function lockSpot(string $parkingName, ?string $parkingId = null): bool

@@ -13,7 +13,7 @@ import 'vehicle_parked_confirmation_screen.dart';
 const _kBg = Color(0xFFF0F4FA);
 const _kBlue = Color(0xFF4A90E2);
 const _kGreen = Color(0xFF2ECC71);
-const _kYellow = Color(0xFFFFD600);
+const _kOrange = Color(0xFFF5A623);
 const _kRed = Color(0xFFE53935);
 const _kDark = Color(0xFF1A1A2E);
 const _kMid = Color(0xFF8A9BB5);
@@ -653,7 +653,7 @@ class _SpotFinderTopViewPainter extends CustomPainter {
         case GuidanceSpotState.available:
           fillColor = _kGreen;
         case GuidanceSpotState.reserved:
-          fillColor = _kYellow;
+          fillColor = _kOrange;
         case GuidanceSpotState.occupied:
           fillColor = _kRed;
       }

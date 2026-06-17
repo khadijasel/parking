@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../../core/constants/api_constants.dart';
+import '../../../core/network/app_http_client.dart';
 
 class ProfileApiException implements Exception {
   final String message;
@@ -16,19 +17,7 @@ class ProfileApiException implements Exception {
 class ProfileApiService {
   final Dio _dio;
 
-  ProfileApiService({Dio? dio})
-      : _dio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: ApiConstants.baseUrl,
-                headers: const <String, String>{
-                  'Accept': 'application/json',
-                  'Content-Type': 'application/json',
-                },
-                connectTimeout: const Duration(seconds: 30),
-                receiveTimeout: const Duration(seconds: 30),
-              ),
-            );
+  ProfileApiService({Dio? dio}) : _dio = dio ?? AppHttpClient.instance;
 
   Future<Map<String, dynamic>> fetchProfile({required String token}) async {
     try {

@@ -1,3 +1,4 @@
+import '../../reservation/data/reservation_repository.dart';
 import 'auth_api_service.dart';
 import 'auth_local_storage.dart';
 
@@ -37,6 +38,9 @@ class AuthRepository {
         password: password,
       );
 
+      // Nouveau compte connecte → on jette les donnees du compte precedent.
+      ReservationRepository.clearAccountScopedCaches();
+
       await _localStorage.saveSession(
         token: result.token,
         user: result.user,
@@ -59,6 +63,9 @@ class AuthRepository {
         idToken: idToken,
         accessToken: accessToken,
       );
+
+      // Nouveau compte connecte → on jette les donnees du compte precedent.
+      ReservationRepository.clearAccountScopedCaches();
 
       await _localStorage.saveSession(
         token: result.token,
@@ -89,6 +96,9 @@ class AuthRepository {
         passwordConfirmation: passwordConfirmation,
       );
 
+      // Nouveau compte cree → on repart d'un cache vierge.
+      ReservationRepository.clearAccountScopedCaches();
+
       await _localStorage.saveSession(
         token: result.token,
         user: result.user,
@@ -111,6 +121,7 @@ class AuthRepository {
     final bool isValid = await _apiService.validateSession(token);
     if (!isValid) {
       await _localStorage.clearSession();
+      ReservationRepository.clearAccountScopedCaches();
     }
 
     return isValid;
@@ -127,6 +138,7 @@ class AuthRepository {
       // In case of network issues, we still clear local session.
     } finally {
       await _localStorage.clearSession();
+      ReservationRepository.clearAccountScopedCaches();
     }
   }
 
@@ -164,7 +176,10 @@ class AuthRepository {
     }
   }
 
-  Future<void> clearSession() => _localStorage.clearSession();
+  Future<void> clearSession() async {
+    await _localStorage.clearSession();
+    ReservationRepository.clearAccountScopedCaches();
+  }
 
   Future<Map<String, dynamic>?> readUser() => _localStorage.readUser();
 }

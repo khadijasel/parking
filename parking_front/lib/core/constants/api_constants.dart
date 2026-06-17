@@ -68,6 +68,10 @@ class ApiConstants {
       '/user/reservations/$reservationId';
   static String userReservationGoPath(String reservationId) =>
       '/user/reservations/$reservationId/go';
+  static String userReservationExtendPath(String reservationId) =>
+      '/user/reservations/$reservationId/extend';
+  static String userReservationResetPath(String reservationId) =>
+      '/user/reservations/$reservationId/reset';
   static String userReservationScanTicketPath(String reservationId) =>
       '/user/reservations/$reservationId/scan-ticket';
   static const String userParkingSessionCurrentPath =

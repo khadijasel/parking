@@ -1,3 +1,4 @@
+import '../../../core/services/notification_service.dart';
 import '../../auth/data/auth_local_storage.dart';
 import 'models/parking_session_api_model.dart';
 import 'models/reservation_api_model.dart';
@@ -33,6 +34,22 @@ class ReservationRepository {
     AuthLocalStorage? localStorage,
   })  : _apiService = apiService ?? ReservationApiService(),
         _localStorage = localStorage ?? AuthLocalStorage();
+
+  /// Purge tous les caches statiques liees au compte courant.
+  ///
+  /// Les caches ci-dessus sont `static` (partages entre toutes les instances).
+  /// Sans purge explicite a la connexion/deconnexion, un compte pourrait voir
+  /// la session ou les reservations du compte precedent. A appeler a chaque
+  /// changement de compte (login, register, logout, expiration de session).
+  static void clearAccountScopedCaches() {
+    _reservationsCache = null;
+    _reservationsCacheAt = null;
+    _currentSessionCache = null;
+    _currentSessionCacheAt = null;
+    _hasCurrentSessionCache = false;
+    _parkingHistoryCache = null;
+    _parkingHistoryCacheAt = null;
+  }
 
   bool _isCacheFresh(DateTime? at) {
     if (at == null) {
@@ -93,7 +110,22 @@ class ReservationRepository {
         depositAmount: depositAmount,
       );
       _invalidateAllReservationCaches();
-      return ReservationApiModel.fromJson(data);
+      final ReservationApiModel reservation = ReservationApiModel.fromJson(data);
+
+      // Planifie l'alerte d'expiration DÈS la création (indépendamment de
+      // l'ouverture de l'écran Mes réservations) → fonctionne même app fermée.
+      final DateTime? expiresAt = reservation.expiresAt;
+      if (expiresAt != null) {
+        NotificationService.instance.scheduleAt(
+          NotificationService.idFor(reservation.id),
+          'Réservation bientôt expirée',
+          'Il reste 5 minutes pour arriver à ${reservation.parkingName}. '
+              'Au-delà, la place sera libérée.',
+          expiresAt.subtract(const Duration(minutes: 5)),
+        );
+      }
+
+      return reservation;
     } on ReservationApiException catch (error) {
       throw ReservationException(error.message);
     }
@@ -162,6 +194,44 @@ class ReservationRepository {
     try {
       final Map<String, dynamic> data =
           await _apiService.markReservationEnRoute(
+        token: token,
+        reservationId: reservationId,
+      );
+      _invalidateAllReservationCaches();
+      return ReservationApiModel.fromJson(data);
+    } on ReservationApiException catch (error) {
+      throw ReservationException(error.message);
+    }
+  }
+
+  Future<ReservationApiModel> extendReservation(String reservationId) async {
+    final String? token = await _localStorage.readToken();
+    if (token == null || token.isEmpty) {
+      throw const ReservationException(
+          'Session expiree. Reconnectez-vous puis reessayez.');
+    }
+
+    try {
+      final Map<String, dynamic> data = await _apiService.extendReservation(
+        token: token,
+        reservationId: reservationId,
+      );
+      _invalidateAllReservationCaches();
+      return ReservationApiModel.fromJson(data);
+    } on ReservationApiException catch (error) {
+      throw ReservationException(error.message);
+    }
+  }
+
+  Future<ReservationApiModel> resetReservation(String reservationId) async {
+    final String? token = await _localStorage.readToken();
+    if (token == null || token.isEmpty) {
+      throw const ReservationException(
+          'Session expiree. Reconnectez-vous puis reessayez.');
+    }
+
+    try {
+      final Map<String, dynamic> data = await _apiService.resetReservation(
         token: token,
         reservationId: reservationId,
       );

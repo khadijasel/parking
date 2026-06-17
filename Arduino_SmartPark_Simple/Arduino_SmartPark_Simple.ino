@@ -28,6 +28,8 @@
 #include <ArduinoJson.h>
 #include <ESP32Servo.h>
 #include <LiquidCrystal_I2C.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 /* ===================== CONFIG ===================== */
 
@@ -36,7 +38,8 @@
 #define ECHO_IN   5
 #define TRIG_OUT  18
 #define ECHO_OUT  19
-#define DIST_TRIGGER_CM 10
+#define DIST_TRIGGER_CM 10      // seuil de detection voiture (valeur fiable)
+#define ECHO_TIMEOUT_US 12000   // ~2 m : laisse l'echo se dissiper, limite la diaphonie
 
 // Servos
 #define SERVO_IN  13
@@ -64,16 +67,16 @@ const int LED_PINS[6] = {23, 25, 26, 12, 2, -1};
 #define WIFI_TIMEOUT_MS 15000
 
 // Backend Laravel
-#define API_BASE_URL    "http://10.133.226.121:8000/api"
+#define API_BASE_URL    "http://10.244.61.121:8000/api"
 #define ARDUINO_API_KEY "smartpark_iot_secret_key_2024"
 #define PARKING_ID      "arduino-sim"
 #define PARKING_NAME    "Notre Parking"
 #define DEVICE_ID       "ESP32-SmartPark"
-#define API_TIMEOUT_MS  3000   // réduit de 8s → 3s pour une réponse rapide
+#define API_TIMEOUT_MS  1500   // bloc HTTP plus court → la detection n'est pas gelee
 
 // Cadences (non-bloquantes)
-#define POLL_MS          300
-#define SYNC_MS         1000   // refresh chaque 1 seconde
+#define POLL_MS           50   // lecture capteurs ~20x/s → detection quasi instantanee
+#define SYNC_MS         1500   // synchro IR moins frequente = moins de blocage reseau
 #define LCD_MS          1000
 #define ENTRY_DEBOUNCE  4000
 #define WIFI_RETRY_MS  10000
@@ -103,11 +106,27 @@ bool gateInOpen  = false, gateOutOpen = false;
 unsigned long gateInOpenedAt  = 0;
 unsigned long gateOutOpenedAt = 0;
 
-bool wifiOk = false;
+volatile bool wifiOk = false;
 unsigned long tPoll = 0, tSync = 0, tLcd = 0;
 unsigned long tLastEntryPost = 0;
 unsigned long tLastWifiRetry = 0;
 bool firstSync = true;
+
+// Maintien de l'écran d'accueil (Bienvenue / place libre) : tant que millis()
+// < lcdHoldUntil, renderLcd() ne réécrit pas l'affichage normal.
+unsigned long lcdHoldUntil = 0;
+// Dernières distances mesurées (lecture alternée des 2 capteurs)
+float lastDistIn = 0, lastDistOut = 0;
+
+// Ticket d'entrée à poster de façon différée (hors du chemin de détection)
+volatile bool pendingEntryTicket = false;
+char pendingEntrySpot[16] = "";
+
+// ── Bi-cœur : le réseau tourne sur le cœur 0, capteurs/barrières sur le cœur 1.
+// Section critique TRÈS courte pour échanger les données partagées
+// (jamais tenue pendant un appel HTTP).
+portMUX_TYPE dataMux = portMUX_INITIALIZER_UNLOCKED;
+TaskHandle_t netTaskHandle = nullptr;
 
 // Première place libre confirmée par le backend après chaque sync
 char backendFirstFreeSpot[16] = "";
@@ -120,7 +139,7 @@ float readDistance(int trig, int echo) {
   digitalWrite(trig, HIGH);
   delayMicroseconds(10);
   digitalWrite(trig, LOW);
-  long duration = pulseIn(echo, HIGH, 30000);
+  long duration = pulseIn(echo, HIGH, ECHO_TIMEOUT_US);
   return duration * 0.034f / 2.0f;
 }
 
@@ -257,8 +276,10 @@ bool syncWithBackend() {
   // Marquer comme envoyé
   for (int i = 0; i < numSpots; i++) occSent[i] = occupied[i];
 
-  // Parser la réponse pour trouver la première place AVAILABLE côté backend
-  backendFirstFreeSpot[0] = '\0';
+  // Parser la réponse pour trouver la première place AVAILABLE côté backend.
+  // On construit d'abord dans un tampon local, puis on copie sous section
+  // critique (le loop peut lire backendFirstFreeSpot en parallèle).
+  char firstFree[16] = "";
 
   if (responseBody.length() > 0) {
     DynamicJsonDocument resp(4096);
@@ -272,7 +293,7 @@ bool syncWithBackend() {
           if (strcasecmp(state, "AVAILABLE") == 0) {
             const char* lbl = spot["label"] | "";
             if (strlen(lbl) > 0) {
-              strlcpy(backendFirstFreeSpot, lbl, sizeof(backendFirstFreeSpot));
+              strlcpy(firstFree, lbl, sizeof(firstFree));
               break;
             }
           }
@@ -281,8 +302,11 @@ bool syncWithBackend() {
     }
   }
 
-  Serial.printf("[Sync] OK  firstFree=%s\n",
-    backendFirstFreeSpot[0] ? backendFirstFreeSpot : "(none)");
+  portENTER_CRITICAL(&dataMux);
+  strlcpy(backendFirstFreeSpot, firstFree, sizeof(backendFirstFreeSpot));
+  portEXIT_CRITICAL(&dataMux);
+
+  Serial.printf("[Sync] OK  firstFree=%s\n", firstFree[0] ? firstFree : "(none)");
   return true;
 }
 
@@ -368,11 +392,17 @@ void onCarEntry() {
 
   openEntryGate();
 
-  // Utiliser la place libre confirmée par la DB (dernière sync)
+  // Utiliser la place libre confirmée par la DB (dernière sync).
+  // Lecture sous section critique car la tâche réseau (cœur 0) peut l'écrire.
+  char dbSpot[16];
+  portENTER_CRITICAL(&dataMux);
+  strlcpy(dbSpot, backendFirstFreeSpot, sizeof(dbSpot));
+  portEXIT_CRITICAL(&dataMux);
+
   // Si la DB n'a pas encore répondu, fallback sur l'état IR local
   const char* suggested = nullptr;
-  if (backendFirstFreeSpot[0] != '\0') {
-    suggested = backendFirstFreeSpot;
+  if (dbSpot[0] != '\0') {
+    suggested = dbSpot;
     Serial.printf("[EVENT] Place suggérée (DB): %s\n", suggested);
   } else {
     suggested = firstFreeLocal();
@@ -388,7 +418,14 @@ void onCarEntry() {
   else           snprintf(buf, sizeof(buf), "  Bonne place ! ");
   lcd.print(buf);
 
-  if (ensureWifi()) postEntryTicket(suggested);
+  // Garder l'accueil + la place affichés pendant l'ouverture de la barrière.
+  lcdHoldUntil = millis() + BARRIER_OPEN_MS;
+
+  // La barrière est déjà ouverte. Le ticket est posté de façon différée par la
+  // boucle réseau pour ne PAS bloquer la détection / l'ouverture suivante.
+  pendingEntryTicket = true;
+  if (suggested) strlcpy(pendingEntrySpot, suggested, sizeof(pendingEntrySpot));
+  else           pendingEntrySpot[0] = '\0';
 }
 
 void onCarExit() {
@@ -398,6 +435,58 @@ void onCarExit() {
   lcd.print(" Bonne route !  ");
   lcd.setCursor(0, 1);
   lcd.print("    Merci !     ");
+  lcdHoldUntil = millis() + BARRIER_OPEN_MS;
+}
+
+/* ===================== TÂCHE RÉSEAU (CŒUR 0) ===================== */
+
+// Toute la partie réseau (WiFi, synchro IR, tickets) tourne ici, sur le cœur 0,
+// pour ne JAMAIS bloquer la boucle capteurs/barrières (cœur 1). Les appels HTTP
+// peuvent prendre du temps : ils n'affectent plus la détection ni l'ouverture.
+void networkTask(void* pv) {
+  // Connexion initiale + chargement des places
+  wifiOk = connectWifi();
+  if (wifiOk) {
+    fetchSpotsFromBackend();
+  }
+
+  for (;;) {
+    if (!ensureWifi()) {
+      vTaskDelay(pdMS_TO_TICKS(200));
+      continue;
+    }
+
+    unsigned long now = millis();
+
+    // Synchro si changement IR détecté ou périodiquement
+    bool changed = false;
+    for (int i = 0; i < numSpots; i++) {
+      if (occupied[i] != occSent[i]) { changed = true; break; }
+    }
+
+    if (firstSync || changed || (now - tSync >= SYNC_MS)) {
+      syncWithBackend();
+      firstSync = false;
+      tSync = now;
+    }
+
+    // Ticket d'entrée en attente (posé par la boucle au passage d'une voiture)
+    bool doPost = false;
+    char spot[16];
+    portENTER_CRITICAL(&dataMux);
+    if (pendingEntryTicket) {
+      doPost = true;
+      strlcpy(spot, pendingEntrySpot, sizeof(spot));
+      pendingEntryTicket = false;
+    }
+    portEXIT_CRITICAL(&dataMux);
+
+    if (doPost) {
+      postEntryTicket(spot[0] ? spot : nullptr);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(50));
+  }
 }
 
 /* ===================== SETUP / LOOP ===================== */
@@ -432,28 +521,23 @@ void setup() {
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0); lcd.print("Smart Parking   ");
-  lcd.setCursor(0, 1); lcd.print("WiFi ...        ");
+  lcd.setCursor(0, 1); lcd.print("Demarrage...    ");
 
-  // WiFi
-  wifiOk = connectWifi();
-  lcd.setCursor(0, 1);
-  lcd.print(wifiOk ? "WiFi OK         " : "WiFi off-line   ");
-  delay(800);
+  // Lecture initiale des capteurs (avant que le réseau démarre)
+  readIrSensors();
+  updateSpotLeds();
 
-  if (wifiOk) {
-    // 1. Charger les noms des places depuis la base de données
-    lcd.setCursor(0, 1);
-    lcd.print("Chargement DB...");
-    if (!fetchSpotsFromBackend()) {
-      Serial.println("[Setup] Utilisation des labels par defaut (A1-B3)");
-    }
-
-    // 2. Lecture initiale + premier sync
-    readIrSensors();
-    updateSpotLeds();
-    syncWithBackend();
-    firstSync = false;
-  }
+  // Le réseau (WiFi + synchro + tickets) tourne sur le CŒUR 0, en parallèle.
+  // Le loop (capteurs + barrières) reste sur le CŒUR 1, jamais bloqué par l'HTTP.
+  xTaskCreatePinnedToCore(
+    networkTask,      // fonction
+    "netTask",        // nom
+    10240,            // pile (octets) — marge pour HTTP + JSON
+    nullptr,          // paramètre
+    1,                // priorité
+    &netTaskHandle,   // handle
+    0                 // cœur 0
+  );
 }
 
 void loop() {
@@ -466,10 +550,18 @@ void loop() {
     readIrSensors();
     updateSpotLeds();
 
-    float dIn  = readDistance(TRIG_IN,  ECHO_IN);
-    float dOut = readDistance(TRIG_OUT, ECHO_OUT);
-    carIn  = (dIn  > 0 && dIn  < DIST_TRIGGER_CM);
-    carOut = (dOut > 0 && dOut < DIST_TRIGGER_CM);
+    // Lecture ALTERNÉE des 2 ultrasons (un seul par cycle) : ils sont ainsi
+    // espacés de POLL_MS, ce qui évite la diaphonie (l'écho d'un capteur capté
+    // par l'autre) — c'était la cause du "OUT=9.8cm" figé.
+    static bool readInTurn = true;
+    if (readInTurn) {
+      lastDistIn = readDistance(TRIG_IN, ECHO_IN);
+      carIn = (lastDistIn > 0 && lastDistIn < DIST_TRIGGER_CM);
+    } else {
+      lastDistOut = readDistance(TRIG_OUT, ECHO_OUT);
+      carOut = (lastDistOut > 0 && lastDistOut < DIST_TRIGGER_CM);
+    }
+    readInTurn = !readInTurn;
 
     int nOcc  = countOccupied();
     int nFree = numSpots - nOcc;
@@ -489,26 +581,17 @@ void loop() {
     Serial.print("IR=[");
     for (int i = 0; i < numSpots; i++) Serial.print(occupied[i] ? "1" : "0");
     Serial.printf("] IN=%.1fcm OUT=%.1fcm Occ=%d/%d firstFree=%s\n",
-                  dIn, dOut, nOcc, numSpots,
+                  lastDistIn, lastDistOut, nOcc, numSpots,
                   backendFirstFreeSpot[0] ? backendFirstFreeSpot : "-");
   }
 
-  // ── B. Sync backend chaque 1 seconde ou si changement IR ─
-  bool changed = false;
-  for (int i = 0; i < numSpots; i++) {
-    if (occupied[i] != occSent[i]) { changed = true; break; }
-  }
-
-  if (firstSync || changed || (now - tSync >= SYNC_MS)) {
-    if (ensureWifi()) {
-      syncWithBackend();
-      firstSync = false;
-      tSync = now;
-    }
-  }
+  // ── B. (Réseau déplacé sur le cœur 0 : voir networkTask) ─
+  //   La synchro backend et l'envoi des tickets ne tournent PLUS ici, donc
+  //   aucun appel HTTP ne peut retarder la détection ou l'ouverture des barrières.
 
   // ── C. LCD ──────────────────────────────────────────────
-  if (now - tLcd >= LCD_MS) {
+  // On n'écrase PAS l'écran d'accueil pendant le maintien (barrière ouverte).
+  if (now >= lcdHoldUntil && now - tLcd >= LCD_MS) {
     tLcd = now;
     renderLcd(countOccupied(), numSpots - countOccupied());
   }

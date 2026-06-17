@@ -7,6 +7,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../reservation/data/models/reservation_api_model.dart';
 import '../../../reservation/data/reservation_repository.dart';
+import '../../data/scan_history_store.dart';
 
 // ════════════════════════════════════════════════════════════
 //  SCANNER SCREEN — SmartPark
@@ -78,13 +79,30 @@ class _TicketPayload {
 // ════════════════════════════════════════════════════════════
 
 class ScannerScreen extends StatefulWidget {
-  final VoidCallback? onScanSuccess;
+  /// Appelé après un scan validé, avec le mode concerné (entrée/sortie).
+  /// Permet à l'appelant de réagir différemment selon entrée vs sortie
+  /// (ex. l'onglet principal redirige vers le home après une entrée).
+  final void Function(ScanMode mode)? onScanSuccess;
   final ScanMode initialMode;
+
+  /// Si `true`, le scanner se ferme automatiquement (Navigator.pop) après
+  /// une sortie validée — utilisé quand il est poussé comme route (guidage).
+  /// Si `false` (onglet permanent), le scanner reste ouvert, la caméra reste
+  /// active et repasse en mode Entrée pour permettre un nouveau ticket.
+  final bool autoCloseOnExit;
+
+  /// Indique si l'écran est actuellement visible (onglet sélectionné).
+  /// Quand il passe à `false`, la caméra est arrêtée (pas de gaspillage en
+  /// arrière-plan) ; quand il repasse à `true`, elle est redémarrée — ce qui
+  /// évite l'aperçu noir au retour sur l'onglet scanner.
+  final bool isActive;
 
   const ScannerScreen({
     super.key,
     this.onScanSuccess,
     this.initialMode = ScanMode.entry,
+    this.autoCloseOnExit = false,
+    this.isActive = true,
   });
 
   @override
@@ -92,7 +110,7 @@ class ScannerScreen extends StatefulWidget {
 }
 
 class _ScannerScreenState extends State<ScannerScreen>
-    with SingleTickerProviderStateMixin {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
 
   // ── Contrôleurs ──────────────────────────────────────────
   late final MobileScannerController _cameraCtrl;
@@ -103,19 +121,26 @@ class _ScannerScreenState extends State<ScannerScreen>
   bool      _torchOn      = false;
   bool      _isScanning   = true;
   bool      _isSubmitting = false;
+  bool      _cameraRunning = false;
   ScanMode  _mode         = ScanMode.entry;
 
   final ReservationRepository _repo = ReservationRepository();
   final ImagePicker           _picker = ImagePicker();
+  final ScanHistoryStore      _historyStore = ScanHistoryStore();
+  List<ScanHistoryEntry>      _history = <ScanHistoryEntry>[];
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _mode = widget.initialMode;
 
+    // autoStart: false → on pilote nous-mêmes start()/stop() selon la
+    // visibilité de l'onglet et le cycle de vie de l'app. C'est ce qui évite
+    // que la caméra reste « activée en arrière-plan » avec un aperçu noir.
     _cameraCtrl = MobileScannerController(
       torchEnabled: false,
-      autoStart: true,
+      autoStart: false,
       detectionSpeed: DetectionSpeed.normal,
     );
 
@@ -127,13 +152,222 @@ class _ScannerScreenState extends State<ScannerScreen>
     _scanAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _scanCtrl, curve: Curves.easeInOut),
     );
+
+    _loadHistory();
+
+    if (widget.isActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startCamera());
+    }
+  }
+
+  Future<void> _loadHistory() async {
+    final List<ScanHistoryEntry> entries = await _historyStore.load();
+    if (!mounted) return;
+    setState(() => _history = entries);
+  }
+
+  Future<void> _recordHistory(
+    String ticketName,
+    String parkingName,
+    bool success,
+    String message,
+  ) async {
+    final ScanHistoryEntry entry = ScanHistoryEntry(
+      ticketName: ticketName.trim().isEmpty ? 'Ticket' : ticketName.trim(),
+      parkingName: parkingName.trim(),
+      mode: _mode == ScanMode.entry ? 'entry' : 'exit',
+      success: success,
+      message: message,
+      timestamp: DateTime.now(),
+    );
+    final List<ScanHistoryEntry> updated = await _historyStore.add(entry);
+    if (!mounted) return;
+    setState(() => _history = updated);
+  }
+
+  String _formatHistoryDate(DateTime dt) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(dt.day)}/${two(dt.month)} ${two(dt.hour)}:${two(dt.minute)}';
+  }
+
+  void _openHistorySheet() {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (BuildContext sheetContext) {
+        return StatefulBuilder(
+          builder: (BuildContext ctx, StateSetter setSheetState) {
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: <Widget>[
+                        const Text(
+                          'Historique des scans',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: _kDark,
+                          ),
+                        ),
+                        if (_history.isNotEmpty)
+                          TextButton.icon(
+                            onPressed: () async {
+                              await _historyStore.clear();
+                              if (!mounted) return;
+                              setState(() => _history = <ScanHistoryEntry>[]);
+                              setSheetState(() {});
+                            },
+                            icon: const Icon(Icons.delete_outline_rounded,
+                                size: 18, color: _kRed),
+                            label: const Text('Vider',
+                                style: TextStyle(color: _kRed)),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (_history.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 28),
+                        child: Center(
+                          child: Text(
+                            'Aucun scan pour le moment.',
+                            style: TextStyle(color: _kMid, fontSize: 14),
+                          ),
+                        ),
+                      )
+                    else
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(ctx).size.height * 0.5,
+                        ),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: _history.length,
+                          separatorBuilder: (_, __) =>
+                              Divider(height: 1, color: Colors.grey.shade200),
+                          itemBuilder: (BuildContext _, int index) {
+                            final ScanHistoryEntry e = _history[index];
+                            final Color tone =
+                                e.success ? _kGreen : _kRed;
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: CircleAvatar(
+                                backgroundColor: tone.withOpacity(0.12),
+                                child: Icon(
+                                  e.isEntry
+                                      ? Icons.login_rounded
+                                      : Icons.logout_rounded,
+                                  color: tone,
+                                  size: 20,
+                                ),
+                              ),
+                              title: Text(
+                                'Ticket : ${e.parkingName.isEmpty ? 'Parking inconnu' : e.parkingName}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: _kDark,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${e.isEntry ? 'Entrée' : 'Sortie'} · ${e.success ? 'Validé' : 'Échec'}',
+                                style: const TextStyle(color: _kMid, fontSize: 12),
+                              ),
+                              trailing: Text(
+                                _formatHistoryDate(e.timestamp),
+                                style: TextStyle(
+                                    color: _kMid, fontSize: 11),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant ScannerScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive != widget.isActive) {
+      if (widget.isActive) {
+        _startCamera();
+      } else {
+        _stopCamera();
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (!widget.isActive) {
+      return;
+    }
+    if (state == AppLifecycleState.resumed) {
+      _startCamera();
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _stopCamera();
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scanCtrl.dispose();
     _cameraCtrl.dispose();
     super.dispose();
+  }
+
+  // ── Cycle de vie caméra ──────────────────────────────────
+  Future<void> _startCamera() async {
+    if (!mounted || _cameraRunning) return;
+    _cameraRunning = true;
+    try {
+      await _cameraCtrl.start();
+    } catch (_) {
+      _cameraRunning = false;
+    }
+  }
+
+  Future<void> _stopCamera() async {
+    if (!_cameraRunning) return;
+    _cameraRunning = false;
+    try {
+      await _cameraCtrl.stop();
+    } catch (_) {}
   }
 
   // ── Toggle lampe torche ──────────────────────────────────
@@ -260,8 +494,9 @@ class _ScannerScreenState extends State<ScannerScreen>
         isValid: true,
         message: 'Session démarrée avec succès.\nGuidez-vous vers votre place.',
         ticketReference: ref,
+        parkingName: _extractParkingName(result, payload),
         qrImagePath: _extractQrImagePath(result),
-        afterClose: widget.onScanSuccess,
+        afterClose: () => widget.onScanSuccess?.call(ScanMode.entry),
       );
     } on ReservationException catch (e) {
       // Parking non reconnu → "Ticket invalide"
@@ -281,7 +516,7 @@ class _ScannerScreenState extends State<ScannerScreen>
           isValid: true,
           message: 'Session déjà en cours.\nInformations du ticket lues.',
           ticketReference: payload.ticketCode ?? payload.ticketId,
-          afterClose: widget.onScanSuccess,
+          afterClose: () => widget.onScanSuccess?.call(ScanMode.entry),
         );
         return;
       }
@@ -305,7 +540,7 @@ class _ScannerScreenState extends State<ScannerScreen>
           isValid: true,
           message: 'Ticket scanné avec succès.',
           ticketReference: res.id,
-          afterClose: widget.onScanSuccess,
+          afterClose: () => widget.onScanSuccess?.call(ScanMode.entry),
         );
         return;
       }
@@ -347,15 +582,26 @@ class _ScannerScreenState extends State<ScannerScreen>
         isValid: true,
         message: 'Sortie autorisée.\nBonne route !',
         ticketReference: ref,
+        parkingName: _extractParkingName(result, payload),
         afterClose: () {
           // Call parent callback first
-          widget.onScanSuccess?.call();
-          // Then auto-close scanner after short delay to show success message
-          Future.delayed(const Duration(milliseconds: 800), () {
+          widget.onScanSuccess?.call(ScanMode.exit);
+
+          if (widget.autoCloseOnExit) {
+            // Scanner poussé comme route (guidage) → on le ferme après un
+            // court délai pour laisser voir le message de succès.
+            Future.delayed(const Duration(milliseconds: 800), () {
+              if (mounted) {
+                Navigator.pop(context, true);
+              }
+            });
+          } else {
+            // Onglet permanent → la caméra reste active. On repasse en mode
+            // Entrée pour qu'un nouveau ticket puisse être scanné aussitôt.
             if (mounted) {
-              Navigator.pop(context, true);
+              setState(() => _mode = ScanMode.entry);
             }
-          });
+          }
         },
       );
     } on ReservationException catch (e) {
@@ -469,6 +715,27 @@ class _ScannerScreenState extends State<ScannerScreen>
     return null;
   }
 
+  /// Nom du parking pour l'historique : on le prend dans la session/ticket
+  /// renvoyé par le backend, avec repli sur le parking_id du QR.
+  String _extractParkingName(Map<String, dynamic> data, _TicketPayload payload) {
+    final Object? session = data['parking_session'];
+    if (session is Map) {
+      final String s = (session['parking_name'] ?? '').toString().trim();
+      if (s.isNotEmpty) return s;
+    }
+    final Object? ticket = data['ticket'];
+    if (ticket is Map) {
+      final String s = (ticket['parking_name'] ?? '').toString().trim();
+      if (s.isNotEmpty) return s;
+    }
+    final Object? topLevel = data['parking_name'] ?? data['parkingName'];
+    if (topLevel != null) {
+      final String s = topLevel.toString().trim();
+      if (s.isNotEmpty) return s;
+    }
+    return (payload.parkingId ?? '').trim();
+  }
+
   // ════════════════════════════════════════════════════════
   //  BOTTOM SHEET résultat
   // ════════════════════════════════════════════════════════
@@ -477,9 +744,18 @@ class _ScannerScreenState extends State<ScannerScreen>
     required bool isValid,
     required String message,
     String? ticketReference,
+    String? parkingName,
     String? qrImagePath,
     VoidCallback? afterClose,
   }) {
+    // Journalise chaque scan (nom du ticket + nom du parking) dans l'historique.
+    _recordHistory(
+      ticketReference ?? code,
+      parkingName ?? '',
+      isValid,
+      message,
+    );
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -495,7 +771,7 @@ class _ScannerScreenState extends State<ScannerScreen>
           Navigator.pop(context);
           setState(() => _isScanning = true);
           _scanCtrl.repeat(reverse: true);
-          _cameraCtrl.start();
+          _startCamera();
         },
         onClose: () {
           Navigator.pop(context);
@@ -506,7 +782,7 @@ class _ScannerScreenState extends State<ScannerScreen>
             });
           }
           _scanCtrl.repeat(reverse: true);
-          _cameraCtrl.start();
+          _startCamera();
           afterClose?.call();
         },
       ),
@@ -699,8 +975,12 @@ class _ScannerScreenState extends State<ScannerScreen>
                           color: Colors.white, size: 30),
                 ),
               ),
-              // Placeholder pour centrer le bouton scan
-              const SizedBox(width: 50, height: 50),
+              // Historique des scans (à côté du bouton de scan)
+              _bottomBtn(
+                icon: Icons.history_rounded,
+                onTap: _openHistorySheet,
+                label: 'Historique',
+              ),
             ],
           ),
         ),

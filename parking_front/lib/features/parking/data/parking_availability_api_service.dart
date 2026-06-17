@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../../core/constants/api_constants.dart';
+import '../../../core/network/app_http_client.dart';
 
 class ParkingAvailabilityApiException implements Exception {
   final String message;
@@ -14,19 +15,7 @@ class ParkingAvailabilityApiException implements Exception {
 class ParkingAvailabilityApiService {
   final Dio _dio;
 
-  ParkingAvailabilityApiService({Dio? dio})
-      : _dio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: ApiConstants.baseUrl,
-                headers: const <String, String>{
-                  'Accept': 'application/json',
-                  'Content-Type': 'application/json',
-                },
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 15),
-              ),
-            );
+  ParkingAvailabilityApiService({Dio? dio}) : _dio = dio ?? AppHttpClient.instance;
 
   Future<List<Map<String, dynamic>>> fetchAvailability() async {
     try {

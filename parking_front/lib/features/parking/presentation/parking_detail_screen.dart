@@ -58,9 +58,26 @@ class _ParkingDetailScreenState extends State<ParkingDetailScreen> {
     super.initState();
     _refreshAvailability();
     _refreshTimer = Timer.periodic(
-      const Duration(seconds: 8),
+      const Duration(seconds: 5),
       (_) => _refreshAvailability(),
     );
+  }
+
+  /// Normalise un libelle pour un matching tolerant aux accents/casse.
+  /// Aligne le comportement de cet ecran sur celui de la carte, sinon les
+  /// parkings dont le nom porte des accents ne se rafraichissent jamais ici.
+  String _normalize(String value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[àâäáãå]'), 'a')
+        .replaceAll('ç', 'c')
+        .replaceAll(RegExp(r'[éèêë]'), 'e')
+        .replaceAll(RegExp(r'[íìîï]'), 'i')
+        .replaceAll('ñ', 'n')
+        .replaceAll(RegExp(r'[óòôöõ]'), 'o')
+        .replaceAll(RegExp(r'[úùûü]'), 'u')
+        .replaceAll(RegExp(r'[ýÿ]'), 'y');
   }
 
   @override
@@ -76,13 +93,14 @@ class _ParkingDetailScreenState extends State<ParkingDetailScreen> {
           .timeout(const Duration(seconds: 6));
       if (!mounted) return;
 
-      final String normalizedName = parking.name.trim().toLowerCase();
+      final String normalizedName = _normalize(parking.name);
       final String normalizedId = parking.id.trim().toLowerCase();
 
       for (final item in list) {
-        final bool matchesId = item.parkingId.trim().toLowerCase() == normalizedId;
-        final bool matchesName =
-            item.parkingName.trim().toLowerCase() == normalizedName;
+        final bool matchesId =
+            item.parkingId.trim().toLowerCase() == normalizedId &&
+                normalizedId.isNotEmpty;
+        final bool matchesName = _normalize(item.parkingName) == normalizedName;
         if (matchesId || matchesName) {
           setState(() => _liveAvailableSpots = item.availableSpots);
           return;

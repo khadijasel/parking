@@ -50,10 +50,6 @@ class ParkingHistoryScreen extends StatefulWidget {
 }
 
 class _ParkingHistoryScreenState extends State<ParkingHistoryScreen> {
-  static const Duration _screenCacheTtl = Duration(seconds: 20);
-  static List<_ParkingSession>? _screenCache;
-  static DateTime? _screenCacheAt;
-
   final ReservationRepository _reservationRepository = ReservationRepository();
 
   bool _isLoading = true;
@@ -64,15 +60,6 @@ class _ParkingHistoryScreenState extends State<ParkingHistoryScreen> {
   @override
   void initState() {
     super.initState();
-    final bool hasFreshScreenCache = _screenCache != null &&
-        _screenCacheAt != null &&
-        DateTime.now().difference(_screenCacheAt!) < _screenCacheTtl;
-
-    if (hasFreshScreenCache) {
-      _sessions = List<_ParkingSession>.from(_screenCache!);
-      _isLoading = false;
-    }
-
     _loadHistory();
   }
 
@@ -146,9 +133,6 @@ class _ParkingHistoryScreenState extends State<ParkingHistoryScreen> {
         _sessions = mapped;
         _isLoading = false;
       });
-
-      _screenCache = List<_ParkingSession>.from(mapped);
-      _screenCacheAt = DateTime.now();
     } on ReservationException catch (error) {
       if (!mounted) {
         return;

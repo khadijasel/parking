@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'core/services/notification_service.dart';
 import 'features/auth/data/auth_repository.dart';
 import 'features/main/main_screen.dart';
 import 'theme/app_theme.dart';
@@ -12,6 +13,11 @@ Future<void> main() async {
   await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
     DeviceOrientation.portraitUp,
   ]);
+
+  // Notifications système : init + demande d'autorisation (non bloquant si refus)
+  await NotificationService.instance.init();
+  await NotificationService.instance.requestPermissions();
+
   runApp(const ProviderScope(child: SpotHnaApp()));
 }
 

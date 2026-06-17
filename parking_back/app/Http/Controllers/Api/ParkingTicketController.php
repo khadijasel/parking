@@ -144,10 +144,30 @@ class ParkingTicketController extends Controller
             ], 422);
         }
 
+        // REGLE : la generation du ticket est independante du compte. Un ticket
+        // n'appartient a personne ; au scan, seul le compte connecte compte
+        // (a-t-il une reservation ou non). On ne refuse donc JAMAIS un scan au
+        // motif que le ticket a deja servi a un autre compte. Si une session
+        // d'un autre compte est encore active sur ce ticket, on la cloture pour
+        // que le compte connecte reparte d'une session/reservation propre.
         if ($ticket->user_id && (string) $ticket->user_id !== $userId) {
-            return response()->json([
-                'message' => 'Ce ticket est deja associe a un autre utilisateur.',
-            ], 422);
+            $foreignSessions = ParkingSession::query()
+                ->where('ticket_code', (string) $ticket->ticket_code)
+                ->where('status', self::SESSION_STATUS_ACTIVE)
+                ->where('user_id', '!=', $userId)
+                ->get();
+
+            foreach ($foreignSessions as $foreignSession) {
+                $this->closeActiveSession($foreignSession);
+            }
+
+            // On detache le ticket de l'ancien compte avant de le reaffecter.
+            $ticket->reservation_id = null;
+            $ticket->session_id = null;
+            if ((string) $ticket->status === self::STATUS_PAID) {
+                $ticket->status = self::STATUS_UNPAID;
+                $ticket->paid_at = null;
+            }
         }
 
         $ticket->user_id = $userId;
@@ -180,6 +200,7 @@ class ParkingTicketController extends Controller
                     $reservation,
                     (string) ($ticket->ticket_code ?? ''),
                     $spotLabel,
+                    $this->resolveTicketStart($ticket),
                 );
                 $ticket->session_id = (string) $session->getKey();
 
@@ -204,6 +225,7 @@ class ParkingTicketController extends Controller
                     $walkInReservation,
                     (string) ($ticket->ticket_code ?? ''),
                     $spotLabel,
+                    $this->resolveTicketStart($ticket),
                 );
                 $ticket->session_id = (string) $session->getKey();
             }
@@ -432,7 +454,13 @@ class ParkingTicketController extends Controller
         string $parkingId,
         string $parkingName,
     ): ?Reservation {
-        $statuses = ['confirmed', 'in_transit', 'completed'];
+        // On ne retient QUE les reservations encore a honorer pour cette entree
+        // (confirmee ou en route). Une reservation 'completed' a deja ete
+        // consommee lors d'une session precedente : la reattacher a un nouveau
+        // ticket ferait afficher "Reservation: Oui" alors que l'utilisateur n'a
+        // pas reserve pour cette entree. Le rescan du meme ticket est, lui, deja
+        // gere en amont par la verification de session active.
+        $statuses = ['confirmed', 'in_transit'];
 
         $query = Reservation::query()
             ->where('user_id', $userId)
@@ -867,10 +895,35 @@ class ParkingTicketController extends Controller
         return '';
     }
 
-    private function createSessionFromReservation(Reservation $reservation, string $ticketCode, string $spotLabel = ''): ParkingSession
+    /**
+     * Heure de depart de la session = heure d'entree imprimee sur le ticket,
+     * afin que le timer affiche soit coherent avec le ticket genere.
+     */
+    private function resolveTicketStart(ParkingTicket $ticket): ?CarbonImmutable
     {
+        $entryTime = $ticket->entry_time;
+        if (! $entryTime) {
+            return null;
+        }
+
+        $entry = CarbonImmutable::instance($entryTime);
+
+        // Garde-fou : un ticket dont l'heure d'entree serait dans le futur
+        // (horloge desynchronisee) ne doit pas produire un timer negatif.
+        if ($entry->greaterThan(CarbonImmutable::now())) {
+            return null;
+        }
+
+        return $entry;
+    }
+
+    private function createSessionFromReservation(
+        Reservation $reservation,
+        string $ticketCode,
+        string $spotLabel = '',
+        ?CarbonImmutable $startedAt = null,
+    ): ParkingSession {
         $userId = (string) $reservation->user_id;
-        $now = CarbonImmutable::now();
 
         $existingActive = ParkingSession::query()
             ->where('reservation_id', (string) $reservation->getKey())
@@ -881,6 +934,11 @@ class ParkingTicketController extends Controller
             return $existingActive;
         }
 
+        // Le timer doit refleter l'heure d'entree du ticket genere, pas
+        // l'instant du scan dans l'app. On retombe sur "maintenant" si le
+        // ticket ne porte pas d'heure d'entree exploitable.
+        $sessionStart = $startedAt ?? CarbonImmutable::now();
+
         return ParkingSession::query()->create([
             'user_id' => $userId,
             'reservation_id' => (string) $reservation->getKey(),
@@ -890,7 +948,7 @@ class ParkingTicketController extends Controller
             'ticket_code' => $ticketCode,
             'spot_label' => $spotLabel,
             'status' => self::SESSION_STATUS_ACTIVE,
-            'started_at' => $now,
+            'started_at' => $sessionStart,
             'ended_at' => null,
         ]);
     }

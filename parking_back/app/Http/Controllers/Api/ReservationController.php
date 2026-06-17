@@ -31,6 +31,14 @@ class ReservationController extends Controller
 
     private const SESSION_STATUS_COMPLETED = 'completed';
 
+    /** Minutes ajoutées à chaque « prolonger ». */
+    private const EXTEND_MINUTES = 15;
+
+    /** Fenêtre de base du minuteur selon la durée (réinitialisation). */
+    private const SHORT_WINDOW_MINUTES = 30;
+
+    private const LONG_WINDOW_MINUTES = 60;
+
     public function __construct(private readonly ParkingAvailabilityService $parkingAvailabilityService)
     {
     }
@@ -286,6 +294,75 @@ class ReservationController extends Controller
 
         return response()->json([
             'message' => 'Reservation is now en route.',
+            'data' => $this->transformReservation($reservation),
+        ]);
+    }
+
+    public function extend(Request $request, string $reservationId): JsonResponse
+    {
+        $reservation = $this->findOwnedReservation($request, $reservationId);
+
+        if (! $reservation) {
+            return response()->json([
+                'message' => 'Reservation not found.',
+            ], 404);
+        }
+
+        $this->refreshTimeoutStatus($reservation);
+
+        $status = (string) ($reservation->reservation_status ?? self::STATUS_PENDING_PAYMENT);
+
+        if ($this->isCancelledStatus($status) || $status === self::STATUS_COMPLETED) {
+            return response()->json([
+                'message' => 'Cette reservation ne peut plus etre prolongee.',
+            ], 422);
+        }
+
+        // On prolonge à partir de l'échéance courante si elle est encore dans le
+        // futur, sinon à partir de maintenant.
+        $base = ($reservation->expires_at &&
+                CarbonImmutable::instance($reservation->expires_at)->isFuture())
+            ? CarbonImmutable::instance($reservation->expires_at)
+            : CarbonImmutable::now();
+
+        $reservation->expires_at = $base->addMinutes(self::EXTEND_MINUTES);
+        $reservation->save();
+
+        return response()->json([
+            'message' => 'Reservation prolongee de '.self::EXTEND_MINUTES.' minutes.',
+            'data' => $this->transformReservation($reservation),
+        ]);
+    }
+
+    public function reset(Request $request, string $reservationId): JsonResponse
+    {
+        $reservation = $this->findOwnedReservation($request, $reservationId);
+
+        if (! $reservation) {
+            return response()->json([
+                'message' => 'Reservation not found.',
+            ], 404);
+        }
+
+        $this->refreshTimeoutStatus($reservation);
+
+        $status = (string) ($reservation->reservation_status ?? self::STATUS_PENDING_PAYMENT);
+
+        if ($this->isCancelledStatus($status) || $status === self::STATUS_COMPLETED) {
+            return response()->json([
+                'message' => 'Cette reservation ne peut plus etre reinitialisee.',
+            ], 422);
+        }
+
+        // Réinitialise le minuteur à la fenêtre de base (30 min courte / 1 h longue).
+        $isShort = (string) ($reservation->duration_type ?? '') === 'courte';
+        $reservation->expires_at = CarbonImmutable::now()->addMinutes(
+            $isShort ? self::SHORT_WINDOW_MINUTES : self::LONG_WINDOW_MINUTES,
+        );
+        $reservation->save();
+
+        return response()->json([
+            'message' => 'Minuteur de reservation reinitialise.',
             'data' => $this->transformReservation($reservation),
         ]);
     }

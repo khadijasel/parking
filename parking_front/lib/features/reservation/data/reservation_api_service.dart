@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../../core/constants/api_constants.dart';
+import '../../../core/network/app_http_client.dart';
 
 class ReservationApiException implements Exception {
   final String message;
@@ -16,19 +17,7 @@ class ReservationApiException implements Exception {
 class ReservationApiService {
   final Dio _dio;
 
-  ReservationApiService({Dio? dio})
-      : _dio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: ApiConstants.baseUrl,
-                headers: const <String, String>{
-                  'Accept': 'application/json',
-                  'Content-Type': 'application/json',
-                },
-                connectTimeout: const Duration(seconds: 30),
-                receiveTimeout: const Duration(seconds: 30),
-              ),
-            );
+  ReservationApiService({Dio? dio}) : _dio = dio ?? AppHttpClient.instance;
 
   Future<Map<String, dynamic>> createReservation({
     required String token,
@@ -156,6 +145,61 @@ class ReservationApiService {
           statusCode: statusCode,
         );
       }
+    } on DioException catch (error) {
+      throw _mapDioException(error);
+    }
+  }
+
+  Future<Map<String, dynamic>> extendReservation({
+    required String token,
+    required String reservationId,
+  }) =>
+      _postReservationAction(
+        token: token,
+        path: ApiConstants.userReservationExtendPath(reservationId),
+      );
+
+  Future<Map<String, dynamic>> resetReservation({
+    required String token,
+    required String reservationId,
+  }) =>
+      _postReservationAction(
+        token: token,
+        path: ApiConstants.userReservationResetPath(reservationId),
+      );
+
+  Future<Map<String, dynamic>> _postReservationAction({
+    required String token,
+    required String path,
+  }) async {
+    try {
+      final Response<dynamic> response = await _dio.post<dynamic>(
+        path,
+        options: Options(
+          headers: <String, String>{
+            'Authorization': 'Bearer $token',
+          },
+          validateStatus: (int? status) => status != null && status < 500,
+        ),
+      );
+
+      final int statusCode = response.statusCode ?? 0;
+      final Map<String, dynamic> payload = _normalizePayload(response.data);
+
+      if (statusCode != 200) {
+        throw ReservationApiException(
+          _extractMessage(payload),
+          statusCode: statusCode,
+        );
+      }
+
+      final Object? data = payload['data'];
+      if (data is! Map<String, dynamic>) {
+        throw const ReservationApiException(
+            'Reservation invalide recue depuis le serveur.');
+      }
+
+      return data;
     } on DioException catch (error) {
       throw _mapDioException(error);
     }
