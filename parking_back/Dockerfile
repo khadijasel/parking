@@ -9,7 +9,7 @@ FROM php:8.2-apache
 # Dépendances système + extension mongodb (requise par mongodb/laravel-mongodb)
 RUN apt-get update && apt-get install -y \
         git unzip libzip-dev libssl-dev \
-    && pecl install mongodb \
+    && pecl install mongodb-1.21.0 \
     && docker-php-ext-enable mongodb \
     && docker-php-ext-install zip \
     && a2enmod rewrite \
