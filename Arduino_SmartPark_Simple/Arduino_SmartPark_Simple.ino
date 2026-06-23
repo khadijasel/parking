@@ -79,6 +79,8 @@ const int LED_PINS[6] = {23, 25, 26, 12, 2, -1};
 #define SYNC_MS         1500   // synchro IR moins frequente = moins de blocage reseau
 #define LCD_MS          1000
 #define ENTRY_DEBOUNCE  4000
+#define EXIT_DEBOUNCE   4000   // anti-rebond barriere de sortie (symetrique a l'entree)
+#define SENSOR_CONFIRM  2      // pings consecutifs requis pour valider une detection ultrason
 #define WIFI_RETRY_MS  10000
 
 /* ===================== PLACES DYNAMIQUES ===================== */
@@ -109,6 +111,8 @@ unsigned long gateOutOpenedAt = 0;
 volatile bool wifiOk = false;
 unsigned long tPoll = 0, tSync = 0, tLcd = 0;
 unsigned long tLastEntryPost = 0;
+unsigned long tLastExitOpen  = 0;   // dernier instant d'ouverture de la barriere de sortie
+int inHits = 0, outHits = 0;        // compteurs de confirmations ultrason (entree / sortie)
 unsigned long tLastWifiRetry = 0;
 bool firstSync = true;
 
@@ -556,10 +560,19 @@ void loop() {
     static bool readInTurn = true;
     if (readInTurn) {
       lastDistIn = readDistance(TRIG_IN, ECHO_IN);
-      carIn = (lastDistIn > 0 && lastDistIn < DIST_TRIGGER_CM);
+      // Confirmation : il faut SENSOR_CONFIRM pings rapproches sous le seuil
+      // pour valider une presence. Un ping parasite isole (bruit electrique ou
+      // echo du capteur de sortie capte par celui d'entree) ne suffit plus.
+      bool hitIn = (lastDistIn > 0 && lastDistIn < DIST_TRIGGER_CM);
+      inHits = hitIn ? inHits + 1 : 0;
+      carIn = (inHits >= SENSOR_CONFIRM);
     } else {
       lastDistOut = readDistance(TRIG_OUT, ECHO_OUT);
-      carOut = (lastDistOut > 0 && lastDistOut < DIST_TRIGGER_CM);
+      // Idem cote sortie : un seul echo parasite (y compris provenant du
+      // capteur d'entree) ne declenche plus l'ouverture de la barriere.
+      bool hitOut = (lastDistOut > 0 && lastDistOut < DIST_TRIGGER_CM);
+      outHits = hitOut ? outHits + 1 : 0;
+      carOut = (outHits >= SENSOR_CONFIRM);
     }
     readInTurn = !readInTurn;
 
@@ -573,8 +586,16 @@ void loop() {
     }
     prevIn = carIn;
 
-    // Front montant sortie → barrière
-    if (carOut && !prevOut) onCarExit();
+    // Front montant sortie → barriere. Garde-fous :
+    //  • !gateOutOpen : si la barriere est deja ouverte, on NE rearme PAS le
+    //    minuteur d'ouverture → elle se referme bien apres BARRIER_OPEN_MS.
+    //    Corrige le "reste toujours ouverte" (des fronts repetes la maintenaient).
+    //  • EXIT_DEBOUNCE : pas de reouverture en rafale juste apres une sortie.
+    if (carOut && !prevOut && !gateOutOpen &&
+        (now - tLastExitOpen > EXIT_DEBOUNCE)) {
+      tLastExitOpen = now;
+      onCarExit();
+    }
     prevOut = carOut;
 
     // Log compact

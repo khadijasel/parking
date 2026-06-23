@@ -36,12 +36,9 @@ class _ExitSuccessScreenState extends State<ExitSuccessScreen>
     )..forward();
     _scaleAnim = Tween<double>(begin: 0.0, end: 1.0)
         .animate(CurvedAnimation(parent: _scaleCtrl, curve: Curves.elasticOut));
-    // Auto-close after 4 seconds to return to HomeScreen
-    Future.delayed(const Duration(seconds: 4), () {
-      if (mounted) {
-        Navigator.pop(context);
-      }
-    });
+    // Pas de fermeture automatique : l'ancien timer de 4s renvoyait l'utilisateur
+    // a l'accueil avant qu'il ait pu noter le parking. On quitte uniquement via
+    // la croix, le bouton "Retour a l'accueil" ou la notation.
   }
 
   @override

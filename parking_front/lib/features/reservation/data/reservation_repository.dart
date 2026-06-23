@@ -23,6 +23,13 @@ class ReservationRepository {
   static DateTime? _currentSessionCacheAt;
   static bool _hasCurrentSessionCache = false;
 
+  // Requete reseau "session courante" en cours, partagee entre tous les
+  // appelants. Au demarrage, plusieurs widgets (HomeTabGate, HomeScreen,
+  // verification de paiement) demandent la session en parallele : sans cela,
+  // chacun declenche son propre appel reseau (cf. la rafale observee dans les
+  // logs). On collapse ces appels concurrents en une seule requete.
+  static Future<ParkingSessionApiModel?>? _inFlightCurrentSession;
+
   static List<ParkingSessionApiModel>? _parkingHistoryCache;
   static DateTime? _parkingHistoryCacheAt;
 
@@ -47,6 +54,7 @@ class ReservationRepository {
     _currentSessionCache = null;
     _currentSessionCacheAt = null;
     _hasCurrentSessionCache = false;
+    _inFlightCurrentSession = null;
     _parkingHistoryCache = null;
     _parkingHistoryCacheAt = null;
   }
@@ -374,6 +382,22 @@ class ReservationRepository {
       return _currentSessionCache;
     }
 
+    final Future<ParkingSessionApiModel?>? pending = _inFlightCurrentSession;
+    if (pending != null) {
+      return pending;
+    }
+
+    final Future<ParkingSessionApiModel?> request =
+        _fetchCurrentParkingSessionFromApi();
+    _inFlightCurrentSession = request;
+    try {
+      return await request;
+    } finally {
+      _inFlightCurrentSession = null;
+    }
+  }
+
+  Future<ParkingSessionApiModel?> _fetchCurrentParkingSessionFromApi() async {
     final String? token = await _localStorage.readToken();
     if (token == null || token.isEmpty) {
       throw const ReservationException(

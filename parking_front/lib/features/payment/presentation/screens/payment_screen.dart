@@ -205,7 +205,10 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
       HapticFeedback.heavyImpact();
 
       if (widget.returnToCallerOnSuccess) {
-        Navigator.pop(context, true);
+        // On renvoie la transaction reelle (avec la vraie methode choisie) au
+        // lieu d'un simple booleen : l'appelant peut ainsi afficher une preuve
+        // de paiement correcte (Edahabia/CIB/Cash) au lieu d'une valeur en dur.
+        Navigator.pop(context, next.transaction);
         ref.read(paymentProvider.notifier).reset();
         return;
       }

@@ -854,39 +854,11 @@ onMounted(async () => {
 
         <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
-            Latitude
-            <input
-              v-model.number="parkingForm.latitude"
-              type="number"
-              step="0.000001"
-              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </label>
-          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
-            Longitude
-            <input
-              v-model.number="parkingForm.longitude"
-              type="number"
-              step="0.000001"
-              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </label>
-          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
             Capacite
             <input
               v-model.number="parkingForm.capacity"
               type="number"
               min="1"
-              step="1"
-              class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </label>
-          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">
-            Tarif horaire (DZD)
-            <input
-              v-model.number="parkingForm.pricePerHour"
-              type="number"
-              min="0"
               step="1"
               class="mt-1 w-full rounded-lg bg-surface-container px-3 py-2 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
@@ -955,33 +927,69 @@ onMounted(async () => {
           </label>
         </div>
 
-        <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div class="space-y-2 rounded-xl bg-surface-container-low p-3">
-            <p class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">Equipements</p>
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <label
-                v-for="option in equipmentOptions"
-                :key="`equipment-${option}`"
-                class="inline-flex items-center gap-2 rounded-lg bg-surface-container px-3 py-2 text-xs text-on-surface"
-              >
-                <input v-model="parkingForm.equipments" type="checkbox" :value="option" class="h-4 w-4" />
-                {{ option }}
-              </label>
+        <div class="mt-4 rounded-xl bg-surface-container-low p-5">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 class="font-headline text-lg font-bold text-on-surface">Equipements</h3>
+              <p class="mt-1 text-xs text-on-surface-variant">
+                Mettez en avant les services proposes par votre parking.
+              </p>
             </div>
+            <span class="rounded-full bg-primary/15 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-primary">
+              {{ parkingForm.equipments.length }} / {{ equipmentOptions.length }} selectionnes
+            </span>
           </div>
 
-          <div class="space-y-2 rounded-xl bg-surface-container-low p-3">
-            <p class="text-xs font-semibold uppercase tracking-[0.08em] text-outline">Tags</p>
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <label
-                v-for="option in tagOptions"
-                :key="`tag-${option}`"
-                class="inline-flex items-center gap-2 rounded-lg bg-surface-container px-3 py-2 text-xs text-on-surface"
-              >
-                <input v-model="parkingForm.tags" type="checkbox" :value="option" class="h-4 w-4" />
-                {{ option }}
-              </label>
+          <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <label
+              v-for="option in equipmentOptions"
+              :key="`equipment-${option}`"
+              class="flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold transition-colors"
+              :class="parkingForm.equipments.includes(option)
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-outline-variant/60 bg-surface-container text-on-surface hover:bg-surface-container-high'"
+            >
+              <input
+                v-model="parkingForm.equipments"
+                type="checkbox"
+                :value="option"
+                class="h-4 w-4 accent-primary"
+              />
+              <span>{{ option }}</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="mt-4 rounded-xl bg-surface-container-low p-5">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 class="font-headline text-lg font-bold text-on-surface">Tags</h3>
+              <p class="mt-1 text-xs text-on-surface-variant">
+                Ajoutez des reperes pour faciliter la recherche de votre parking.
+              </p>
             </div>
+            <span class="rounded-full bg-primary/15 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-primary">
+              {{ parkingForm.tags.length }} / {{ tagOptions.length }} selectionnes
+            </span>
+          </div>
+
+          <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <label
+              v-for="option in tagOptions"
+              :key="`tag-${option}`"
+              class="flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold transition-colors"
+              :class="parkingForm.tags.includes(option)
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-outline-variant/60 bg-surface-container text-on-surface hover:bg-surface-container-high'"
+            >
+              <input
+                v-model="parkingForm.tags"
+                type="checkbox"
+                :value="option"
+                class="h-4 w-4 accent-primary"
+              />
+              <span>{{ option }}</span>
+            </label>
           </div>
         </div>
 

@@ -94,7 +94,7 @@ const onLogout = async () => {
     :class="sidebarClass"
   >
     <div class="mb-10 px-2">
-      <h1 class="font-headline text-xl font-extrabold tracking-tight text-primary">Fluid Architect</h1>
+      <h1 class="font-headline text-xl font-extrabold tracking-tight text-primary">Espace administrateur</h1>
       <p class="mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-outline">Console admin</p>
     </div>
 

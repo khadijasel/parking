@@ -6,6 +6,11 @@ class ParkingRepository {
   static List<Parking>? _cache;
   static DateTime? _cacheAt;
 
+  // Requete reseau en cours partagee : si plusieurs ecrans demandent les
+  // parkings en meme temps (carte + accueil au demarrage), ils attendent le
+  // meme appel au lieu d'en declencher un chacun.
+  static Future<List<Parking>>? _inFlight;
+
   final ParkingApiService _apiService;
 
   ParkingRepository({ParkingApiService? apiService})
@@ -20,6 +25,21 @@ class ParkingRepository {
       return _cache!;
     }
 
+    final Future<List<Parking>>? pending = _inFlight;
+    if (pending != null) {
+      return pending;
+    }
+
+    final Future<List<Parking>> request = _fetchParkingsFromApi();
+    _inFlight = request;
+    try {
+      return await request;
+    } finally {
+      _inFlight = null;
+    }
+  }
+
+  Future<List<Parking>> _fetchParkingsFromApi() async {
     final List<Map<String, dynamic>> raw = await _apiService.fetchParkings();
 
     final List<Parking> mapped = raw

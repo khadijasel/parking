@@ -116,18 +116,24 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _confirmedSpotLabel;
   String? _confirmedReservationId;
 
+  // Empeche l'ouverture multiple de l'ecran de paiement : tant que la
+  // verification "deja paye ?" est en cours, on ignore les nouveaux taps sur
+  // "Payer" (sinon chaque tap empilait un PaymentScreen et declenchait un
+  // appel /payments/initiate de plus).
+  bool _isOpeningPayment = false;
+
+  // Derniere transaction reellement payee durant cette session (avec la vraie
+  // methode : Edahabia/CIB/Cash). Sert a afficher une preuve de paiement
+  // correcte quand l'utilisateur rouvre "Paiement OK".
+  PaymentTransaction? _lastPaidTransaction;
+
   @override
   void initState() {
     super.initState();
-    _initializeSession().then((_) {
-      if (!mounted) {
-        return;
-      }
-
-      if (widget.initialSession?.isActive == true) {
-        _initializeSession(silent: true);
-      }
-    });
+    // La session passee par HomeTabGate vient juste d'etre recuperee du serveur
+    // (cache frais) : une seule initialisation suffit. L'ancien double appel
+    // (normal puis "silent") relancait inutilement les fetchs au demarrage.
+    _initializeSession();
   }
 
   @override
@@ -182,8 +188,11 @@ class _HomeScreenState extends State<HomeScreen> {
         forceRefresh: forcePaymentHistoryRefresh,
       );
       
+      // On s'appuie sur le cache parkings (TTL 20s, deja rempli par HomeTabGate)
+      // au lieu de forcer un rechargement reseau a chaque init de session :
+      // c'est l'endpoint le plus lourd et il etait recharge a chaque action.
       try {
-        await _parkingRepository.fetchParkings(forceRefresh: true);
+        await _parkingRepository.fetchParkings();
       } catch (_) {}
       Parking? matchedParking = _resolveParking(apiSession);
       final bool isVehicleParked =
@@ -737,6 +746,55 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Tarif unitaire AFFICHE sur la carte de session selon le type de
+  /// reservation : tarif horaire pour "courte", sinon le forfait de la duree
+  /// choisie (jour/semaine/mois). Le calcul du TOTAL ne change pas — il reste
+  /// gere par [_computeCurrentTotal] avec les regles hierarchiques.
+  double _resolveDisplayRate() {
+    final _Session? session = _session;
+    if (session == null) {
+      return 0.0;
+    }
+
+    final Parking? p = session.parking;
+    switch (session.reservationDurationType.trim().toLowerCase()) {
+      case 'journee':
+        return _firstPositiveRate(
+            <double?>[session.reservationAmount, p?.priceJournee, 800.0]);
+      case 'semaine':
+        return _firstPositiveRate(
+            <double?>[session.reservationAmount, p?.priceSemaine, 4500.0]);
+      case 'mois':
+        return _firstPositiveRate(
+            <double?>[session.reservationAmount, p?.priceMois, 15000.0]);
+      default:
+        return session.tarifActuel;
+    }
+  }
+
+  double _firstPositiveRate(List<double?> candidates) {
+    for (final double? value in candidates) {
+      if (value != null && value > 0) {
+        return value;
+      }
+    }
+    return 0.0;
+  }
+
+  /// Suffixe d'unite du tarif affiche ("/jour", "/semaine", "/mois", "/h").
+  String _rateUnitSuffix() {
+    switch (_session?.reservationDurationType.trim().toLowerCase()) {
+      case 'journee':
+        return '/jour';
+      case 'semaine':
+        return '/semaine';
+      case 'mois':
+        return '/mois';
+      default:
+        return '/h';
+    }
+  }
+
   String _formatTime(DateTime dt) =>
       '${dt.toLocal().hour.toString().padLeft(2, '0')}:${dt.toLocal().minute.toString().padLeft(2, '0')}';
 
@@ -1015,16 +1073,31 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handlePayCurrentSession() async {
+    if (_isOpeningPayment) {
+      return;
+    }
+
     final _Session? session = _session;
     if (session == null) {
       return;
     }
 
     if (session.isPaid) {
-      _openPaymentProof(session);
+      await _openPaymentProof(session);
       return;
     }
 
+    setState(() => _isOpeningPayment = true);
+    try {
+      await _openPaymentFlow(session);
+    } finally {
+      if (mounted) {
+        setState(() => _isOpeningPayment = false);
+      }
+    }
+  }
+
+  Future<void> _openPaymentFlow(_Session session) async {
     final bool alreadyPaidOnServer =
         await _isReservationAlreadyPaidOnServer(session.reservationId);
 
@@ -1061,21 +1134,26 @@ class _HomeScreenState extends State<HomeScreen> {
     final int durationMinutes = (_elapsedSec / 60).ceil().clamp(1, 100000);
     final double amount = _computeCurrentTotal();
 
-    final bool paymentConfirmed = await Navigator.push<bool>(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PaymentScreen(
-              reservationId: session.reservationId,
-              parkingName: session.parkingName,
-              dureeMinutes: durationMinutes,
-              montantFixe: amount,
-              allowCash: true,
-              autoConfirmCashSelection: true,
-              returnToCallerOnSuccess: true,
-            ),
-          ),
-        ) ??
-        false;
+    final PaymentTransaction? paidTransaction =
+        await Navigator.push<PaymentTransaction>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PaymentScreen(
+          reservationId: session.reservationId,
+          parkingName: session.parkingName,
+          dureeMinutes: durationMinutes,
+          montantFixe: amount,
+          allowCash: true,
+          autoConfirmCashSelection: true,
+          returnToCallerOnSuccess: true,
+        ),
+      ),
+    );
+
+    final bool paymentConfirmed = paidTransaction != null;
+    if (paidTransaction != null) {
+      _lastPaidTransaction = paidTransaction;
+    }
 
     if (!mounted) {
       return;
@@ -1101,32 +1179,100 @@ class _HomeScreenState extends State<HomeScreen> {
     await _initializeSession(silent: true, forcePaymentHistoryRefresh: true);
   }
 
-  void _openPaymentProof(_Session session) {
-    final PaymentTransaction transaction = PaymentTransaction(
-      id: 'proof-${session.reservationId}',
-      sessionId: session.reservationId,
-      userId: '',
-      parkingName: session.parkingName,
-      montant: _computeCurrentTotal(),
-      dureeMinutes: (_elapsedSec / 60).ceil().clamp(1, 100000),
-      methode: PaymentMethod.cash,
-      statut: PaymentStatus.success,
-      transactionRef: session.ticketCode.isEmpty
-          ? session.reservationId
-          : session.ticketCode,
-      createdAt: session.entryTime,
-      paidAt: DateTime.now(),
-      errorType: PaymentError.none,
-    );
+  Future<void> _openPaymentProof(_Session session) async {
+    final String reservationId = session.reservationId.trim();
+
+    // 1) Transaction reelle renvoyee par l'ecran de paiement (methode exacte).
+    PaymentTransaction? transaction =
+        (_lastPaidTransaction != null &&
+                _lastPaidTransaction!.sessionId.trim() == reservationId)
+            ? _lastPaidTransaction
+            : null;
+
+    // 2) Sinon, on recherche le paiement reussi dans l'historique serveur
+    //    (source de verite : bonne methode, bon montant, bonne reference).
+    if (transaction == null && reservationId.isNotEmpty) {
+      try {
+        final List<PaymentTransaction> history = await _loadPaymentHistory();
+        transaction = _findSuccessfulPaymentForSession(
+          history: history,
+          reservationId: reservationId,
+          sessionEntry: session.entryTime,
+        );
+      } catch (_) {
+        transaction = null;
+      }
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    // 3) Dernier recours : preuve synthetisee. On ne force JAMAIS "cash" :
+    //    on reprend la methode reellement utilisee si connue, sinon Edahabia.
+    final PaymentTransaction proof = transaction ??
+        PaymentTransaction(
+          id: 'proof-${session.reservationId}',
+          sessionId: session.reservationId,
+          userId: '',
+          parkingName: session.parkingName,
+          montant: _computeCurrentTotal(),
+          dureeMinutes: (_elapsedSec / 60).ceil().clamp(1, 100000),
+          methode: _lastPaidTransaction?.methode ?? PaymentMethod.edahabia,
+          statut: PaymentStatus.success,
+          transactionRef: session.ticketCode.isEmpty
+              ? session.reservationId
+              : session.ticketCode,
+          createdAt: session.entryTime,
+          paidAt: DateTime.now(),
+          errorType: PaymentError.none,
+        );
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PaymentConfirmationScreen(
-          transaction: transaction,
+          transaction: proof,
         ),
       ),
     );
+  }
+
+  /// Retourne le dernier paiement REUSSI enregistre pour cette reservation,
+  /// avec la vraie methode/montant. Filtre les paiements anterieurs a l'entree
+  /// (sessions precedentes) comme [_hasSuccessfulPaymentForSession].
+  PaymentTransaction? _findSuccessfulPaymentForSession({
+    required List<PaymentTransaction> history,
+    required String reservationId,
+    required DateTime sessionEntry,
+  }) {
+    final DateTime thresholdUtc =
+        sessionEntry.toUtc().subtract(const Duration(seconds: 5));
+
+    PaymentTransaction? best;
+    for (final PaymentTransaction transaction in history) {
+      if (transaction.sessionId.trim() != reservationId) {
+        continue;
+      }
+      if (transaction.statut != PaymentStatus.success) {
+        continue;
+      }
+
+      final DateTime paidAtUtc =
+          (transaction.paidAt ?? transaction.createdAt).toUtc();
+      if (paidAtUtc.isBefore(thresholdUtc)) {
+        continue;
+      }
+
+      final DateTime current = transaction.paidAt ?? transaction.createdAt;
+      final DateTime bestDate =
+          best == null ? current : (best.paidAt ?? best.createdAt);
+      if (best == null || current.isAfter(bestDate)) {
+        best = transaction;
+      }
+    }
+
+    return best;
   }
 
   @override
@@ -1367,7 +1513,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             style: TextStyle(fontSize: 13, color: _kTextMid)),
                         const SizedBox(height: 3),
                         Text(
-                          '${_session!.tarifActuel.toInt()} DZD',
+                          '${_resolveDisplayRate().toInt()} DA${_rateUnitSuffix()}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -1453,9 +1599,11 @@ class _HomeScreenState extends State<HomeScreen> {
         ? 'ETAPE 2'
         : (session.isVehicleFound ? 'CONFIRMEE' : 'ETAPE 1 D ABORD');
 
-    final String paySubtitle = session.isPaid
-        ? 'PAIEMENT REUSSI'
-        : (session.canPay ? 'ETAPE 3' : 'ETAPE 2 D ABORD');
+    final String paySubtitle = _isOpeningPayment
+        ? 'OUVERTURE...'
+        : (session.isPaid
+            ? 'PAIEMENT REUSSI'
+            : (session.canPay ? 'ETAPE 3' : 'ETAPE 2 D ABORD'));
 
     final String exitSubtitle = session.canExit ? 'ETAPE 4' : 'PAYER D ABORD';
 
@@ -1478,8 +1626,12 @@ class _HomeScreenState extends State<HomeScreen> {
         _ActionCard(
           icon: Icons.directions_car_outlined,
           title: 'Trouver ma voiture',
+          // Une fois la voiture retrouvee, la carte redevient blanche (etat
+          // "CONFIRMEE") comme "Guider vers une place" — seul le bouton suivant
+          // ("Payer") reste en bleu. Elle reste cliquable (locked=false) pour
+          // revoir l'ecran de localisation du vehicule.
           subtitle: findSubtitle,
-          isActive: session.canFindCar || session.isVehicleFound,
+          isActive: session.canFindCar,
           locked: !session.canFindCar && !session.isVehicleFound,
           onTap: _handleFindCar,
         ),
@@ -1495,8 +1647,9 @@ class _HomeScreenState extends State<HomeScreen> {
           icon: Icons.credit_card_rounded,
           title: session.isPaid ? 'Paiement OK' : 'Payer',
           subtitle: paySubtitle,
-          isActive: session.canPay,
-          locked: !session.canPay && !session.isPaid,
+          isActive: session.canPay || _isOpeningPayment,
+          locked: !_isOpeningPayment && !session.canPay && !session.isPaid,
+          isLoading: _isOpeningPayment,
           onTap: _handlePayCurrentSession,
         ),
       ],
@@ -1511,6 +1664,7 @@ class _ActionCard extends StatelessWidget {
   final String subtitle;
   final bool isActive;
   final bool locked;
+  final bool isLoading;
   final VoidCallback onTap;
 
   const _ActionCard({
@@ -1520,12 +1674,13 @@ class _ActionCard extends StatelessWidget {
     required this.isActive,
     required this.locked,
     required this.onTap,
+    this.isLoading = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: locked ? null : onTap,
+      onTap: (locked || isLoading) ? null : onTap,
       child: Container(
         decoration: BoxDecoration(
           color: isActive ? _kBlue : _kCard,
@@ -1553,8 +1708,21 @@ class _ActionCard extends StatelessWidget {
                     : const Color(0xFFF0F2F5),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(icon,
-                  size: 22, color: isActive ? Colors.white : _kTextMid),
+              child: isLoading
+                  ? Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            isActive ? Colors.white : _kBlue,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Icon(icon,
+                      size: 22, color: isActive ? Colors.white : _kTextMid),
             ),
             const Spacer(),
             Text(
